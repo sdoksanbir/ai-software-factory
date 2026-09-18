@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from factory.orchestrator import Orchestrator
+from factory.schemas import TaskStatus
 
 
 app = FastAPI(
@@ -197,4 +198,66 @@ def get_task(task_id: str):
         )
 
     return task
+
+@app.post(
+    "/tasks/{task_id}/approve",
+    response_model=TaskCreateResponse,
+)
+def approve_task(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    context = TASK_CONTEXTS.get(task_id)
+
+    if context is None or task.state != "ready_for_approval":
+        raise HTTPException(
+            status_code=409,
+            detail="Task is not ready for approval",
+        )
+
+    state_machine = context["state_machine"]
+    wt_result = context["wt_result"]
+
+    orchestrator = Orchestrator()
+
+    try:
+        orchestrator.git_manager.commit_all(
+            wt_result.path,
+            f"{task_id}: AI generated changes",
+        )
+
+        orchestrator.git_manager.merge_branch(
+            wt_result.branch
+        )
+
+        orchestrator.git_manager.remove_worktree(
+            wt_result.path
+        )
+
+        orchestrator.git_manager.delete_branch(
+            wt_result.branch
+        )
+
+        state_machine.transition(TaskStatus.APPROVED)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Approval failed: {exc}",
+        ) from exc
+
+    update_task_runtime(
+        task_id,
+        status="approved",
+        state="approved",
+    )
+
+    TASK_CONTEXTS.pop(task_id, None)
+
+    return TASKS[task_id]
 
