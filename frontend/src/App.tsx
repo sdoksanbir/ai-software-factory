@@ -1114,7 +1114,8 @@ function App() {
 
             {selectedTask && (
               <>
-                <div className="detail-header">
+                <div className="task-summary-panel">
+                  <div className="detail-header">
                   <div>
                     <span className="section-kicker">TASK DETAIL</span>
                     <h2>{selectedTask.task_id}</h2>
@@ -1181,7 +1182,26 @@ function App() {
                   </button>
                 )}
 
-                <div className="live-log-section">
+                </div>
+
+                <div className="task-output-panel">
+                  <div className="output-panel-heading">
+                    <div>
+                      <span className="section-kicker">
+                        LIVE EXECUTION
+                      </span>
+                      <h2>Agent ?al??ma Alan?</h2>
+                    </div>
+
+                    <span
+                      className={`status status-${selectedTask.state}`}
+                    >
+                      {stateLabels[selectedTask.state] ??
+                        selectedTask.state}
+                    </span>
+                  </div>
+
+                  <div className="live-log-section">
                   <div className="diff-heading">
                     <div>
                       <span>Canlı Log</span>
@@ -1231,6 +1251,7 @@ function App() {
                         ? "Diff görüntülemek için butona bas."
                         : "Bu görev için kullanılabilir diff yok.")}
                   </pre>
+                </div>
                 </div>
               </>
             )}
