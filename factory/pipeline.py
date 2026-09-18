@@ -39,6 +39,22 @@ PIPELINE_STAGES = [
 ]
 
 
+_TR_TRANSLATION = str.maketrans({
+    305: "i",   # dotless i
+    304: "I",   # dotted capital I
+    351: "s",
+    350: "S",
+    287: "g",
+    286: "G",
+    252: "u",
+    220: "U",
+    246: "o",
+    214: "O",
+    231: "c",
+    199: "C",
+})
+
+
 def _value(
     task: Any,
     key: str,
@@ -47,27 +63,45 @@ def _value(
     if isinstance(task, dict):
         return task.get(key, default)
 
-    return getattr(
-        task,
-        key,
-        default,
-    )
+    return getattr(task, key, default)
+
+
+def _normalize(value: str) -> str:
+    return value.translate(
+        _TR_TRANSLATION
+    ).lower()
 
 
 def _contains(
     logs: list[str],
     *needles: str,
 ) -> bool:
-    lowered = [
-        item.lower()
+    normalized_logs = [
+        _normalize(item)
         for item in logs
     ]
 
     return any(
-        needle.lower() in line
+        _normalize(needle) in line
         for needle in needles
-        for line in lowered
+        for line in normalized_logs
     )
+
+
+def _mark_success_through(
+    by_id: dict[str, dict[str, str]],
+    stage_id: str,
+) -> None:
+    for stage in PIPELINE_STAGES:
+        current_id = stage["id"]
+
+        if current_id == "approval":
+            break
+
+        by_id[current_id]["status"] = "success"
+
+        if current_id == stage_id:
+            break
 
 
 def build_task_pipeline(
@@ -101,103 +135,113 @@ def build_task_pipeline(
         for stage in stages
     }
 
-    # A task returned by the API has already
-    # passed the "task received" stage.
     by_id["task"]["status"] = "success"
 
     worktree_ready = _contains(
         log_items,
-        "worktree haz?rland?",
         "worktree hazirlandi",
     )
 
     model_started = _contains(
         log_items,
-        "model kod ?retiyor",
         "model kod uretiyor",
-        "model yan?t? al?nd?",
         "model yaniti alindi",
     )
 
     model_completed = _contains(
         log_items,
-        "model yan?t? al?nd?",
         "model yaniti alindi",
     )
 
     patch_completed = _contains(
         log_items,
-        "patch do?ruland?",
         "patch dogrulandi",
-        "patch uyguland?",
         "patch uygulandi",
     )
 
     tests_started = _contains(
         log_items,
-        "testler ?al??t?r?l?yor",
         "testler calistiriliyor",
     )
 
     tests_passed = _contains(
         log_items,
-        "testler ba?ar?l?",
         "testler basarili",
     )
 
     tests_failed = _contains(
         log_items,
-        "testler ba?ar?s?z",
         "testler basarisiz",
         "test failed",
         "tests failed",
     )
 
-    # Worktree
-    if worktree_ready or model_started:
-        by_id["worktree"]["status"] = "success"
-    elif task_state == "running":
-        by_id["worktree"]["status"] = "active"
-
-    # Repo analysis is complete by the time
-    # the model begins generation.
-    if model_started:
-        by_id["repo_analysis"]["status"] = "success"
-    elif worktree_ready:
-        by_id["repo_analysis"]["status"] = "active"
-
-    # Model
-    if model_completed:
-        by_id["model"]["status"] = "success"
-    elif model_started:
-        by_id["model"]["status"] = "active"
-
-    # Patch
-    if patch_completed or tests_started:
-        by_id["patch"]["status"] = "success"
-    elif model_completed:
-        by_id["patch"]["status"] = "active"
-
-    # Tests
-    if tests_failed:
-        by_id["tests"]["status"] = "failed"
-    elif tests_passed:
-        by_id["tests"]["status"] = "success"
-    elif tests_started:
-        by_id["tests"]["status"] = "active"
-
-    terminal_diff_states = {
+    terminal_approval_states = {
         "ready_for_approval",
         "approved",
         "rejected",
     }
 
-    if task_state in terminal_diff_states:
-        by_id["diff"]["status"] = "success"
+    # Terminal approval states prove that all
+    # previous pipeline stages completed.
+    if task_state in terminal_approval_states:
+        _mark_success_through(
+            by_id,
+            "diff",
+        )
+
+    elif tests_failed:
+        _mark_success_through(
+            by_id,
+            "patch",
+        )
+        by_id["tests"]["status"] = "failed"
+
     elif tests_passed:
+        _mark_success_through(
+            by_id,
+            "tests",
+        )
         by_id["diff"]["status"] = "active"
 
-    # Human approval
+    elif tests_started:
+        _mark_success_through(
+            by_id,
+            "patch",
+        )
+        by_id["tests"]["status"] = "active"
+
+    elif patch_completed:
+        _mark_success_through(
+            by_id,
+            "patch",
+        )
+        by_id["tests"]["status"] = "active"
+
+    elif model_completed:
+        _mark_success_through(
+            by_id,
+            "model",
+        )
+        by_id["patch"]["status"] = "active"
+
+    elif model_started:
+        _mark_success_through(
+            by_id,
+            "repo_analysis",
+        )
+        by_id["model"]["status"] = "active"
+
+    elif worktree_ready:
+        _mark_success_through(
+            by_id,
+            "worktree",
+        )
+        by_id["repo_analysis"]["status"] = "active"
+
+    elif task_state == "running":
+        by_id["worktree"]["status"] = "active"
+
     if task_state == "ready_for_approval":
         by_id["approval"]["status"] = "waiting"
 
@@ -207,9 +251,7 @@ def build_task_pipeline(
     elif task_state == "rejected":
         by_id["approval"]["status"] = "rejected"
 
-    # Generic failed-task fallback:
-    # mark the first unfinished active/pending stage.
-    if task_state == "failed":
+    elif task_state == "failed":
         if not any(
             stage["status"] == "failed"
             for stage in stages
@@ -219,10 +261,7 @@ def build_task_pipeline(
                     stage
                     for stage in stages
                     if stage["status"]
-                    in {
-                        "active",
-                        "pending",
-                    }
+                    in {"active", "pending"}
                 ),
                 None,
             )
@@ -230,31 +269,34 @@ def build_task_pipeline(
             if candidate is not None:
                 candidate["status"] = "failed"
 
-    current_stage = None
-
-    for stage in stages:
-        if stage["status"] in {
-            "active",
-            "waiting",
-            "failed",
-        }:
-            current_stage = stage["id"]
-            break
+    current_stage = next(
+        (
+            stage["id"]
+            for stage in stages
+            if stage["status"]
+            in {
+                "active",
+                "waiting",
+                "failed",
+            }
+        ),
+        None,
+    )
 
     if current_stage is None:
         unfinished = next(
             (
-                stage
+                stage["id"]
                 for stage in stages
                 if stage["status"] == "pending"
             ),
             None,
         )
 
-        if unfinished is not None:
-            current_stage = unfinished["id"]
-        else:
-            current_stage = "approval"
+        current_stage = (
+            unfinished
+            or "approval"
+        )
 
     completed = sum(
         stage["status"]
@@ -266,14 +308,13 @@ def build_task_pipeline(
     )
 
     progress_percent = round(
-        (completed / len(stages)) * 100
+        completed
+        / len(stages)
+        * 100
     )
 
     if task_state == "ready_for_approval":
-        progress_percent = max(
-            progress_percent,
-            88,
-        )
+        progress_percent = 88
 
     if task_state in {
         "approved",
