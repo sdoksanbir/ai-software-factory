@@ -88,6 +88,46 @@ def update_task_runtime(
     return task
 
 
+def run_task_for_api(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise KeyError(f"Unknown task: {task_id}")
+
+    update_task_runtime(
+        task_id,
+        status="running",
+        state="running",
+        model="fast_local",
+    )
+
+    orchestrator = Orchestrator()
+
+    try:
+        result = orchestrator.run_task(
+            task.prompt,
+            task_id=task_id,
+            max_attempts=task.max_attempts,
+            approval_handler=api_approval_handler,
+        )
+    except Exception:
+        update_task_runtime(
+            task_id,
+            status="failed",
+            state="failed",
+        )
+        return None
+
+    if result != "ready_for_approval":
+        update_task_runtime(
+            task_id,
+            status="failed",
+            state="failed",
+        )
+
+    return result
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
