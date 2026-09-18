@@ -73,6 +73,14 @@ def create_task(request: TaskCreateRequest):
 
 
 @app.get(
+    "/tasks",
+    response_model=list[TaskCreateResponse],
+)
+def list_tasks():
+    return list(TASKS.values())
+
+
+@app.get(
     "/tasks/{task_id}",
     response_model=TaskCreateResponse,
 )
