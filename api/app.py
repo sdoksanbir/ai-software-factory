@@ -22,6 +22,11 @@ class TaskCreateResponse(BaseModel):
     status: str
     prompt: str
     max_attempts: int
+    state: str = "queued"
+    model: str | None = None
+    attempt: int = 0
+    test_result: str | None = None
+    started_at: str | None = None
 
 
 TASKS: dict[str, TaskCreateResponse] = {}
