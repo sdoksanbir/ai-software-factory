@@ -443,7 +443,11 @@ function App() {
                     <button
                       className="secondary-button"
                       disabled={
-                        selectedTask.state !== "ready_for_approval" ||
+                        ![
+                          "ready_for_approval",
+                          "approved",
+                          "rejected",
+                        ].includes(selectedTask.state) ||
                         loadingDiff
                       }
                       onClick={() =>
@@ -456,9 +460,13 @@ function App() {
 
                   <pre className="diff-view">
                     {diff ||
-                      (selectedTask.state === "ready_for_approval"
+                      ([
+                        "ready_for_approval",
+                        "approved",
+                        "rejected",
+                      ].includes(selectedTask.state)
                         ? "Diff görüntülemek için butona bas."
-                        : "Bu görev için kullan?labilir diff yok.")}
+                        : "Bu görev için kullanılabilir diff yok.")}
                   </pre>
                 </div>
               </>
