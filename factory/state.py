@@ -125,18 +125,6 @@ class TaskStateMachine:
                 f"{self.task.status.value} -> {to_status.value}"
             )
 
-        if (
-            self.task.status == TaskStatus.TEST_FAILED
-            and to_status == TaskStatus.MODEL_RUNNING
-            and self.task.attempt >= self.task.max_attempts
-        ):
-            raise InvalidStateTransition(
-                f"Retry limit exceeded: Cannot transition "
-                f"from {self.task.status.value} to {to_status.value}. "
-                f"Attempt count ({self.task.attempt}) reached maximum "
-                f"({self.task.max_attempts})."
-            )
-
         self.task.status = to_status
         self.task.updated_at = datetime.now(timezone.utc)
 

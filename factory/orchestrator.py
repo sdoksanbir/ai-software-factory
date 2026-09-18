@@ -76,15 +76,20 @@ class Orchestrator:
 
         system_prompt = (
             "Sen otonom bir yazılım geliştirme ajanısın. "
-            "Sana verilen görevi yerine getirmek için proje dosyalarını inceleyebilir "
-            "ve Python kodu yazabilirsin. Yanıtını sadece uygulanabilir kod blokları şeklinde ver."
+            "Yanıtın yalnızca geçerli bir JSON nesnesi olmalı. "
+            "Markdown, açıklama metni veya kod bloğu kullanma. "
+            "JSON yapısı tam olarak şu biçimde olmalı: "
+            '{"files":[{"path":"relative/path.py","content":"dosyanın tam içeriği"}],"explanation":"kısa açıklama"}. '
+            "Her dosya için content alanında dosyanın değişiklik sonrası TAM içeriğini ver."
         )
 
         user_prompt = (
             f"Görev: {prompt}\n\n"
             f"Mevcut Proje Dosyaları:\n{repo_summary}\n\n"
-            f"Lütfen bu görevi yerine getirmek için hangi dosyada ne değişiklik yapacağını "
-            f"veya hangi yeni dosyayı oluşturacağını açıkça belirt."
+            "Görevi tamamlamak için değiştirilmesi veya oluşturulması gereken tüm dosyaları "
+            "files dizisinde belirt. Değişmeyen dosyaları ekleme. "
+            "path alanları proje köküne göre relative olmalı. "
+            "Her content alanı ilgili dosyanın son halinin tamamını içermeli."
         )
 
         success = False
@@ -106,12 +111,27 @@ class Orchestrator:
                 print(f"[+] Model yanıtı alındı.")
 
                 state_machine.transition(TaskStatus.PATCH_VALIDATING)
+
+                multi_file_patch = PatchTool.parse_multi_file_response(
+                    response.content
+                )
+
                 state_machine.transition(TaskStatus.PATCH_READY)
 
-                target_file = "utils.py"
+                written_files = PatchTool.apply_multi_file_patch(
+                    wt_result.path,
+                    multi_file_patch
+                )
+
                 state_machine.transition(TaskStatus.PATCH_APPLIED)
-                PatchTool.apply_file_patch(wt_result.path, target_file, response.content)
-                print(f"[+] Patch uygulandı: {target_file}")
+
+                print(f"[+] Patch uygulandı: {len(written_files)} dosya")
+                for written_file in written_files:
+                    relative_path = os.path.relpath(
+                        written_file,
+                        wt_result.path
+                    )
+                    print(f"    - {relative_path}")
 
                 # Test aşaması (Docker yoksa lokal Python subprocess ile çalıştır)
                 state_machine.transition(TaskStatus.TESTING)
@@ -128,7 +148,7 @@ class Orchestrator:
                         "python -c \"import pathlib; "
                         "[compile(p.read_text(encoding='utf-8'), str(p), 'exec') "
                         "for p in pathlib.Path('.').rglob('*.py')]\" || exit $?; "
-                        "PYTHONDONTWRITEBYTECODE=1 pytest -q; "
+                        "PYTHONDONTWRITEBYTECODE=1 python -m pytest -q; "
                         "code=$?; "
                         "if [ $code -eq 5 ]; then exit 0; else exit $code; fi"
                     )
