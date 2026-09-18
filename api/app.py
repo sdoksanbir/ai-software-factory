@@ -34,6 +34,7 @@ class TaskCreateResponse(BaseModel):
 
 TASKS: dict[str, TaskCreateResponse] = {}
 TASK_CONTEXTS: dict[str, dict[str, object]] = {}
+TASK_DIFFS: dict[str, str] = {}
 
 
 def api_approval_handler(
@@ -54,6 +55,8 @@ def api_approval_handler(
         "wt_result": wt_result,
         "diff_output": diff_output,
     }
+
+    TASK_DIFFS[task_id] = diff_output
 
     return "ready_for_approval"
 
@@ -378,9 +381,9 @@ def get_task_diff(task_id: str):
             detail="Task not found",
         )
 
-    context = TASK_CONTEXTS.get(task_id)
+    diff_output = TASK_DIFFS.get(task_id)
 
-    if context is None:
+    if diff_output is None:
         raise HTTPException(
             status_code=409,
             detail="Task diff is not available",
@@ -388,7 +391,7 @@ def get_task_diff(task_id: str):
 
     return TaskDiffResponse(
         task_id=task_id,
-        diff=str(context.get("diff_output", "")),
+        diff=diff_output,
     )
 
 
@@ -416,6 +419,7 @@ def retry_task(
         )
 
     TASK_CONTEXTS.pop(task_id, None)
+    TASK_DIFFS.pop(task_id, None)
 
     task.status = "queued"
     task.state = "queued"
