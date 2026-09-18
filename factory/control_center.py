@@ -11,10 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 
-_CACHE: dict[str, Any] = {
-    "timestamp": 0.0,
-    "value": None,
-}
+_CACHE: dict[str, dict[str, Any]] = {}
 
 CACHE_SECONDS = 5.0
 
@@ -360,9 +357,24 @@ def get_control_center_status(
 ) -> dict[str, Any]:
     now = time.monotonic()
 
-    cached_value = _CACHE.get("value")
+    cache_key = os.path.normcase(
+        os.path.abspath(project_path)
+    )
+
+    cache_entry = _CACHE.get(
+        cache_key,
+        {},
+    )
+
+    cached_value = cache_entry.get(
+        "value"
+    )
+
     cached_at = float(
-        _CACHE.get("timestamp", 0.0)
+        cache_entry.get(
+            "timestamp",
+            0.0,
+        )
     )
 
     if (
@@ -400,7 +412,9 @@ def get_control_center_status(
         ),
     }
 
-    _CACHE["timestamp"] = now
-    _CACHE["value"] = result
+    _CACHE[cache_key] = {
+        "timestamp": now,
+        "value": result,
+    }
 
     return result

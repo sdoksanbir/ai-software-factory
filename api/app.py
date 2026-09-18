@@ -1037,15 +1037,38 @@ async def task_events(task_id: str):
 
 
 @app.get("/control-center/status")
-def control_center_status():
-    orchestrator = Orchestrator()
-
-    return get_control_center_status(
-        project_path=orchestrator.project_path,
-        tasks=list(TASKS.values()),
+def control_center_status(
+    project_id: str | None = None,
+):
+    project_path = Orchestrator().project_path
+    selected_tasks = list(
+        TASKS.values()
     )
 
+    if project_id is not None:
+        project = db_get_project(
+            project_id
+        )
 
+        if project is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Proje bulunamad\u0131.",
+            )
+
+        project_path = project["path"]
+
+        selected_tasks = [
+            task
+            for task in TASKS.values()
+            if task.project_id
+            == project_id
+        ]
+
+    return get_control_center_status(
+        project_path=project_path,
+        tasks=selected_tasks,
+    )
 
 @app.get("/tasks/{task_id}/pipeline")
 def task_pipeline(task_id: str):
