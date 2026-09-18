@@ -1,7 +1,7 @@
 import random
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from factory.orchestrator import Orchestrator
@@ -148,7 +148,10 @@ def factory_status():
     response_model=TaskCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def create_task(request: TaskCreateRequest):
+def create_task(
+    request: TaskCreateRequest,
+    background_tasks: BackgroundTasks,
+):
     while True:
         task_id = f"TASK-{random.randint(1000, 9999)}"
         if task_id not in TASKS:
@@ -163,6 +166,11 @@ def create_task(request: TaskCreateRequest):
     )
 
     TASKS[task_id] = task
+
+    background_tasks.add_task(
+        run_task_for_api,
+        task_id,
+    )
 
     return task
 
