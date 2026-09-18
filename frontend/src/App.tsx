@@ -358,8 +358,8 @@ function App() {
                 <div className="detail-icon">?</div>
                 <strong>Görev seç</strong>
                 <span>
-                  Ayr?nt?lar?, diff ??kt?s?n? ve i?lem butonlar?n?
-                  g?rmek i?in listeden bir görev se?.
+                  Ayrıntıları, diff çıktısını ve işlem butonlarını
+                  görmek için listeden bir görev se?.
                 </span>
               </div>
             )}
@@ -458,7 +458,7 @@ function App() {
                     {diff ||
                       (selectedTask.state === "ready_for_approval"
                         ? "Diff görüntülemek için butona bas."
-                        : "Bu görev i?in kullan?labilir diff yok.")}
+                        : "Bu görev için kullan?labilir diff yok.")}
                   </pre>
                 </div>
               </>
