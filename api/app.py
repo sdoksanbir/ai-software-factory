@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+from types import SimpleNamespace
 from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, status
@@ -20,7 +21,8 @@ from factory.database import (
     upsert_task as db_upsert_task,
 )
 from factory.orchestrator import Orchestrator
-from factory.schemas import TaskStatus
+from factory.schemas import TaskSpec, TaskStatus
+from factory.state import TaskStateMachine
 
 
 app = FastAPI(
@@ -89,10 +91,12 @@ def hydrate_runtime_from_database() -> None:
     init_database()
 
     TASKS.clear()
+    TASK_CONTEXTS.clear()
     TASK_LOGS.clear()
     TASK_DIFFS.clear()
 
     rows = db_list_tasks()
+    recovery_orchestrator = None
 
     for row in reversed(rows):
         task = TaskCreateResponse(
@@ -129,6 +133,43 @@ def hydrate_runtime_from_database() -> None:
 
         if diff_output is not None:
             TASK_DIFFS[task.task_id] = diff_output
+
+        # Restart sonras?nda onay bekleyen g?revlerin
+        # ge?ici runtime context'ini yeniden olu?tur.
+        if (
+            task.state == "ready_for_approval"
+            and row["branch"]
+            and row["worktree_path"]
+            and diff_output is not None
+        ):
+            if recovery_orchestrator is None:
+                recovery_orchestrator = Orchestrator()
+
+            task_spec = TaskSpec(
+                task_id=task.task_id,
+                project_path=(
+                    recovery_orchestrator.project_path
+                ),
+                request=task.prompt,
+                status=TaskStatus.READY_FOR_APPROVAL,
+                attempt=task.attempt,
+                max_attempts=task.max_attempts,
+            )
+
+            state_machine = TaskStateMachine(
+                task_spec
+            )
+
+            wt_result = SimpleNamespace(
+                path=row["worktree_path"],
+                branch=row["branch"],
+            )
+
+            TASK_CONTEXTS[task.task_id] = {
+                "state_machine": state_machine,
+                "wt_result": wt_result,
+                "diff_output": diff_output,
+            }
 
 
 hydrate_runtime_from_database()
