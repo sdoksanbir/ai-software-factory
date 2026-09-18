@@ -7,3 +7,5 @@ data/*.db
 logs/
 test_worktrees/
 .venv-1/
+data/*.db-wal
+data/*.db-shm
