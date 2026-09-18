@@ -183,6 +183,12 @@ class Orchestrator:
             state_machine.transition(TaskStatus.WORKTREE_CREATING)
             wt_result = self.git_manager.create_worktree(task_id.lower())
             state_machine.transition(TaskStatus.WORKTREE_READY)
+
+            if progress_handler is not None:
+                progress_handler(
+                    task_id,
+                    message="Worktree hazırlandı.",
+                )
             print(f"[+] Worktree açıldı: {wt_result.path} (Branch: {wt_result.branch})")
         except Exception as e:
             print(f"[-] Worktree oluşturulamadı: {str(e)}")
@@ -318,11 +324,21 @@ class Orchestrator:
                     progress_handler(
                         task_id,
                         attempt=task_spec.attempt,
+                        message=(
+                            f"Deneme {task_spec.attempt}/"
+                            f"{task_spec.max_attempts} başlatıldı."
+                        ),
                     )
 
                 print(f"\n--- Deneme {task_spec.attempt}/{task_spec.max_attempts} ---")
 
                 state_machine.transition(TaskStatus.MODEL_RUNNING)
+
+                if progress_handler is not None:
+                    progress_handler(
+                        task_id,
+                        message="Model kod üretiyor.",
+                    )
                 response = self.model_client.complete(
                     model_role="fast_local",
                     system_prompt=system_prompt,
@@ -330,6 +346,12 @@ class Orchestrator:
                     temperature=0.2
                 )
                 state_machine.transition(TaskStatus.MODEL_COMPLETED)
+
+                if progress_handler is not None:
+                    progress_handler(
+                        task_id,
+                        message="Model yanıtı alındı.",
+                    )
                 print(f"[+] Model yanıtı alındı.")
 
                 state_machine.transition(TaskStatus.PATCH_VALIDATING)
@@ -339,6 +361,12 @@ class Orchestrator:
                 )
 
                 state_machine.transition(TaskStatus.PATCH_READY)
+
+                if progress_handler is not None:
+                    progress_handler(
+                        task_id,
+                        message="Patch doğrulandı.",
+                    )
 
                 changed_paths = [
                     file_change.path
@@ -367,6 +395,12 @@ class Orchestrator:
 
                 # Test aşaması (Docker yoksa lokal Python subprocess ile çalıştır)
                 state_machine.transition(TaskStatus.TESTING)
+
+                if progress_handler is not None:
+                    progress_handler(
+                        task_id,
+                        message="Testler çalıştırılıyor.",
+                    )
                 print(f"[*] Testler çalıştırılıyor...")
                 
                 test_passed = False
@@ -404,6 +438,7 @@ class Orchestrator:
                         progress_handler(
                             task_id,
                             test_result="passed",
+                            message="Testler başarılı.",
                         )
                     print(f"[+] Testler başarılı!")
                     success = True
@@ -415,6 +450,7 @@ class Orchestrator:
                         progress_handler(
                             task_id,
                             test_result="failed",
+                            message="Testler başarısız. Yeni deneme hazırlanıyor.",
                         )
                     print(f"[-] Test hatası: {test_output}")
                     user_prompt += f"\n\nÖnceki deneme başarısız oldu. Hata:\n{test_output}\nLütfen düzelt."

@@ -1,9 +1,12 @@
+import asyncio
+import json
 import os
 import random
 from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
 
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskStatus
@@ -35,6 +38,14 @@ class TaskCreateResponse(BaseModel):
 TASKS: dict[str, TaskCreateResponse] = {}
 TASK_CONTEXTS: dict[str, dict[str, object]] = {}
 TASK_DIFFS: dict[str, str] = {}
+TASK_LOGS: dict[str, list[str]] = {}
+
+
+def append_task_log(
+    task_id: str,
+    message: str,
+) -> None:
+    TASK_LOGS.setdefault(task_id, []).append(message)
 
 
 def api_approval_handler(
@@ -57,6 +68,11 @@ def api_approval_handler(
     }
 
     TASK_DIFFS[task_id] = diff_output
+
+    append_task_log(
+        task_id,
+        "Testler başarılı. Onay bekleniyor.",
+    )
 
     return "ready_for_approval"
 
@@ -131,6 +147,7 @@ def api_progress_handler(
     *,
     attempt: int | None = None,
     test_result: str | None = None,
+    message: str | None = None,
 ) -> None:
     update_task_runtime(
         task_id,
@@ -138,6 +155,11 @@ def api_progress_handler(
         test_result=test_result,
     )
 
+    if message is not None:
+        append_task_log(
+            task_id,
+            message,
+        )
 
 def run_task_for_api(task_id: str):
     task = TASKS.get(task_id)
@@ -152,6 +174,11 @@ def run_task_for_api(task_id: str):
         model="fast_local",
     )
 
+    append_task_log(
+        task_id,
+        "Görev çalıştırılıyor.",
+    )
+
     orchestrator = Orchestrator()
 
     try:
@@ -163,6 +190,11 @@ def run_task_for_api(task_id: str):
             progress_handler=api_progress_handler,
         )
     except Exception:
+        append_task_log(
+            task_id,
+            "Görev beklenmeyen bir hata nedeniyle başarısız oldu.",
+        )
+
         cleanup_failed_task_for_api(
             orchestrator,
             task_id,
@@ -176,6 +208,11 @@ def run_task_for_api(task_id: str):
         return None
 
     if result != "ready_for_approval":
+        append_task_log(
+            task_id,
+            "Görev başarısız oldu.",
+        )
+
         cleanup_failed_task_for_api(
             orchestrator,
             task_id,
@@ -228,6 +265,9 @@ def create_task(
     )
 
     TASKS[task_id] = task
+    TASK_LOGS[task_id] = [
+        "Görev sıraya alındı."
+    ]
 
     background_tasks.add_task(
         run_task_for_api,
@@ -444,10 +484,76 @@ def retry_task(
         timezone.utc
     ).isoformat()
 
+    TASK_LOGS[task_id] = [
+        "Görev yeniden sıraya alındı."
+    ]
+
     background_tasks.add_task(
         run_task_for_api,
         task_id,
     )
 
     return task
+
+@app.get("/tasks/{task_id}/events")
+async def task_events(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    async def event_stream():
+        index = 0
+
+        while True:
+            logs = TASK_LOGS.get(task_id, [])
+
+            while index < len(logs):
+                payload = json.dumps(
+                    {
+                        "message": logs[index],
+                    },
+                    ensure_ascii=False,
+                )
+
+                yield f"data: {payload}\n\n"
+                index += 1
+
+            current_task = TASKS.get(task_id)
+
+            if current_task is None:
+                break
+
+            if current_task.state in {
+                "ready_for_approval",
+                "approved",
+                "rejected",
+                "failed",
+            }:
+                payload = json.dumps(
+                    {
+                        "state": current_task.state,
+                    },
+                    ensure_ascii=False,
+                )
+
+                yield (
+                    "event: done\n"
+                    f"data: {payload}\n\n"
+                )
+                break
+
+            await asyncio.sleep(0.4)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 

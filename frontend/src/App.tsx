@@ -47,6 +47,7 @@ function App() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [backendOnline, setBackendOnline] = useState(true)
+  const [liveLogs, setLiveLogs] = useState<string[]>([])
 
   const loadTasks = useCallback(async () => {
     try {
@@ -78,6 +79,48 @@ function App() {
     () => tasks.find((task) => task.task_id === selectedTaskId) ?? null,
     [tasks, selectedTaskId],
   )
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setLiveLogs([])
+      return
+    }
+
+    setLiveLogs([])
+
+    const source = new EventSource(
+      `/api/tasks/${selectedTaskId}/events`,
+    )
+
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          message?: string
+        }
+
+        if (payload.message) {
+          setLiveLogs((current) => [
+            ...current,
+            payload.message as string,
+          ])
+        }
+      } catch {
+        // Ignore malformed log events.
+      }
+    }
+
+    source.addEventListener("done", () => {
+      source.close()
+    })
+
+    source.onerror = () => {
+      source.close()
+    }
+
+    return () => {
+      source.close()
+    }
+  }, [selectedTaskId, selectedTask?.started_at])
 
   const stats = useMemo(() => {
     return {
@@ -432,6 +475,21 @@ function App() {
                     Tekrar Dene
                   </button>
                 )}
+
+                <div className="live-log-section">
+                  <div className="diff-heading">
+                    <div>
+                      <span>Canlı Log</span>
+                      <small>AI ajanının anlık işlem adımları</small>
+                    </div>
+                  </div>
+
+                  <pre className="live-log-view">
+                    {liveLogs.length > 0
+                      ? liveLogs.join("\n")
+                      : "Henüz log kaydı yok."}
+                  </pre>
+                </div>
 
                 <div className="diff-section">
                   <div className="diff-heading">
