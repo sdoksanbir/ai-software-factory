@@ -153,6 +153,7 @@ class TaskCreateResponse(BaseModel):
     attempt: int = 0
     test_result: str | None = None
     started_at: str | None = None
+    task_kind: str | None = None
 
 
 
@@ -310,6 +311,13 @@ def hydrate_runtime_from_database() -> None:
             test_result=row["test_result"],
             started_at=row["started_at"],
         )
+
+        route_record = get_task_route(
+            task.task_id
+        )
+
+        if route_record is not None:
+            task.task_kind = route_record["kind"]
 
         TASKS[task.task_id] = task
 
@@ -514,6 +522,8 @@ def run_task_for_api(task_id: str):
         task_route.kind,
         task_route.reason,
     )
+
+    task.task_kind = task_route.kind
 
     append_task_log(
         task_id,

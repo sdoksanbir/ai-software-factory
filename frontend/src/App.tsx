@@ -858,9 +858,7 @@ function App() {
     }))
 
   const isReadPipeline =
-    pipeline?.stages.some(
-      (stage) => stage.id === "completed",
-    ) ?? false
+    selectedTask?.task_kind === "read"
 
   const systemHealthy =
     backendOnline &&

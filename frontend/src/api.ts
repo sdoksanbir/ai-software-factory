@@ -9,6 +9,7 @@ export type Task = {
   attempt: number
   test_result: string | null
   started_at: string | null
+  task_kind?: "read" | "write" | null
 }
 
 export type Project = {
