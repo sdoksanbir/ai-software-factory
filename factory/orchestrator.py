@@ -89,7 +89,13 @@ class Orchestrator:
 
             print("[-] Geçersiz seçim. 1, 2 veya 3 girin.")
 
-    def run_task(self, prompt: str, task_id: Optional[str] = None, max_attempts: int = 2) -> Optional[str]:
+    def run_task(
+        self,
+        prompt: str,
+        task_id: Optional[str] = None,
+        max_attempts: int = 2,
+        approval_handler=None,
+    ) -> Optional[str]:
         if not task_id:
             rand_num = random.randint(1000, 9999)
             task_id = f"TASK-{rand_num}"
@@ -280,6 +286,14 @@ class Orchestrator:
             print(diff_output if diff_output else "(Değişiklik görünmüyor)")
             print("-----------------------")
             print(f"[!] Worktree Konumu: {wt_result.path}")
+
+            if approval_handler is not None:
+                return approval_handler(
+                    task_id,
+                    state_machine,
+                    wt_result,
+                    diff_output,
+                )
 
             return self._handle_cli_approval(
                 task_id,
