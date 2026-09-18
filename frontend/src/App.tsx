@@ -19,12 +19,12 @@ import {
 import "./App.css"
 
 const stateLabels: Record<string, string> = {
-  queued: "S?rada",
-  running: "?al???yor",
+  queued: "Sırada",
+  running: "Çalışıyor",
   ready_for_approval: "Onay Bekliyor",
-  approved: "Onayland?",
+  approved: "Onaylandı",
   rejected: "Reddedildi",
-  failed: "Ba?ar?s?z",
+  failed: "Başarısız",
 }
 
 function formatDate(value: string | null) {
@@ -59,7 +59,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Backend ba?lant?s? kurulamad?.",
+          : "Backend bağlantısı kurulamadı.",
       )
     }
   }, [])
@@ -114,7 +114,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "G?rev olu?turulamad?.",
+          : "Görev oluşturulamadı.",
       )
     } finally {
       setSubmitting(false)
@@ -129,12 +129,12 @@ function App() {
 
     try {
       const result = await getTaskDiff(taskId)
-      setDiff(result.diff || "De?i?iklik bulunamad?.")
+      setDiff(result.diff || "Değişiklik bulunamadı.")
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Diff al?namad?.",
+          : "Diff alınamadı.",
       )
     } finally {
       setLoadingDiff(false)
@@ -168,7 +168,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "??lem tamamlanamad?.",
+          : "İşlem tamamlanamadı.",
       )
     } finally {
       setActionLoading(false)
@@ -214,7 +214,7 @@ function App() {
             <p className="eyebrow">LOCAL DEVELOPMENT CONTROL</p>
             <h1>AI Software Factory</h1>
             <p className="subtitle">
-              G?rev olu?tur, AI ajan?n? ?al??t?r, testleri izle ve
+              Görev olu?tur, AI ajan?n? ?al??t?r, testleri izle ve
               de?i?iklikleri onayla.
             </p>
           </div>
@@ -226,7 +226,7 @@ function App() {
 
         {error && (
           <div className="error-banner">
-            <strong>??lem hatas?</strong>
+            <strong>İşlem hatası</strong>
             <span>{error}</span>
             <button onClick={() => setError(null)}>?</button>
           </div>
@@ -234,7 +234,7 @@ function App() {
 
         <section className="stats-grid">
           <article className="stat-card">
-            <span>Toplam G?rev</span>
+            <span>Toplam Görev</span>
             <strong>{stats.total}</strong>
           </article>
 
@@ -249,7 +249,7 @@ function App() {
           </article>
 
           <article className="stat-card">
-            <span>Ba?ar?s?z</span>
+            <span>Başarısız</span>
             <strong>{stats.failed}</strong>
           </article>
         </section>
@@ -260,14 +260,14 @@ function App() {
               <div className="section-heading">
                 <div>
                   <span className="section-kicker">NEW TASK</span>
-                  <h2>Yeni g?rev olu?tur</h2>
+                  <h2>Yeni görev oluştur</h2>
                 </div>
               </div>
 
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="?rn: math_utils.py dosyas?nda factorial(n) fonksiyonu olu?tur..."
+                placeholder="Örn: math_utils.py dosyasında factorial(n) fonksiyonu oluştur..."
                 rows={5}
               />
 
@@ -293,7 +293,7 @@ function App() {
                   type="submit"
                   disabled={submitting || !prompt.trim()}
                 >
-                  {submitting ? "Ba?lat?l?yor..." : "G?revi Ba?lat"}
+                  {submitting ? "Başlatılıyor..." : "Görevi Başlat"}
                 </button>
               </div>
             </form>
@@ -302,20 +302,20 @@ function App() {
               <div className="section-heading">
                 <div>
                   <span className="section-kicker">TASK QUEUE</span>
-                  <h2>G?revler</h2>
+                  <h2>Görevler</h2>
                 </div>
 
                 <span className="task-count">
-                  {tasks.length} g?rev
+                  {tasks.length} görev
                 </span>
               </div>
 
               <div className="task-list">
                 {tasks.length === 0 && (
                   <div className="empty-state">
-                    <strong>Hen?z g?rev yok.</strong>
+                    <strong>Hen?z görev yok.</strong>
                     <span>
-                      Yukar?daki alandan ilk g?revi olu?turabilirsin.
+                      Yukar?daki alandan ilk görevi olu?turabilirsin.
                     </span>
                   </div>
                 )}
@@ -356,10 +356,10 @@ function App() {
             {!selectedTask && (
               <div className="detail-empty">
                 <div className="detail-icon">?</div>
-                <strong>G?rev se?</strong>
+                <strong>Görev seç</strong>
                 <span>
                   Ayr?nt?lar?, diff ??kt?s?n? ve i?lem butonlar?n?
-                  g?rmek i?in listeden bir g?rev se?.
+                  g?rmek i?in listeden bir görev se?.
                 </span>
               </div>
             )}
@@ -393,13 +393,13 @@ function App() {
                     <strong>{selectedTask.test_result ?? "?"}</strong>
                   </div>
                   <div>
-                    <span>Ba?lang??</span>
+                    <span>Başlangıç</span>
                     <strong>{formatDate(selectedTask.started_at)}</strong>
                   </div>
                 </div>
 
                 <div className="prompt-box">
-                  <span>G?rev</span>
+                  <span>Görev</span>
                   <p>{selectedTask.prompt}</p>
                 </div>
 
@@ -437,7 +437,7 @@ function App() {
                   <div className="diff-heading">
                     <div>
                       <span>Git Diff</span>
-                      <small>AI taraf?ndan olu?turulan de?i?iklikler</small>
+                      <small>AI tarafından oluşturulan değişiklikler</small>
                     </div>
 
                     <button
@@ -450,15 +450,15 @@ function App() {
                         void handleDiff(selectedTask.task_id)
                       }
                     >
-                      {loadingDiff ? "Y?kleniyor..." : "Diff G?ster"}
+                      {loadingDiff ? "Yükleniyor..." : "Diff Göster"}
                     </button>
                   </div>
 
                   <pre className="diff-view">
                     {diff ||
                       (selectedTask.state === "ready_for_approval"
-                        ? "Diff g?r?nt?lemek i?in butona bas."
-                        : "Bu g?rev i?in kullan?labilir diff yok.")}
+                        ? "Diff görüntülemek için butona bas."
+                        : "Bu görev i?in kullan?labilir diff yok.")}
                   </pre>
                 </div>
               </>
