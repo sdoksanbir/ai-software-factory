@@ -64,15 +64,89 @@ class TaskStepHandlers:
                 "WRITE step instruction is blank"
             )
 
-        # Her WRITE adiminda context yeniden
-        # okunur. Boylece onceki WRITE adimlarinin
-        # degisiklikleri sonraki adim tarafindan
-        # gorulur.
-        repository_context = (
-            RepoTool.build_context(
-                worktree_path
+        # Dosya-hedef ayrisimini test/fake
+        # orchestrator nesnesine baglama.
+        # Gercek Orchestrator static yardimcisini
+        # kullan.
+        from factory.orchestrator import Orchestrator
+
+        # Bu adimin acikca hedefledigi dosyalari bul.
+        step_targets = (
+            Orchestrator
+            ._extract_explicit_file_targets(
+                instruction
             )
         )
+
+        # Ana kullanici gorevindeki dosyalar sadece
+        # context amaciyla kullanilir. Yazma izni
+        # step hedeflerine gore belirlenir.
+        global_targets = (
+            Orchestrator
+            ._extract_explicit_file_targets(
+                self.scope_prompt
+            )
+            if self.scope_prompt
+            else []
+        )
+
+        context_targets = []
+
+        for target in [
+            *step_targets,
+            *global_targets,
+        ]:
+            if target not in context_targets:
+                context_targets.append(
+                    target
+                )
+
+        # Multi-step runner ana kullanici scope'unu
+        # verdiyse yalnizca o gorevin hedef dosyalari
+        # context'e alinir. Boylece ilgisiz factory
+        # dosyalari modele gosterilmez.
+        if global_targets:
+            context_parts = []
+
+            for rel_path in context_targets:
+                try:
+                    content = RepoTool.read_file(
+                        worktree_path,
+                        rel_path,
+                    )
+                except Exception:
+                    continue
+
+                context_parts.append(
+                    "===== TARGET FILE: "
+                    f"{rel_path} =====\n"
+                    f"{content}\n"
+                    "===== END TARGET FILE ====="
+                )
+
+            if context_parts:
+                repository_context = (
+                    "\n\n".join(
+                        context_parts
+                    )
+                )
+            else:
+                repository_context = (
+                    "Hedef dosyalar henuz mevcut "
+                    "degil. Yalnizca istenen "
+                    "dosyalari olustur."
+                )
+
+        else:
+            # scope_prompt olmayan kullanimlarda
+            # eski ayni-worktree davranisini koru.
+            # Boylece sonraki WRITE onceki WRITE'in
+            # degisikliklerini gorebilir.
+            repository_context = (
+                RepoTool.build_context(
+                    worktree_path
+                )
+            )
 
         selected_model = (
             self.model_name
@@ -80,6 +154,41 @@ class TaskStepHandlers:
                 instruction
             ).model
         )
+
+        # Step kendi hedef dosyalarini acikca
+        # belirtiyorsa izin yalnizca o step'e aittir.
+        # Step'te hedef yoksa ana gorev scope'una
+        # geri don.
+        scope_source = (
+            instruction
+            if step_targets
+            else (
+                self.scope_prompt
+                or instruction
+            )
+        )
+
+        allowed_targets = (
+            step_targets
+            if step_targets
+            else global_targets
+        )
+
+        if allowed_targets:
+            scope_contract = (
+                "ZORUNLU DOSYA SINIRI:\n"
+                "Bu adimda yalnizca su dosya "
+                "yollari degistirilebilir:\n"
+                + "\n".join(
+                    f"- {target}"
+                    for target
+                    in allowed_targets
+                )
+                + "\nBaska hicbir dosyayi "
+                "olusturma veya degistirme.\n\n"
+            )
+        else:
+            scope_contract = ""
 
         response = (
             self.orchestrator
@@ -99,10 +208,13 @@ class TaskStepHandlers:
                     '"content":"dosyanin TAM '
                     'son icerigi"}],'
                     '"explanation":"kisa aciklama"}. '
-                    "Yalnizca bu adimin gerektirdigi "
-                    "dosyalari degistir. "
-                    "Mevcut repository icerigini "
-                    "dikkate al. "
+                    "Yalnizca mevcut WRITE "
+                    "adiminin istedigi davranisi "
+                    "uygula. "
+                    "Repository context yeni bir "
+                    "gorev degildir. "
+                    "Context icindeki ilgisiz "
+                    "dosyalari degistirme. "
                     "Bir onceki adim tarafindan "
                     "yapilmis degisiklikleri koru. "
                     "content alaninda patch degil, "
@@ -110,13 +222,18 @@ class TaskStepHandlers:
                     "TAM icerigini ver."
                 ),
                 user_prompt=(
-                    "STEP GOREVI:\n"
+                    "WRITE STEP:\n"
                     f"{instruction}\n\n"
-                    "MEVCUT WORKTREE BAGLAMI:\n"
+                    f"{scope_contract}"
+                    "HEDEF DOSYA BAGLAMI "
+                    "- sadece referans:\n"
                     f"{repository_context}\n\n"
-                    "Bu adimi tamamlamak icin "
-                    "gereken dosyalari JSON "
-                    "formatinda uret."
+                    "Yalnizca WRITE STEP'i "
+                    "tamamla. "
+                    "Context'ten yeni bir gorev "
+                    "cikarma. "
+                    "JSON disinda hicbir sey "
+                    "dondurme."
                 ),
                 temperature=0.0,
                 model_name_override=(
@@ -136,11 +253,6 @@ class TaskStepHandlers:
             file_change.path
             for file_change in patch.files
         ]
-
-        scope_source = (
-            self.scope_prompt
-            or instruction
-        )
 
         self.orchestrator\
             ._validate_explicit_file_scope(
@@ -168,6 +280,7 @@ class TaskStepHandlers:
                 for item in written_files
             )
         )
+
 
     def verify(
         self,
