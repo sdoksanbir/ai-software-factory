@@ -213,6 +213,38 @@ def _extract_json_object(
     return parsed
 
 
+def _correct_step_kind(
+    title: str,
+    instruction: str,
+    kind: str,
+) -> str:
+    if kind != "verify":
+        return kind
+
+    tokens = _prompt_tokens(
+        f"{title} {instruction}"
+    )
+
+    write_tokens = {
+        "yaz",
+        "olustur",
+        "ekle",
+        "degistir",
+        "guncelle",
+        "uygula",
+        "implement",
+        "create",
+        "add",
+        "write",
+        "update",
+    }
+
+    if tokens & write_tokens:
+        return "write"
+
+    return kind
+
+
 def _normalize_model_steps(
     payload: dict[str, Any],
 ) -> tuple[
@@ -264,6 +296,12 @@ def _normalize_model_steps(
             raw_step.get("kind") or ""
         ).strip().lower()
 
+        kind = _correct_step_kind(
+            title,
+            instruction,
+            kind,
+        )
+
         if not title:
             raise ValueError(
                 "Planner step title is blank"
@@ -306,6 +344,48 @@ def _normalize_model_steps(
     return summary, normalized
 
 
+def _ensure_read_first(
+    prompt: str,
+    steps: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    has_write = any(
+        step["kind"] == "write"
+        for step in steps
+    )
+
+    if not has_write:
+        return steps
+
+    if steps and steps[0]["kind"] == "read":
+        return steps
+
+    if len(steps) >= MAX_PLAN_STEPS:
+        raise ValueError(
+            "Planner planinda zorunlu READ adimi "
+            "icin yer yok"
+        )
+
+    read_step = {
+        "title": "Mevcut yap\u0131y\u0131 incele",
+        "instruction": (
+            "Kullan\u0131c\u0131 g\u00f6reviyle ilgili mevcut "
+            "repository yap\u0131s\u0131n\u0131, dosyalar\u0131, "
+            "API ba\u011flant\u0131lar\u0131n\u0131 ve test "
+            "altyap\u0131s\u0131n\u0131 incele. "
+            "De\u011fi\u015ftirilecek bile\u015fenleri belirle. "
+            "Bu ad\u0131mda dosya de\u011fi\u015ftirme."
+        ),
+        "kind": "read",
+        "status": "pending",
+        "attempt": 0,
+    }
+
+    return [
+        read_step,
+        *steps,
+    ]
+
+
 def build_task_plan(
     prompt: str,
     *,
@@ -340,7 +420,7 @@ def build_task_plan(
     )
 
     response = model_client.complete(
-        model_role="coder_local",
+        model_role="fast_local",
         system_prompt=(
             "Sen bir yazilim gorev "
             "planlayicisisin. "
@@ -350,16 +430,28 @@ def build_task_plan(
             "Yanitin sadece gecerli JSON olmali. "
             "Markdown kullanma. "
             "En az 2, en fazla 6 adim uret. "
+            "Tercihen 3-5 adim kullan. "
             "Her adim tek bir net amaca "
             "sahip olmali. "
             "kind sadece read, write veya "
             "verify olabilir. "
-            "read mevcut sistemi incelemek "
-            "icindir. "
-            "write dosya veya kod degisikligi "
-            "icindir. "
-            "verify test veya final dogrulama "
-            "icindir. "
+            "Mevcut bir repository degisecekse "
+            "ilk adim genellikle read olmali. "
+            "read yalnizca mevcut sistemi "
+            "incelemek icindir. "
+            "write dosya veya kod olusturma, "
+            "degistirme ve test kodu yazma "
+            "isleri icindir. "
+            "Test yazmak verify degil write'tir. "
+            "verify dosya degistirmez; yalnizca "
+            "testleri calistirir ve sonucu "
+            "dogrular. "
+            "Ayni mantiksal ozellige ait kod ve "
+            "testleri mumkunse ayni write "
+            "adiminda tut. "
+            "Frontend formu ile onun API "
+            "baglantisini gereksiz yere ayri "
+            "write adimlarina bolme. "
             "Gereksiz adim olusturma. "
             "Ayni isi birden fazla adima bolme. "
             "JSON semasi: "
@@ -388,6 +480,11 @@ def build_task_plan(
         _normalize_model_steps(
             payload
         )
+    )
+
+    steps = _ensure_read_first(
+        clean_prompt,
+        steps,
     )
 
     return {
