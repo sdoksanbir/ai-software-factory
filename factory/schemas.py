@@ -61,6 +61,23 @@ class PatchResult(BaseModel):
     files_changed: List[str] = Field(default_factory=list)
 
 
+class FileChange(BaseModel):
+    path: str
+    content: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Dosya yolu boş olamaz.")
+        return v.strip()
+
+
+class MultiFilePatch(BaseModel):
+    files: List[FileChange] = Field(..., min_length=1)
+    explanation: str = ""
+
+
 class TestResult(BaseModel):
     success: bool
     exit_code: int
