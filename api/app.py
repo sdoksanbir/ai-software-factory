@@ -33,6 +33,38 @@ class TaskCreateResponse(BaseModel):
 TASKS: dict[str, TaskCreateResponse] = {}
 
 
+def update_task_runtime(
+    task_id: str,
+    *,
+    status: str | None = None,
+    state: str | None = None,
+    model: str | None = None,
+    attempt: int | None = None,
+    test_result: str | None = None,
+) -> TaskCreateResponse:
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise KeyError(f"Unknown task: {task_id}")
+
+    if status is not None:
+        task.status = status
+
+    if state is not None:
+        task.state = state
+
+    if model is not None:
+        task.model = model
+
+    if attempt is not None:
+        task.attempt = attempt
+
+    if test_result is not None:
+        task.test_result = test_result
+
+    return task
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
