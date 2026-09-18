@@ -1000,10 +1000,15 @@ def approve_task(task_id: str):
         ) from exc
 
     try:
-        orchestrator.git_manager.commit_all(
-            wt_result.path,
-            f"{task_id}: AI generated changes",
+        worktree_status = orchestrator.git_manager.get_status(
+            wt_result.path
         )
+
+        if worktree_status.strip():
+            orchestrator.git_manager.commit_all(
+                wt_result.path,
+                f"{task_id}: AI generated changes",
+            )
 
         orchestrator.git_manager.merge_branch(
             wt_result.branch

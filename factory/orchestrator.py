@@ -115,10 +115,17 @@ class Orchestrator:
                 continue
 
             if choice == "2":
-                commit_hash = self.git_manager.commit_all(
-                    wt_result.path,
-                    f"{task_id}: AI generated changes"
+                worktree_status = self.git_manager.get_status(
+                    wt_result.path
                 )
+
+                if worktree_status.strip():
+                    commit_hash = self.git_manager.commit_all(
+                        wt_result.path,
+                        f"{task_id}: AI generated changes"
+                    )
+                else:
+                    commit_hash = "already committed"
 
                 merge_hash = self.git_manager.merge_branch(
                     wt_result.branch
