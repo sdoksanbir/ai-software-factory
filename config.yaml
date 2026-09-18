@@ -1,0 +1,38 @@
+factory:
+  name: "AI Software Factory"
+  environment: "development"
+
+models:
+  fast_local:
+    provider: "ollama"
+    model: "qwen2.5-coder:14b"
+    api_base: "http://localhost:11434"
+    temperature: 0.1
+    timeout_seconds: 120
+
+  heavy_local:
+    provider: "ollama"
+    model: "devstral-small-2"
+    api_base: "http://localhost:11434"
+    temperature: 0.1
+    timeout_seconds: 180
+
+  cloud_senior:
+    provider: "openai" # Gelecekte env variable ile desteklenecek
+    model: "gpt-4o"
+    api_base: null
+    temperature: 0.1
+    timeout_seconds: 60
+
+cloud:
+  enabled: false
+  max_cost_per_task_usd: 0.50
+  max_daily_cost_usd: 3.00
+
+routing:
+  default_model: "fast_local"
+  heavy_model: "heavy_local"
+  cloud_model: "cloud_senior"
+
+generation:
+  max_retries: 1
