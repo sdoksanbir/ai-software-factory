@@ -11,11 +11,15 @@ import {
   createTask,
   createProject,
   getTaskDiff,
+  getTaskPipeline,
+  getControlCenterStatus,
   listTasks,
   listProjects,
   rejectTask,
   retryTask,
   type Project,
+  type TaskPipeline,
+  type ControlCenterStatus,
   type Task,
 } from "./api"
 
@@ -53,6 +57,10 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [backendOnline, setBackendOnline] = useState(true)
   const [liveLogs, setLiveLogs] = useState<string[]>([])
+  const [controlCenter, setControlCenter] =
+    useState<ControlCenterStatus | null>(null)
+  const [pipeline, setPipeline] =
+    useState<TaskPipeline | null>(null)
   const [projectFormOpen, setProjectFormOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState("")
   const [newProjectPath, setNewProjectPath] = useState("")
@@ -129,6 +137,64 @@ function App() {
     setDiff("")
     setLiveLogs([])
   }, [selectedProjectId])
+
+  const loadControlCenter = useCallback(async () => {
+    if (!selectedProjectId) {
+      setControlCenter(null)
+      return
+    }
+
+    try {
+      const data = await getControlCenterStatus(
+        selectedProjectId,
+      )
+
+      setControlCenter(data)
+    } catch {
+      setControlCenter(null)
+    }
+  }, [selectedProjectId])
+
+  useEffect(() => {
+    void loadControlCenter()
+
+    const timer = window.setInterval(() => {
+      void loadControlCenter()
+    }, 5000)
+
+    return () => window.clearInterval(timer)
+  }, [loadControlCenter])
+
+  const loadPipeline = useCallback(async () => {
+    if (!selectedTaskId) {
+      setPipeline(null)
+      return
+    }
+
+    try {
+      const data = await getTaskPipeline(
+        selectedTaskId,
+      )
+
+      setPipeline(data)
+    } catch {
+      setPipeline(null)
+    }
+  }, [selectedTaskId])
+
+  useEffect(() => {
+    void loadPipeline()
+
+    if (!selectedTaskId) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      void loadPipeline()
+    }, 2000)
+
+    return () => window.clearInterval(timer)
+  }, [loadPipeline, selectedTaskId])
 
   const selectedProject = useMemo(
     () =>
@@ -517,6 +583,271 @@ function App() {
             <button onClick={() => setError(null)}>?</button>
           </div>
         )}
+
+        <section className="control-center">
+          <div className="control-center-heading">
+            <div>
+              <span className="section-kicker">
+                CONTROL CENTER
+              </span>
+              <h2>Sistem ve Ajan Durumu</h2>
+            </div>
+
+            <div className="control-project-badge">
+              <span className="connection-dot online" />
+              <span>
+                {selectedProject?.name ??
+                  "Proje seçilmedi"}
+              </span>
+            </div>
+          </div>
+
+          <div className="control-status-grid">
+            <article className="control-status-card">
+              <div className="control-card-title">
+                <span>Sistem</span>
+                <small>
+                  {controlCenter?.system.platform ?? "—"}
+                </small>
+              </div>
+
+              <div className="resource-grid">
+                <div className="resource-item">
+                  <span>CPU</span>
+                  <strong>
+                    {controlCenter?.system.cpu.used_percent !=
+                    null
+                      ? `${Math.round(
+                          controlCenter.system.cpu
+                            .used_percent,
+                        )}%`
+                      : "—"}
+                  </strong>
+                  <small>
+                    {controlCenter?.system.cpu.logical_count ??
+                      "—"}{" "}
+                    mantıksal çekirdek
+                  </small>
+                </div>
+
+                <div className="resource-item">
+                  <span>RAM</span>
+                  <strong>
+                    {controlCenter?.system.memory
+                      .used_percent != null
+                      ? `${Math.round(
+                          controlCenter.system.memory
+                            .used_percent,
+                        )}%`
+                      : "—"}
+                  </strong>
+                  <small>Bellek kullanımı</small>
+                </div>
+
+                <div className="resource-item">
+                  <span>Disk</span>
+                  <strong>
+                    {controlCenter?.system.disk
+                      .used_percent != null
+                      ? `${Math.round(
+                          controlCenter.system.disk
+                            .used_percent,
+                        )}%`
+                      : "—"}
+                  </strong>
+                  <small>Disk kullanımı</small>
+                </div>
+
+                <div className="resource-item">
+                  <span>Git</span>
+                  <strong>
+                    {controlCenter?.git.branch ?? "—"}
+                  </strong>
+                  <small>
+                    {controlCenter?.git.clean === true
+                      ? "Temiz"
+                      : controlCenter?.git.clean === false
+                        ? "Değişiklik var"
+                        : "Bilinmiyor"}
+                  </small>
+                </div>
+              </div>
+            </article>
+
+            <article className="control-status-card">
+              <div className="control-card-title">
+                <span>Servisler</span>
+                <small>Local Runtime</small>
+              </div>
+
+              <div className="service-list">
+                <div className="service-row">
+                  <span
+                    className={`service-dot ${
+                      controlCenter?.services.docker
+                        .online
+                        ? "online"
+                        : "offline"
+                    }`}
+                  />
+                  <div>
+                    <strong>Docker</strong>
+                    <small>
+                      {controlCenter?.services.docker
+                        .online
+                        ? "Online"
+                        : "Offline"}
+                    </small>
+                  </div>
+                </div>
+
+                <div className="service-row">
+                  <span
+                    className={`service-dot ${
+                      controlCenter?.services.ollama
+                        .online
+                        ? "online"
+                        : "offline"
+                    }`}
+                  />
+                  <div>
+                    <strong>Ollama</strong>
+                    <small>
+                      {controlCenter?.services.ollama
+                        .online
+                        ? "Online"
+                        : "Offline"}
+                    </small>
+                  </div>
+                </div>
+
+                <div className="service-row git-service-row">
+                  <span
+                    className={`service-dot ${
+                      controlCenter?.git.available
+                        ? "online"
+                        : "offline"
+                    }`}
+                  />
+                  <div>
+                    <strong>Git Repository</strong>
+                    <small>
+                      {controlCenter?.git.commit
+                        ? `Commit ${controlCenter.git.commit}`
+                        : "Durum alınamadı"}
+                    </small>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article className="control-status-card model-card">
+              <div className="control-card-title">
+                <span>Local Modeller</span>
+                <small>
+                  {controlCenter?.services.ollama.models
+                    .length ?? 0}{" "}
+                  model
+                </small>
+              </div>
+
+              <div className="model-list">
+                {controlCenter?.services.ollama.models
+                  .slice(0, 5)
+                  .map((model) => (
+                    <div
+                      className="model-row"
+                      key={model.name}
+                    >
+                      <span className="model-icon">
+                        AI
+                      </span>
+
+                      <span>{model.name}</span>
+                    </div>
+                  ))}
+
+                {controlCenter &&
+                  controlCenter.services.ollama.models
+                    .length === 0 && (
+                    <div className="model-empty">
+                      Yüklü model bulunamadı.
+                    </div>
+                  )}
+              </div>
+            </article>
+          </div>
+
+          <article className="pipeline-card">
+            <div className="pipeline-header">
+              <div>
+                <span className="section-kicker">
+                  AGENT PIPELINE
+                </span>
+
+                <strong>
+                  {selectedTask
+                    ? selectedTask.task_id
+                    : "Görev seç"}
+                </strong>
+              </div>
+
+              <div className="pipeline-progress-text">
+                {pipeline
+                  ? `${pipeline.progress_percent}%`
+                  : "—"}
+              </div>
+            </div>
+
+            <div className="pipeline-track">
+              {pipeline ? (
+                pipeline.stages.map(
+                  (stage, index) => (
+                    <div
+                      className="pipeline-stage-wrap"
+                      key={stage.id}
+                    >
+                      <div
+                        className={`pipeline-stage pipeline-${stage.status}`}
+                      >
+                        <span className="pipeline-stage-dot">
+                          {stage.status === "success"
+                            ? "✓"
+                            : stage.status === "failed"
+                              ? "!"
+                              : stage.status === "rejected"
+                                ? "×"
+                                : index + 1}
+                        </span>
+
+                        <span className="pipeline-stage-label">
+                          {stage.label}
+                        </span>
+                      </div>
+
+                      {index <
+                        pipeline.stages.length - 1 && (
+                        <span
+                          className={`pipeline-connector ${
+                            stage.status ===
+                              "success"
+                              ? "complete"
+                              : ""
+                          }`}
+                        />
+                      )}
+                    </div>
+                  ),
+                )
+              ) : (
+                <div className="pipeline-empty">
+                  Pipeline durumunu görmek için
+                  bir görev seç.
+                </div>
+              )}
+            </div>
+          </article>
+        </section>
 
         <section className="stats-grid">
           <article className="stat-card">

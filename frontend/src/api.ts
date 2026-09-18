@@ -24,6 +24,80 @@ export type TaskDiff = {
   diff: string
 }
 
+export type PipelineStage = {
+  id: string
+  label: string
+  status:
+    | "pending"
+    | "active"
+    | "success"
+    | "failed"
+    | "waiting"
+    | "rejected"
+}
+
+export type TaskPipeline = {
+  task_id: string
+  task_state: string
+  current_stage: string
+  progress_percent: number
+  stages: PipelineStage[]
+}
+
+export type ControlCenterStatus = {
+  generated_at: string
+  system: {
+    platform: string
+    platform_release: string
+    python_version: string
+    cpu: {
+      logical_count: number | null
+      used_percent: number | null
+    }
+    memory: {
+      available: boolean
+      total_bytes: number | null
+      available_bytes: number | null
+      used_percent: number | null
+    }
+    disk: {
+      total_bytes: number | null
+      used_bytes: number | null
+      free_bytes: number | null
+      used_percent: number | null
+    }
+  }
+  services: {
+    docker: {
+      installed: boolean
+      online: boolean
+      version: string | null
+    }
+    ollama: {
+      installed: boolean
+      online: boolean
+      models: Array<{
+        name: string
+        size: number | null
+        modified_at: string | null
+      }>
+    }
+  }
+  git: {
+    available: boolean
+    branch: string | null
+    commit: string | null
+    clean: boolean | null
+  }
+  tasks: {
+    total: number
+    running: number
+    approval: number
+    failed: number
+    approved: number
+  }
+}
+
 const API_BASE = "/api"
 
 async function request<T>(
@@ -155,4 +229,27 @@ export function deleteProject(
       )
     }
   })
+}
+
+
+
+export function getControlCenterStatus(
+  projectId?: string | null,
+) {
+  const query = projectId
+    ? `?project_id=${encodeURIComponent(projectId)}`
+    : ""
+
+  return request<ControlCenterStatus>(
+    `/control-center/status${query}`,
+  )
+}
+
+
+export function getTaskPipeline(
+  taskId: string,
+) {
+  return request<TaskPipeline>(
+    `/tasks/${taskId}/pipeline`,
+  )
 }
