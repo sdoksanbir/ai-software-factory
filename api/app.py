@@ -41,6 +41,7 @@ from factory.task_route_store import (
     save_task_route,
 )
 from factory.read_task_runner import run_read_task
+from factory.task_execution_dispatcher import execute_write_task
 from factory.task_read_results import (
     get_task_read_result,
     save_task_read_result,
@@ -650,13 +651,22 @@ def run_task_for_api(task_id: str):
             return
 
     try:
-        result = orchestrator.run_task(
-            task.prompt,
+        result, execution_plan = execute_write_task(
+            orchestrator=orchestrator,
+            prompt=task.prompt,
             task_id=task_id,
             max_attempts=task.max_attempts,
+            model_route=model_route,
             approval_handler=api_approval_handler,
             progress_handler=api_progress_handler,
-            model_route=model_route,
+        )
+
+        append_task_log(
+            task_id,
+            (
+                "Planner modu: "
+                f"{execution_plan.get('planner_mode', 'single_step')}"
+            ),
         )
     except Exception:
         append_task_log(

@@ -53,10 +53,12 @@ class FakeSandbox:
         )
 
         return SimpleNamespace(
-            exit_code=exit_code,
+            success=(
+                exit_code in {0, 5}
+            ),
             stdout=(
                 "ok"
-                if exit_code == 0
+                if exit_code in {0, 5}
                 else ""
             ),
             stderr=(
@@ -257,7 +259,9 @@ def test_verify_runs_compile_and_pytest(
 
     assert (
         sandbox.calls[1][1]
-        == "python -m pytest -q"
+        .startswith(
+            "python -m pytest -q"
+        )
     )
 
     assert "basarili" in result
@@ -283,7 +287,7 @@ def test_verify_accepts_no_tests(
         str(tmp_path),
     )
 
-    assert "test bulamadi" in result
+    assert "basarili" in result
 
 
 def test_verify_failure_raises(

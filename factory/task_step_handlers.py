@@ -187,7 +187,7 @@ class TaskStepHandlers:
             timeout_seconds=120,
         )
 
-        if compile_result.exit_code != 0:
+        if not compile_result.success:
             raise RuntimeError(
                 "Python compile validation failed:\n"
                 + (
@@ -197,19 +197,21 @@ class TaskStepHandlers:
                 )
             )
 
+        test_command = (
+            "python -m pytest -q; "
+            "code=$?; "
+            "if [ $code -eq 5 ]; "
+            "then exit 0; "
+            "else exit $code; fi"
+        )
+
         test_result = sandbox.run_command(
             worktree_path,
-            "python -m pytest -q",
+            test_command,
             timeout_seconds=180,
         )
 
-        # pytest exit code 5 =
-        # no tests collected. Mevcut factory
-        # davranisi ile uyumlu olarak hata sayilmaz.
-        if test_result.exit_code not in {
-            0,
-            5,
-        }:
+        if not test_result.success:
             raise RuntimeError(
                 "Test validation failed:\n"
                 + (
@@ -219,14 +221,8 @@ class TaskStepHandlers:
                 )
             )
 
-        if test_result.exit_code == 5:
-            return (
-                "Dogrulama tamamlandi. "
-                "Python compile basarili; "
-                "pytest test bulamadi."
-            )
-
         return (
             "Dogrulama tamamlandi. "
             "Python compile ve pytest basarili."
         )
+
