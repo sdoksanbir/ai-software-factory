@@ -168,13 +168,67 @@ class Orchestrator:
         if success:
             if not state_machine.is_terminal:
                 state_machine.transition(TaskStatus.READY_FOR_APPROVAL)
+
             diff_output = self.git_manager.get_diff(wt_result.path)
+
             print(f"\n[✨] Görev Başarıyla Tamamlandı! Task ID: {task_id}")
-            print(f"\n--- Oluşan Git Diff ---")
+            print("\n--- Oluşan Git Diff ---")
             print(diff_output if diff_output else "(Değişiklik görünmüyor)")
-            print(f"-----------------------")
-            print(f"[!] Worktree Konumu (İnceleme için): {wt_result.path}")
-            return wt_result.path
+            print("-----------------------")
+            print(f"[!] Worktree Konumu: {wt_result.path}")
+
+            while True:
+                print("\n--- İnsan Onayı ---")
+                print("[1] Diff'i tekrar göster")
+                print("[2] Onayla ve ana dala birleştir")
+                print("[3] Reddet ve değişiklikleri sil")
+
+                choice = input("Seçiminiz [1/2/3]: ").strip()
+
+                if choice == "1":
+                    print("\n--- Oluşan Git Diff ---")
+                    print(diff_output if diff_output else "(Değişiklik görünmüyor)")
+                    print("-----------------------")
+                    continue
+
+                if choice == "2":
+                    commit_hash = self.git_manager.commit_all(
+                        wt_result.path,
+                        f"{task_id}: AI generated changes"
+                    )
+
+                    merge_hash = self.git_manager.merge_branch(
+                        wt_result.branch
+                    )
+
+                    self.git_manager.remove_worktree(wt_result.path)
+                    self.git_manager.delete_branch(wt_result.branch)
+
+                    state_machine.transition(TaskStatus.APPROVED)
+
+                    print("\n[+] Onaylandı.")
+                    print(f"[+] Task commit: {commit_hash}")
+                    print(f"[+] Merge commit: {merge_hash}")
+                    print("[+] Worktree ve görev branch'i temizlendi.")
+                    return None
+
+                if choice == "3":
+                    self.git_manager.remove_worktree(
+                        wt_result.path,
+                        force=True
+                    )
+                    self.git_manager.delete_branch(
+                        wt_result.branch,
+                        force=True
+                    )
+
+                    state_machine.transition(TaskStatus.REJECTED)
+
+                    print("\n[-] Görev reddedildi.")
+                    print("[+] Worktree ve görev branch'i silindi.")
+                    return None
+
+                print("[-] Geçersiz seçim. 1, 2 veya 3 girin.")
         else:
             if not state_machine.is_terminal:
                 state_machine.transition(TaskStatus.FAILED)
