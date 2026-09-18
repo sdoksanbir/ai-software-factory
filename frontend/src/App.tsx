@@ -150,6 +150,14 @@ function App() {
       "overview",
     )
 
+  const [activeMainView, setActiveMainView] =
+    useState<"dashboard" | "models">(
+      "dashboard",
+    )
+
+  const [selectedModel, setSelectedModel] =
+    useState<string | null>(null)
+
   const [projectSettingsName, setProjectSettingsName] =
     useState("")
 
@@ -188,6 +196,28 @@ function App() {
       ) ?? null,
     [tasks, selectedTaskId],
   )
+
+  const availableModels = useMemo<string[]>(
+    () =>
+      (
+        controlCenter?.services.ollama.models ?? []
+      ).map((model) => model.name),
+    [controlCenter?.services.ollama.models],
+  )
+
+  useEffect(() => {
+    if (availableModels.length === 0) {
+      setSelectedModel(null)
+      return
+    }
+
+    if (
+      !selectedModel ||
+      !availableModels.includes(selectedModel)
+    ) {
+      setSelectedModel(availableModels[0])
+    }
+  }, [availableModels, selectedModel])
 
   const runningTasks = useMemo(
     () =>
@@ -702,35 +732,59 @@ function App() {
         </div>
 
         <nav className="main-nav">
-          <button className="active">
+          <button
+            className={
+              activeMainView === "dashboard"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveMainView("dashboard")
+            }
+          >
             <UiIcon name="dashboard" />
             {"Kontrol Paneli"}
           </button>
 
           <button
-            onClick={() =>
-              document
-                .getElementById("task-list")
-                ?.scrollIntoView({
-                  behavior: "smooth",
-                })
-            }
+            onClick={() => {
+              setActiveMainView("dashboard")
+              setActiveProjectTab("running")
+            }}
           >
             <UiIcon name="tasks" />
             {"G\u00f6revler"}
           </button>
 
-          <button>
+          <button
+            onClick={() =>
+              setActiveMainView("dashboard")
+            }
+          >
             <UiIcon name="projects" />
             {"Projeler"}
           </button>
 
-          <button>
+          <button
+            className={
+              activeMainView === "models"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveMainView("models")
+            }
+          >
             <UiIcon name="models" />
             {"Modeller"}
           </button>
 
-          <button>
+          <button
+            onClick={() => {
+              setActiveMainView("dashboard")
+              setActiveProjectTab("settings")
+            }}
+          >
             <UiIcon name="settings" />
             {"Ayarlar"}
           </button>
@@ -1027,7 +1081,210 @@ function App() {
         </section>
       </aside>
 
-      <main className="center-stage">
+      <main
+        className={`center-stage ${
+          activeMainView === "models"
+            ? "models-active"
+            : "dashboard-active"
+        }`}
+      >
+
+        {activeMainView === "models" && (
+          <section className="models-page">
+            <div className="models-page-header">
+              <div>
+                <span className="models-page-kicker">
+                  LOCAL AI MODELS
+                </span>
+
+                <h1>
+                  {"Yerel AI Modelleri"}
+                </h1>
+
+                <p>
+                  {"Ollama \u00fczerinden bu makinede kullan\u0131labilir modeller."}
+                </p>
+              </div>
+
+              <div
+                className={`ollama-health ${
+                  controlCenter?.services.ollama.online
+                    ? "online"
+                    : "offline"
+                }`}
+              >
+                <span />
+
+                <strong>
+                  {controlCenter?.services.ollama.online
+                    ? "Ollama \u00c7al\u0131\u015f\u0131yor"
+                    : "Ollama Kapal\u0131"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="models-summary-grid">
+              <div>
+                <span>{"Kurulu Model"}</span>
+                <strong>
+                  {availableModels.length}
+                </strong>
+              </div>
+
+              <div>
+                <span>Ollama</span>
+                <strong>
+                  {controlCenter?.services.ollama.online
+                    ? "ONLINE"
+                    : "OFFLINE"}
+                </strong>
+              </div>
+
+              <div>
+                <span>{"Se\u00e7ili Model"}</span>
+                <strong>
+                  {selectedModel ?? "\u2014"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="models-layout">
+              <section className="model-library-panel">
+                <div className="model-section-title">
+                  <div>
+                    <UiIcon name="models" />
+
+                    <div>
+                      <strong>
+                        {"Model K\u00fct\u00fcphanesi"}
+                      </strong>
+
+                      <small>
+                        {"Bu bilgisayarda kurulu modeller"}
+                      </small>
+                    </div>
+                  </div>
+
+                  <span>
+                    {availableModels.length}
+                  </span>
+                </div>
+
+                <div className="model-library-list">
+                  {availableModels.length === 0 && (
+                    <div className="models-empty">
+                      {controlCenter?.services.ollama.online
+                        ? "Kurulu Ollama modeli bulunamad\u0131."
+                        : "Ollama servisine ula\u015f\u0131lam\u0131yor."}
+                    </div>
+                  )}
+
+                  {availableModels.map((model) => (
+                    <button
+                      key={model}
+                      className={`model-library-item ${
+                        selectedModel === model
+                          ? "selected"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setSelectedModel(model)
+                      }
+                    >
+                      <div className="model-library-icon">
+                        <UiIcon name="model" />
+                      </div>
+
+                      <div className="model-library-copy">
+                        <strong>{model}</strong>
+
+                        <span>
+                          Ollama Local Model
+                        </span>
+                      </div>
+
+                      <span
+                        className="model-online-dot"
+                        title="Online"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="selected-model-panel">
+                {!selectedModel ? (
+                  <div className="selected-model-empty">
+                    <UiIcon name="models" />
+
+                    <strong>
+                      {"Model se\u00e7ilmedi"}
+                    </strong>
+
+                    <span>
+                      {"Detaylar\u0131 g\u00f6rmek i\u00e7in listeden bir model se\u00e7."}
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="selected-model-heading">
+                      <div className="selected-model-logo">
+                        <UiIcon name="model" />
+                      </div>
+
+                      <div>
+                        <span>
+                          SELECTED MODEL
+                        </span>
+
+                        <h2>
+                          {selectedModel}
+                        </h2>
+                      </div>
+                    </div>
+
+                    <div className="selected-model-status">
+                      <div>
+                        <span>{"Sa\u011fl\u0131k"}</span>
+
+                        <strong>
+                          {controlCenter?.services.ollama.online
+                            ? "Haz\u0131r"
+                            : "Kapal\u0131"}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Provider</span>
+                        <strong>Ollama</strong>
+                      </div>
+
+                      <div>
+                        <span>{"\u00c7al\u0131\u015fma"}</span>
+                        <strong>Local</strong>
+                      </div>
+                    </div>
+
+                    <div className="model-test-placeholder">
+                      <UiIcon name="terminal" />
+
+                      <div>
+                        <strong>
+                          {"Model Testi"}
+                        </strong>
+
+                        <span>
+                          {"Sonraki ad\u0131mda bu model ger\u00e7ek bir prompt ile test edilecek."}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
+          </section>
+        )}
+
         {error && (
           <div className="error-banner">
             <strong>
@@ -1148,7 +1405,13 @@ function App() {
 
         {activeProjectTab === "overview" && (
           <>
-        <section className="active-task-card">
+        <section
+          className={`active-task-card ${
+            activeProjectTab !== "overview"
+              ? "tab-hidden"
+              : ""
+          }`}
+        >
           <div className="active-task-head">
             <div>
               <span className="task-id-title"><UiIcon name="task" />{" "}
@@ -1271,7 +1534,13 @@ function App() {
           </div>
         </section>
 
-        <section className="lower-workspace">
+        <section
+          className={`lower-workspace ${
+            activeProjectTab !== "overview"
+              ? "tab-hidden"
+              : ""
+          }`}
+        >
           <article
             className="console-card"
             id="live-logs"

@@ -2152,3 +2152,386 @@ body {
   font-size: 10px;
   font-weight: 700;
 }
+
+
+/* MODEL MANAGEMENT */
+
+.models-active > :not(.models-page) {
+  display: none !important;
+}
+
+.models-page {
+  min-height: 100%;
+  padding: 20px;
+}
+
+.models-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border: 1px solid #213a50;
+  border-radius: 7px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(18, 41, 61, 0.98),
+      rgba(10, 25, 39, 0.98)
+    );
+}
+
+.models-page-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: #4fa8e8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.models-page-header h1 {
+  margin: 0;
+  color: #eef7ff;
+  font-size: 22px;
+}
+
+.models-page-header p {
+  margin: 6px 0 0;
+  color: #738da3;
+  font-size: 10px;
+}
+
+.ollama-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #284057;
+  border-radius: 5px;
+  background: #0b1b29;
+  font-size: 9px;
+}
+
+.ollama-health > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ollama-health.online > span {
+  background: #32d583;
+  box-shadow: 0 0 10px rgba(50, 213, 131, 0.6);
+}
+
+.ollama-health.offline > span {
+  background: #ef5350;
+}
+
+.ollama-health.online strong {
+  color: #7fe6ac;
+}
+
+.ollama-health.offline strong {
+  color: #ff8f8c;
+}
+
+.models-summary-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.models-summary-grid > div {
+  padding: 12px 14px;
+  border: 1px solid #20384d;
+  border-radius: 6px;
+  background: #0b1a28;
+}
+
+.models-summary-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: #67839a;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.models-summary-grid strong {
+  color: #d9e8f5;
+  font-size: 11px;
+}
+
+.models-layout {
+  display: grid;
+  grid-template-columns:
+    minmax(320px, 0.9fr)
+    minmax(360px, 1.1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.model-library-panel,
+.selected-model-panel {
+  min-height: 430px;
+  border: 1px solid #21394f;
+  border-radius: 7px;
+  background: #0b1927;
+}
+
+.model-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 15px;
+  border-bottom: 1px solid #1b3144;
+}
+
+.model-section-title > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.model-section-title svg {
+  width: 17px;
+  height: 17px;
+  color: #51adf0;
+}
+
+.model-section-title strong {
+  display: block;
+  color: #dceaf6;
+  font-size: 11px;
+}
+
+.model-section-title small {
+  display: block;
+  margin-top: 2px;
+  color: #637e94;
+  font-size: 8px;
+}
+
+.model-section-title > span {
+  min-width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #285071;
+  border-radius: 999px;
+  color: #6abaf3;
+  font-size: 9px;
+}
+
+.model-library-list {
+  padding: 9px;
+}
+
+.model-library-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns:
+    38px minmax(0, 1fr) 10px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 7px;
+  padding: 10px;
+  border: 1px solid #1d3448;
+  border-radius: 6px;
+  background: #0a1724;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.model-library-item:hover {
+  border-color: #326f9e;
+  background: #0e2133;
+}
+
+.model-library-item.selected {
+  border-color: #238bd0;
+  background: #102941;
+  box-shadow:
+    inset 3px 0 0 #35a8f1;
+}
+
+.model-library-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #285071;
+  border-radius: 6px;
+  background: #102a40;
+}
+
+.model-library-icon svg {
+  width: 18px;
+  height: 18px;
+  color: #65baf5;
+}
+
+.model-library-copy {
+  min-width: 0;
+}
+
+.model-library-copy strong {
+  display: block;
+  overflow: hidden;
+  color: #dceaf6;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-library-copy span {
+  display: block;
+  margin-top: 3px;
+  color: #617c92;
+  font-size: 8px;
+}
+
+.model-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #32d583;
+  box-shadow:
+    0 0 8px rgba(50, 213, 131, 0.5);
+}
+
+.models-empty {
+  padding: 70px 20px;
+  color: #617c92;
+  font-size: 10px;
+  text-align: center;
+}
+
+.selected-model-panel {
+  padding: 16px;
+}
+
+.selected-model-empty {
+  min-height: 390px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #607b92;
+  text-align: center;
+}
+
+.selected-model-empty svg {
+  width: 35px;
+  height: 35px;
+  margin-bottom: 10px;
+}
+
+.selected-model-empty strong {
+  color: #b7cbdb;
+  font-size: 12px;
+}
+
+.selected-model-empty span {
+  max-width: 270px;
+  margin-top: 5px;
+  font-size: 9px;
+}
+
+.selected-model-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #1c3347;
+}
+
+.selected-model-logo {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #2c6590;
+  border-radius: 8px;
+  background: #10324c;
+}
+
+.selected-model-logo svg {
+  width: 24px;
+  height: 24px;
+  color: #61b9f5;
+}
+
+.selected-model-heading span {
+  color: #66849b;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.selected-model-heading h2 {
+  margin: 4px 0 0;
+  color: #edf6fe;
+  font-size: 16px;
+}
+
+.selected-model-status {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.selected-model-status > div {
+  padding: 11px;
+  border: 1px solid #1f394e;
+  border-radius: 5px;
+  background: #091724;
+}
+
+.selected-model-status span {
+  display: block;
+  color: #617d93;
+  font-size: 8px;
+}
+
+.selected-model-status strong {
+  display: block;
+  margin-top: 4px;
+  color: #c9dcea;
+  font-size: 10px;
+}
+
+.model-test-placeholder {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed #285272;
+  border-radius: 6px;
+  background: #0a1a28;
+}
+
+.model-test-placeholder svg {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  color: #54ace9;
+}
+
+.model-test-placeholder strong {
+  display: block;
+  color: #bed5e6;
+  font-size: 10px;
+}
+
+.model-test-placeholder span {
+  display: block;
+  margin-top: 3px;
+  color: #668197;
+  font-size: 8px;
+}
