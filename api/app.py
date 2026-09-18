@@ -35,6 +35,12 @@ from factory.control_center import get_control_center_status
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.model_router import ModelRoute, route_model
+from factory.task_router import route_task
+from factory.read_task_runner import run_read_task
+from factory.task_read_results import (
+    get_task_read_result,
+    save_task_read_result,
+)
 from factory.task_model_preferences import (
     get_task_model_preference,
     set_task_model_preference,
@@ -495,6 +501,19 @@ def run_task_for_api(task_id: str):
     if task is None:
         raise KeyError(f"Unknown task: {task_id}")
 
+    task_route = route_task(
+        task.prompt,
+    )
+
+    append_task_log(
+        task_id,
+        (
+            "Task Router: "
+            f"{task_route.kind.upper()} - "
+            f"{task_route.reason}"
+        ),
+    )
+
     requested_model = (
         get_task_model_preference(
             task_id,
@@ -559,6 +578,56 @@ def run_task_for_api(task_id: str):
             state="failed",
         )
         return None
+
+    if task_route.kind == "read":
+        try:
+            append_task_log(
+                task_id,
+                "READ gorevi calistiriliyor.",
+            )
+
+            read_result = run_read_task(
+                project_path=orchestrator.project_path,
+                prompt=task.prompt,
+                model_route=model_route,
+                model_client=orchestrator.model_client,
+            )
+
+            save_task_read_result(
+                task_id,
+                read_result,
+            )
+
+            update_task_runtime(
+                task_id,
+                status="completed",
+                state="completed",
+                test_result="not_required",
+            )
+
+            append_task_log(
+                task_id,
+                "READ gorevi tamamlandi.",
+            )
+
+            return
+
+        except Exception as exc:
+            append_task_log(
+                task_id,
+                (
+                    "READ gorevi basarisiz: "
+                    f"{exc}"
+                ),
+            )
+
+            update_task_runtime(
+                task_id,
+                status="failed",
+                state="failed",
+            )
+
+            return
 
     try:
         result = orchestrator.run_task(
@@ -1364,4 +1433,28 @@ def test_local_model(payload: ModelTestRequest):
         "response": answer,
         "duration_ms": elapsed_ms,
         "done": bool(result.get("done", True)),
+    }
+
+
+
+@app.get("/tasks/{task_id}/result")
+def get_task_result_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Gorev bulunamadi.",
+        )
+
+    result = get_task_read_result(
+        task_id,
+    )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "result": result,
     }
