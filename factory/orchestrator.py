@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import random
 import re
 import subprocess
@@ -34,7 +35,7 @@ class Orchestrator:
 
     @staticmethod
     def _extract_explicit_file_targets(prompt: str) -> list[str]:
-        pattern = r"(?<![\w.-])([\w./\\-]+\.(?:py|js|jsx|ts|tsx|json|yaml|yml))(?![\w.-])"
+        pattern = r"(?<![\w.-])([\w./\\-]+\.(?:py|js|jsx|ts|tsx|json|yaml|yml|txt|md|rst|csv))(?![\w.-])"
 
         matches = re.findall(
             pattern,
@@ -287,7 +288,7 @@ class Orchestrator:
             "Yanıtın yalnızca geçerli bir JSON nesnesi olmalı. "
             "Markdown, açıklama metni veya kod bloğu kullanma. "
             "JSON yapısı tam olarak şu biçimde olmalı: "
-            '{"files":[{"path":"relative/path.py","content":"dosyanın tam içeriği"}],"explanation":"kısa açıklama"}. '
+            '{"files":[{"path":"REQUESTED_FILE_PATH","content":"dosyanın tam içeriği"}],"explanation":"kısa açıklama"}. '
             "Her dosya için content alanında dosyanın değişiklik sonrası TAM içeriğini ver. "
             "Görev çalıştırılabilir Python kodunda yeni davranış ekliyor veya mevcut davranışı değiştiriyorsa "
             "uygun pytest test dosyasını da files dizisine ekle veya güncelle. "
@@ -429,40 +430,176 @@ class Orchestrator:
                 # Test aşaması (Docker yoksa lokal Python subprocess ile çalıştır)
                 state_machine.transition(TaskStatus.TESTING)
 
+                # Choose validation level from changed file types.
+                lightweight_extensions = {
+                    ".txt",
+                    ".md",
+                    ".rst",
+                    ".csv",
+                }
+
+                written_extensions = {
+                    os.path.splitext(
+                        str(written_file)
+                    )[1].lower()
+                    for written_file in written_files
+                }
+
+                requires_full_tests = (
+                    not written_files
+                    or any(
+                        extension
+                        not in lightweight_extensions
+                        for extension
+                        in written_extensions
+                    )
+                )
+
+                validation_debug = (
+                    "Validation plan: "
+                    f"files={[str(item) for item in written_files]} | "
+                    f"extensions={sorted(written_extensions)} | "
+                    f"full_tests={requires_full_tests}"
+                )
+
+                print(
+                    "[VALIDATION] "
+                    + validation_debug
+                )
+
                 if progress_handler is not None:
                     progress_handler(
                         task_id,
-                        message="Testler çalıştırılıyor.",
+                        message=validation_debug,
                     )
-                print(f"[*] Testler çalıştırılıyor...")
-                
+
                 test_passed = False
                 test_output = ""
 
-                try:
-                    if self.sandbox is None:
-                        raise RuntimeError("Docker sandbox kullanılamıyor.")
+                if not requires_full_tests:
+                    if progress_handler is not None:
+                        progress_handler(
+                            task_id,
+                            message=(
+                                "Hafif dosya "
+                                "dogrulamasi "
+                                "calistiriliyor."
+                            ),
+                        )
 
-                    test_command = (
-                        "python -c \"import pathlib; "
-                        "[compile(p.read_text(encoding='utf-8'), str(p), 'exec') "
-                        "for p in pathlib.Path('.').rglob('*.py')]\" || exit $?; "
-                        "PYTHONDONTWRITEBYTECODE=1 python -m pytest -q; "
-                        "code=$?; "
-                        "if [ $code -eq 5 ]; then exit 0; else exit $code; fi"
+                    print(
+                        "[*] Hafif dosya "
+                        "dogrulamasi calistiriliyor..."
                     )
 
-                    res = self.sandbox.run_command(
-                        wt_result.path,
-                        test_command
+                    missing_files = [
+                        str(written_file)
+                        for written_file in written_files
+                        if not os.path.isfile(
+                            written_file
+                        )
+                    ]
+
+                    unreadable_files = []
+
+                    if not missing_files:
+                        for written_file in written_files:
+                            try:
+                                Path(
+                                    written_file
+                                ).read_text(
+                                    encoding="utf-8",
+                                    errors="strict",
+                                )
+                            except (
+                                OSError,
+                                UnicodeError,
+                            ):
+                                unreadable_files.append(
+                                    str(written_file)
+                                )
+
+                    if missing_files:
+                        test_output = (
+                            "Olusturulan dosyalar "
+                            "bulunamadi: "
+                            + ", ".join(
+                                missing_files
+                            )
+                        )
+                        test_passed = False
+
+                    elif unreadable_files:
+                        test_output = (
+                            "Metin dosyalari "
+                            "okunamadi: "
+                            + ", ".join(
+                                unreadable_files
+                            )
+                        )
+                        test_passed = False
+
+                    else:
+                        test_output = (
+                            "Icerik dosyalari "
+                            "basariyla dogrulandi."
+                        )
+                        test_passed = True
+
+                else:
+                    if progress_handler is not None:
+                        progress_handler(
+                            task_id,
+                            message=(
+                                "Testler "
+                                "calistiriliyor."
+                            ),
+                        )
+
+                    print(
+                        "[*] Testler "
+                        "calistiriliyor..."
                     )
 
-                    test_passed = res.success
-                    test_output = res.stdout + res.stderr
+                    try:
+                        if self.sandbox is None:
+                            raise RuntimeError(
+                                "Docker sandbox "
+                                "kullanilamiyor."
+                            )
 
-                except Exception as test_err:
-                    test_output = str(test_err)
-                    test_passed = False
+                        test_command = (
+                            "python -c \"import pathlib; "
+                            "[compile(p.read_text("
+                            "encoding='utf-8'), "
+                            "str(p), 'exec') "
+                            "for p in pathlib.Path('.')"
+                            ".rglob('*.py')]\" "
+                            "|| exit $?; "
+                            "PYTHONDONTWRITEBYTECODE=1 "
+                            "python -m pytest -q; "
+                            "code=$?; "
+                            "if [ $code -eq 5 ]; "
+                            "then exit 0; "
+                            "else exit $code; fi"
+                        )
+
+                        res = self.sandbox.run_command(
+                            wt_result.path,
+                            test_command,
+                        )
+
+                        test_passed = res.success
+                        test_output = (
+                            res.stdout
+                            + res.stderr
+                        )
+
+                    except Exception as test_err:
+                        test_output = str(
+                            test_err
+                        )
+                        test_passed = False
 
                 if test_passed:
                     state_machine.transition(TaskStatus.TEST_PASSED)

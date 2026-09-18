@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -364,6 +365,57 @@ def _force_turkish(
     return result
 
 
+
+
+_EXPLICIT_FILE_PATTERN = re.compile(
+    r"(?<![\w.-])"
+    r"([\w./\\-]+\."
+    r"(?:py|js|jsx|ts|tsx|json|yaml|yml|md))"
+    r"(?![\w.-])",
+    re.IGNORECASE,
+)
+
+
+def _get_explicit_source_file(
+    project_path: str,
+    prompt: str,
+) -> tuple[str, str] | None:
+    root = Path(project_path).resolve()
+
+    for match in _EXPLICIT_FILE_PATTERN.findall(
+        prompt
+    ):
+        relative = (
+            match
+            .replace("\\", "/")
+            .lstrip("./")
+        )
+
+        candidate = (
+            root / relative
+        ).resolve()
+
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+
+        if not candidate.is_file():
+            continue
+
+        try:
+            source = candidate.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            continue
+
+        return relative, source
+
+    return None
+
+
 def run_read_task(
     project_path: str,
     prompt: str,
@@ -414,6 +466,11 @@ def run_read_task(
     is_overview = any(
         marker in normalized_prompt
         for marker in overview_markers
+    )
+
+    explicit_file = _get_explicit_source_file(
+        project_path,
+        prompt,
     )
 
     if is_overview:
@@ -487,6 +544,86 @@ def run_read_task(
         )
 
         result = synthesis_response.content.strip()
+
+    elif explicit_file is not None:
+        explicit_path, explicit_source = (
+            explicit_file
+        )
+
+        evidence_response = model_client.complete(
+            model_role="fast_local",
+            system_prompt=(
+                "Sen tek bir kaynak dosyadan teknik kanit "
+                "cikaran bir yazilim analiz ajanisin. "
+                "YALNIZCA verilen dosya iceriginde acikca "
+                "gorulen bilgileri kullan. "
+                "Dosyanin yapmadigi bir isi ona atfetme. "
+                "Baska modullerin sorumluluklarini bu dosyaya "
+                "yukleme. "
+                "Fonksiyon, class, sabit, import ve karar "
+                "mantigini kanit olarak cikar. "
+                "Tahmin etme. "
+                "Cevabi Turkce ver. "
+                "En fazla 12 kisa kanit maddesi yaz."
+            ),
+            user_prompt=(
+                "KULLANICI GOREVI:\n"
+                f"{prompt}\n\n"
+                "HEDEF_DOSYA:\n"
+                f"{explicit_path}\n\n"
+                "DOSYA_ICERIGI:\n"
+                f"{explicit_source}\n\n"
+                "Yalnizca bu dosyadan dogrulanabilen "
+                "teknik gercekleri cikar."
+            ),
+            temperature=0.0,
+            model_name_override=model_route.model,
+        )
+
+        file_evidence = (
+            evidence_response.content.strip()
+        )
+
+        if not file_evidence:
+            raise RuntimeError(
+                "Tek dosya kanit cikarma asamasi "
+                "bos sonuc verdi."
+            )
+
+        synthesis_response = model_client.complete(
+            model_role="fast_local",
+            system_prompt=(
+                "Sen kanita dayali teknik aciklama "
+                "ajanisin. "
+                "Yalnizca DOGRULANMIS_DOSYA_KANITLARI "
+                "bolumundeki bilgileri kullan. "
+                "Dosyada kaniti olmayan hicbir "
+                "sorumluluk ekleme. "
+                "Dosyanin ne yaptigini ve gerekirse "
+                "ne yapmadigini net ayir. "
+                "Tahmin etme. "
+                "'olabilir', 'gibi gorunuyor', "
+                "'muhtemelen' ifadelerini kullanma. "
+                "Ayni bilgiyi tekrar etme. "
+                "Cevabi Turkce, kisa ve teknik yaz."
+            ),
+            user_prompt=(
+                "KULLANICI GOREVI:\n"
+                f"{prompt}\n\n"
+                "HEDEF_DOSYA:\n"
+                f"{explicit_path}\n\n"
+                "DOGRULANMIS_DOSYA_KANITLARI:\n"
+                f"{file_evidence}\n\n"
+                "Kullanicinin sorusunu yalnizca "
+                "bu kanitlarla cevapla."
+            ),
+            temperature=0.0,
+            model_name_override=model_route.model,
+        )
+
+        result = (
+            synthesis_response.content.strip()
+        )
 
     else:
         response = model_client.complete(
