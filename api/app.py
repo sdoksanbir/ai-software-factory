@@ -1,3 +1,4 @@
+import os
 import random
 from datetime import datetime, timezone
 
@@ -89,6 +90,39 @@ def update_task_runtime(
     return task
 
 
+def cleanup_failed_task_for_api(
+    orchestrator: Orchestrator,
+    task_id: str,
+) -> None:
+    repo_name = os.path.basename(
+        os.path.normpath(orchestrator.project_path)
+    )
+
+    worktree_path = os.path.join(
+        orchestrator.worktree_root,
+        repo_name,
+        task_id.lower(),
+    )
+
+    branch_name = f"agent/{task_id.lower()}"
+
+    try:
+        orchestrator.git_manager.remove_worktree(
+            worktree_path,
+            force=True,
+        )
+    except Exception:
+        pass
+
+    try:
+        orchestrator.git_manager.delete_branch(
+            branch_name,
+            force=True,
+        )
+    except Exception:
+        pass
+
+
 def run_task_for_api(task_id: str):
     task = TASKS.get(task_id)
 
@@ -112,6 +146,11 @@ def run_task_for_api(task_id: str):
             approval_handler=api_approval_handler,
         )
     except Exception:
+        cleanup_failed_task_for_api(
+            orchestrator,
+            task_id,
+        )
+
         update_task_runtime(
             task_id,
             status="failed",
@@ -120,6 +159,11 @@ def run_task_for_api(task_id: str):
         return None
 
     if result != "ready_for_approval":
+        cleanup_failed_task_for_api(
+            orchestrator,
+            task_id,
+        )
+
         update_task_runtime(
             task_id,
             status="failed",
@@ -260,4 +304,132 @@ def approve_task(task_id: str):
     TASK_CONTEXTS.pop(task_id, None)
 
     return TASKS[task_id]
+
+@app.post(
+    "/tasks/{task_id}/reject",
+    response_model=TaskCreateResponse,
+)
+def reject_task(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    context = TASK_CONTEXTS.get(task_id)
+
+    if context is None or task.state != "ready_for_approval":
+        raise HTTPException(
+            status_code=409,
+            detail="Task is not ready for rejection",
+        )
+
+    state_machine = context["state_machine"]
+    wt_result = context["wt_result"]
+
+    orchestrator = Orchestrator()
+
+    try:
+        orchestrator.git_manager.remove_worktree(
+            wt_result.path,
+            force=True,
+        )
+
+        orchestrator.git_manager.delete_branch(
+            wt_result.branch,
+            force=True,
+        )
+
+        state_machine.transition(TaskStatus.REJECTED)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Rejection failed: {exc}",
+        ) from exc
+
+    update_task_runtime(
+        task_id,
+        status="rejected",
+        state="rejected",
+    )
+
+    TASK_CONTEXTS.pop(task_id, None)
+
+    return TASKS[task_id]
+
+class TaskDiffResponse(BaseModel):
+    task_id: str
+    diff: str
+
+
+@app.get(
+    "/tasks/{task_id}/diff",
+    response_model=TaskDiffResponse,
+)
+def get_task_diff(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    context = TASK_CONTEXTS.get(task_id)
+
+    if context is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Task diff is not available",
+        )
+
+    return TaskDiffResponse(
+        task_id=task_id,
+        diff=str(context.get("diff_output", "")),
+    )
+
+
+@app.post(
+    "/tasks/{task_id}/retry",
+    response_model=TaskCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_task(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    if task.state != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed tasks can be retried",
+        )
+
+    TASK_CONTEXTS.pop(task_id, None)
+
+    task.status = "queued"
+    task.state = "queued"
+    task.model = None
+    task.attempt = 0
+    task.test_result = None
+    task.started_at = datetime.now(
+        timezone.utc
+    ).isoformat()
+
+    background_tasks.add_task(
+        run_task_for_api,
+        task_id,
+    )
+
+    return task
 
