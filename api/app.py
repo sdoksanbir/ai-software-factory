@@ -126,6 +126,19 @@ def cleanup_failed_task_for_api(
         pass
 
 
+def api_progress_handler(
+    task_id: str,
+    *,
+    attempt: int | None = None,
+    test_result: str | None = None,
+) -> None:
+    update_task_runtime(
+        task_id,
+        attempt=attempt,
+        test_result=test_result,
+    )
+
+
 def run_task_for_api(task_id: str):
     task = TASKS.get(task_id)
 
@@ -147,6 +160,7 @@ def run_task_for_api(task_id: str):
             task_id=task_id,
             max_attempts=task.max_attempts,
             approval_handler=api_approval_handler,
+            progress_handler=api_progress_handler,
         )
     except Exception:
         cleanup_failed_task_for_api(

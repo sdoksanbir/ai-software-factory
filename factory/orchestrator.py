@@ -156,6 +156,7 @@ class Orchestrator:
         task_id: Optional[str] = None,
         max_attempts: int = 2,
         approval_handler=None,
+        progress_handler=None,
     ) -> Optional[str]:
         if not task_id:
             rand_num = random.randint(1000, 9999)
@@ -312,6 +313,13 @@ class Orchestrator:
         while task_spec.attempt < task_spec.max_attempts:
             try:
                 state_machine.register_attempt()
+
+                if progress_handler is not None:
+                    progress_handler(
+                        task_id,
+                        attempt=task_spec.attempt,
+                    )
+
                 print(f"\n--- Deneme {task_spec.attempt}/{task_spec.max_attempts} ---")
 
                 state_machine.transition(TaskStatus.MODEL_RUNNING)
@@ -391,11 +399,23 @@ class Orchestrator:
 
                 if test_passed:
                     state_machine.transition(TaskStatus.TEST_PASSED)
+
+                    if progress_handler is not None:
+                        progress_handler(
+                            task_id,
+                            test_result="passed",
+                        )
                     print(f"[+] Testler başarılı!")
                     success = True
                     break
                 else:
                     state_machine.transition(TaskStatus.TEST_FAILED)
+
+                    if progress_handler is not None:
+                        progress_handler(
+                            task_id,
+                            test_result="failed",
+                        )
                     print(f"[-] Test hatası: {test_output}")
                     user_prompt += f"\n\nÖnceki deneme başarısız oldu. Hata:\n{test_output}\nLütfen düzelt."
 
