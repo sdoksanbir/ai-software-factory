@@ -1,4 +1,5 @@
 import random
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
@@ -63,6 +64,7 @@ def create_task(request: TaskCreateRequest):
         status="queued",
         prompt=request.prompt,
         max_attempts=request.max_attempts,
+        started_at=datetime.now(timezone.utc).isoformat(),
     )
 
     TASKS[task_id] = task
