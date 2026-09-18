@@ -213,3 +213,69 @@ class GitWorktreeManager:
             pass
 
         return "\n".join(diff_parts).strip()
+
+    def commit_all(self, worktree_path: str, message: str) -> str:
+        """Worktree içindeki tüm değişiklikleri commit eder ve commit hash döner."""
+        abs_path = os.path.abspath(worktree_path)
+
+        if not os.path.exists(abs_path):
+            raise GitOperationError(f"Worktree path does not exist: {abs_path}")
+
+        status = self.get_status(abs_path)
+        if not status.strip():
+            raise GitOperationError("No changes to commit.")
+
+        self._run_git_command(["add", "-A"], cwd=abs_path)
+        self._run_git_command(["commit", "-m", message], cwd=abs_path)
+
+        return self._run_git_command(["rev-parse", "HEAD"], cwd=abs_path)
+
+
+    def merge_branch(self, branch_name: str) -> str:
+        """Verilen branch'i ana repository'de aktif branch'e birleştirir."""
+        if not self._branch_exists(branch_name):
+            raise GitOperationError(f"Branch does not exist: {branch_name}")
+
+        main_status = self._run_git_command(
+            ["status", "--porcelain"],
+            cwd=self.repo_root
+        )
+
+        if main_status.strip():
+            raise GitOperationError(
+                "Main repository has uncommitted changes. Merge cancelled."
+            )
+
+        self._run_git_command(
+            ["merge", "--no-ff", branch_name, "-m", f"Merge {branch_name}"],
+            cwd=self.repo_root
+        )
+
+        return self._run_git_command(
+            ["rev-parse", "HEAD"],
+            cwd=self.repo_root
+        )
+
+
+    def remove_worktree(self, worktree_path: str, force: bool = False) -> None:
+        """Git worktree kaydını ve klasörünü kaldırır."""
+        abs_path = os.path.abspath(worktree_path)
+
+        args = ["worktree", "remove"]
+        if force:
+            args.append("--force")
+        args.append(abs_path)
+
+        self._run_git_command(args, cwd=self.repo_root)
+
+
+    def delete_branch(self, branch_name: str, force: bool = False) -> None:
+        """Yerel branch'i siler."""
+        if not self._branch_exists(branch_name):
+            return
+
+        flag = "-D" if force else "-d"
+        self._run_git_command(
+            ["branch", flag, branch_name],
+            cwd=self.repo_root
+        )
