@@ -241,3 +241,64 @@ def test_create_and_save_plan(tmp_path):
     assert loaded is not None
     assert len(loaded["steps"]) == 3
     assert loaded["summary"] == "Entegrasyon"
+
+
+
+def test_full_six_step_plan_makes_room_for_read():
+    from factory.task_planner import (
+        MAX_PLAN_STEPS,
+        _ensure_read_first,
+    )
+
+    steps = [
+        {
+            "title": "Backend",
+            "instruction": "Backend kodunu yaz.",
+            "kind": "write",
+        },
+        {
+            "title": "API",
+            "instruction": "API endpointini yaz.",
+            "kind": "write",
+        },
+        {
+            "title": "Frontend",
+            "instruction": "Frontend formunu yaz.",
+            "kind": "write",
+        },
+        {
+            "title": "Baglanti",
+            "instruction": "Frontend API baglantisini yaz.",
+            "kind": "write",
+        },
+        {
+            "title": "Testler",
+            "instruction": "Test kodlarini yaz.",
+            "kind": "write",
+        },
+        {
+            "title": "Dogrula",
+            "instruction": "Tum testleri calistir.",
+            "kind": "verify",
+        },
+    ]
+
+    result = _ensure_read_first(
+        "Komple sistemi olustur.",
+        steps,
+    )
+
+    assert len(result) == MAX_PLAN_STEPS
+    assert result[0]["kind"] == "read"
+    assert result[-1]["kind"] == "verify"
+
+    combined_instructions = "\n".join(
+        step["instruction"]
+        for step in result
+    )
+
+    assert "Backend kodunu yaz." in combined_instructions
+    assert "API endpointini yaz." in combined_instructions
+    assert "Frontend formunu yaz." in combined_instructions
+    assert "Test kodlarini yaz." in combined_instructions
+    assert "Tum testleri calistir." in combined_instructions

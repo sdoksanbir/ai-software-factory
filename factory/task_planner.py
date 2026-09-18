@@ -349,21 +349,28 @@ def _ensure_read_first(
     steps: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     has_write = any(
-        step["kind"] == "write"
+        step.get("kind") == "write"
         for step in steps
     )
 
     if not has_write:
         return steps
 
-    if steps and steps[0]["kind"] == "read":
+    if (
+        steps
+        and steps[0].get("kind") == "read"
+    ):
         return steps
 
-    if len(steps) >= MAX_PLAN_STEPS:
-        raise ValueError(
-            "Planner planinda zorunlu READ adimi "
-            "icin yer yok"
-        )
+    # READ zaten planda varsa yeni READ eklemek
+    # yerine mevcut READ adimini basa tasi.
+    for index, step in enumerate(steps):
+        if step.get("kind") == "read":
+            return [
+                step,
+                *steps[:index],
+                *steps[index + 1:],
+            ]
 
     read_step = {
         "title": "Mevcut yap\u0131y\u0131 incele",
@@ -376,14 +383,119 @@ def _ensure_read_first(
             "Bu ad\u0131mda dosya de\u011fi\u015ftirme."
         ),
         "kind": "read",
-        "status": "pending",
-        "attempt": 0,
     }
 
-    return [
-        read_step,
-        *steps,
+    if len(steps) < MAX_PLAN_STEPS:
+        return [
+            read_step,
+            *steps,
+        ]
+
+    # Model maksimum adim sayisini doldurduysa READ icin
+    # bir slot ac. Once iki WRITE adimini birlestirmeyi
+    # tercih et; boylece final VERIFY korunur.
+    compacted = [
+        dict(step)
+        for step in steps
     ]
+
+    write_indices = [
+        index
+        for index, step in enumerate(compacted)
+        if step.get("kind") == "write"
+    ]
+
+    merge_pair = None
+
+    for first, second in zip(
+        write_indices,
+        write_indices[1:],
+    ):
+        if second == first + 1:
+            merge_pair = (
+                first,
+                second,
+            )
+            break
+
+    # Ard???k WRITE bulunamazsa yine iki WRITE'i
+    # birlestir. Siralari korunur.
+    if (
+        merge_pair is None
+        and len(write_indices) >= 2
+    ):
+        merge_pair = (
+            write_indices[0],
+            write_indices[1],
+        )
+
+    if merge_pair is None:
+        raise ValueError(
+            "Planner planinda zorunlu READ adimi "
+            "icin guvenli sekilde yer acilamadi"
+        )
+
+    first_index, second_index = merge_pair
+
+    first_step = compacted[first_index]
+    second_step = compacted[second_index]
+
+    first_title = str(
+        first_step.get("title", "")
+    ).strip()
+
+    second_title = str(
+        second_step.get("title", "")
+    ).strip()
+
+    first_instruction = str(
+        first_step.get(
+            "instruction",
+            "",
+        )
+    ).strip()
+
+    second_instruction = str(
+        second_step.get(
+            "instruction",
+            "",
+        )
+    ).strip()
+
+    merged_step = dict(first_step)
+
+    merged_step["title"] = (
+        f"{first_title} + {second_title}"
+        if second_title
+        else first_title
+    )
+
+    merged_step["instruction"] = (
+        first_instruction
+        + "\n\nArdindan:\n"
+        + second_instruction
+    )
+
+    merged_step["kind"] = "write"
+
+    compacted[first_index] = (
+        merged_step
+    )
+
+    del compacted[second_index]
+
+    result = [
+        read_step,
+        *compacted,
+    ]
+
+    if len(result) > MAX_PLAN_STEPS:
+        raise ValueError(
+            "Planner maksimum adim sayisini asti"
+        )
+
+    return result
+
 
 
 def build_task_plan(
