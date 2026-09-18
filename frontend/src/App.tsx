@@ -214,8 +214,8 @@ function App() {
             <p className="eyebrow">LOCAL DEVELOPMENT CONTROL</p>
             <h1>AI Software Factory</h1>
             <p className="subtitle">
-              Görev olu?tur, AI ajan?n? ?al??t?r, testleri izle ve
-              de?i?iklikleri onayla.
+              Görev oluştur, AI ajanını çalıştır, testleri izle ve
+              değişiklikleri onayla.
             </p>
           </div>
 
@@ -315,7 +315,7 @@ function App() {
                   <div className="empty-state">
                     <strong>Hen?z görev yok.</strong>
                     <span>
-                      Yukar?daki alandan ilk görevi olu?turabilirsin.
+                      Yukar?daki alandan ilk görevi oluşturabilirsin.
                     </span>
                   </div>
                 )}
