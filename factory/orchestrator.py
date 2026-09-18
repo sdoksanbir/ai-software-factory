@@ -125,8 +125,10 @@ class Orchestrator:
                         raise RuntimeError("Docker sandbox kullanılamıyor.")
 
                     test_command = (
-                        "python -m compileall -q . || exit $?; "
-                        "pytest -q; "
+                        "python -c \"import pathlib; "
+                        "[compile(p.read_text(encoding='utf-8'), str(p), 'exec') "
+                        "for p in pathlib.Path('.').rglob('*.py')]\" || exit $?; "
+                        "PYTHONDONTWRITEBYTECODE=1 pytest -q; "
                         "code=$?; "
                         "if [ $code -eq 5 ]; then exit 0; else exit $code; fi"
                     )
