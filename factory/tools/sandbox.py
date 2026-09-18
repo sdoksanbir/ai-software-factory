@@ -17,7 +17,7 @@ class SandboxError(Exception):
 
 
 class DockerSandbox:
-    def __init__(self, image_name: str = "python:3.11-slim"):
+    def __init__(self, image_name: str = "ai-factory-python-test"):
         self.image_name = image_name
 
     def run_command(self, worktree_path: str, command: str, timeout_seconds: int = 60) -> SandboxResult:

@@ -1,0 +1,6 @@
+pydantic>=2.0,<3.0
+litellm
+PyYAML
+docker
+rich
+pytest

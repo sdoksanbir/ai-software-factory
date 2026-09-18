@@ -118,22 +118,31 @@ class Orchestrator:
                 state_machine.transition(TaskStatus.TESTING)
                 print(f"[*] Testler çalıştırılıyor...")
                 
-                test_passed = True
+                test_passed = False
                 test_output = ""
+
                 try:
-                    if self.sandbox:
-                        res = self.sandbox.run_command(wt_result.path, "pytest || echo 'Test atlandı'")
-                        test_passed = res.success
-                        test_output = res.stdout
-                    else:
-                        # Docker yoksa lokalde dene
-                        proc = subprocess.run(["pytest"], cwd=wt_result.path, capture_output=True, text=True)
-                        test_output = proc.stdout + proc.stderr
-                        # Eğer pytest kurulu değilse veya hata vermediyse geç kabul et
-                        test_passed = (proc.returncode == 0 or "no tests ran" in test_output.lower())
+                    if self.sandbox is None:
+                        raise RuntimeError("Docker sandbox kullanılamıyor.")
+
+                    test_command = (
+                        "python -m compileall -q . || exit $?; "
+                        "pytest -q; "
+                        "code=$?; "
+                        "if [ $code -eq 5 ]; then exit 0; else exit $code; fi"
+                    )
+
+                    res = self.sandbox.run_command(
+                        wt_result.path,
+                        test_command
+                    )
+
+                    test_passed = res.success
+                    test_output = res.stdout + res.stderr
+
                 except Exception as test_err:
-                    print(f"[!] Test ortamı uyarısı: {test_err}. Test geçildi sayılıyor.")
-                    test_passed = True
+                    test_output = str(test_err)
+                    test_passed = False
 
                 if test_passed:
                     state_machine.transition(TaskStatus.TEST_PASSED)
@@ -147,11 +156,14 @@ class Orchestrator:
 
             except Exception as e:
                 print(f"[-] Deneme sırasında hata: {str(e)}")
+
                 if not state_machine.is_terminal:
                     try:
-                        state_machine.transition(TaskStatus.TEST_FAILED)
+                        state_machine.transition(TaskStatus.FAILED)
                     except Exception:
                         pass
+
+                break
 
         # 5. Sonuç ve Onay Aşaması
         if success:
