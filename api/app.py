@@ -40,6 +40,7 @@ app = FastAPI(
 class TaskCreateRequest(BaseModel):
     prompt: str = Field(min_length=1)
     max_attempts: int = Field(default=2, ge=1, le=5)
+    project_id: str | None = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -47,6 +48,7 @@ class TaskCreateResponse(BaseModel):
     status: str
     prompt: str
     max_attempts: int
+    project_id: str | None = None
     state: str = "queued"
     model: str | None = None
     attempt: int = 0
@@ -146,6 +148,7 @@ def persist_task(
         attempt=task.attempt,
         test_result=task.test_result,
         started_at=task.started_at,
+        project_id=task.project_id,
         branch=branch,
         worktree_path=(
             str(worktree_path)
@@ -154,6 +157,28 @@ def persist_task(
         ),
     )
 
+
+
+
+def build_orchestrator_for_task(
+    task: TaskCreateResponse,
+) -> Orchestrator:
+    if task.project_id is None:
+        # Eski, FAZ 13 ?ncesi g?revler i?in uyumluluk.
+        return Orchestrator()
+
+    project = db_get_project(
+        task.project_id
+    )
+
+    if project is None:
+        raise KeyError(
+            f"Project not found: {task.project_id}"
+        )
+
+    return Orchestrator(
+        project_path=project["path"]
+    )
 
 def hydrate_runtime_from_database() -> None:
     init_database()
@@ -174,6 +199,7 @@ def hydrate_runtime_from_database() -> None:
             max_attempts=int(
                 row["max_attempts"] or 2
             ),
+            project_id=row["project_id"],
             state=(
                 row["state"]
                 or row["status"]
@@ -210,8 +236,14 @@ def hydrate_runtime_from_database() -> None:
             and row["worktree_path"]
             and diff_output is not None
         ):
-            if recovery_orchestrator is None:
-                recovery_orchestrator = Orchestrator()
+            try:
+                recovery_orchestrator = (
+                    build_orchestrator_for_task(task)
+                )
+            except KeyError:
+                # Projesi silinmi? bir g?revin approval
+                # context'ini yanl?? repoda kurma.
+                continue
 
             task_spec = TaskSpec(
                 task_id=task.task_id,
@@ -386,7 +418,21 @@ def run_task_for_api(task_id: str):
         "Görev çalıştırılıyor.",
     )
 
-    orchestrator = Orchestrator()
+    try:
+        orchestrator = build_orchestrator_for_task(
+            task
+        )
+    except KeyError:
+        append_task_log(
+            task_id,
+            "G?revin ba?l? oldu?u proje bulunamad?.",
+        )
+        update_task_runtime(
+            task_id,
+            status="failed",
+            state="failed",
+        )
+        return None
 
     try:
         result = orchestrator.run_task(
@@ -602,6 +648,33 @@ def create_task(
     request: TaskCreateRequest,
     background_tasks: BackgroundTasks,
 ):
+    if request.project_id is not None:
+        selected_project = db_get_project(
+            request.project_id
+        )
+
+        if selected_project is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Project not found",
+            )
+    else:
+        projects = db_list_projects()
+
+        if len(projects) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No project is registered",
+            )
+
+        if len(projects) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="project_id is required when multiple projects exist",
+            )
+
+        selected_project = projects[0]
+
     while True:
         task_id = f"TASK-{random.randint(1000, 9999)}"
         if task_id not in TASKS:
@@ -612,6 +685,7 @@ def create_task(
         status="queued",
         prompt=request.prompt,
         max_attempts=request.max_attempts,
+        project_id=selected_project["project_id"],
         started_at=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -636,8 +710,19 @@ def create_task(
     "/tasks",
     response_model=list[TaskCreateResponse],
 )
-def list_tasks():
-    return list(TASKS.values())
+def list_tasks(
+    project_id: str | None = None,
+):
+    tasks = list(TASKS.values())
+
+    if project_id is None:
+        return tasks
+
+    return [
+        task
+        for task in tasks
+        if task.project_id == project_id
+    ]
 
 
 @app.get(
@@ -679,7 +764,15 @@ def approve_task(task_id: str):
     state_machine = context["state_machine"]
     wt_result = context["wt_result"]
 
-    orchestrator = Orchestrator()
+    try:
+        orchestrator = build_orchestrator_for_task(
+            task
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
     try:
         orchestrator.git_manager.commit_all(
@@ -746,7 +839,15 @@ def reject_task(task_id: str):
     state_machine = context["state_machine"]
     wt_result = context["wt_result"]
 
-    orchestrator = Orchestrator()
+    try:
+        orchestrator = build_orchestrator_for_task(
+            task
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
     try:
         orchestrator.git_manager.remove_worktree(
