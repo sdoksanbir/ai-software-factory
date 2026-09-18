@@ -26,6 +26,7 @@ from factory.database import (
     list_projects as db_list_projects,
     update_project as db_update_project,
 )
+from factory.control_center import get_control_center_status
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
@@ -1031,3 +1032,14 @@ async def task_events(task_id: str):
         },
     )
 
+
+
+
+@app.get("/control-center/status")
+def control_center_status():
+    orchestrator = Orchestrator()
+
+    return get_control_center_status(
+        project_path=orchestrator.project_path,
+        tasks=list(TASKS.values()),
+    )
