@@ -19,6 +19,12 @@ from factory.database import (
     list_tasks as db_list_tasks,
     save_task_diff as db_save_task_diff,
     upsert_task as db_upsert_task,
+    create_project as db_create_project,
+    delete_project as db_delete_project,
+    get_project as db_get_project,
+    get_project_by_path as db_get_project_by_path,
+    list_projects as db_list_projects,
+    update_project as db_update_project,
 )
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskSpec, TaskStatus
@@ -46,6 +52,68 @@ class TaskCreateResponse(BaseModel):
     attempt: int = 0
     test_result: str | None = None
     started_at: str | None = None
+
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    path: str = Field(min_length=1)
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    path: str = Field(min_length=1)
+
+
+class ProjectResponse(BaseModel):
+    project_id: str
+    name: str
+    path: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+def project_row_to_response(
+    row: dict,
+) -> ProjectResponse:
+    return ProjectResponse(
+        project_id=row["project_id"],
+        name=row["name"],
+        path=row["path"],
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+def normalize_and_validate_project_path(
+    project_path: str,
+) -> str:
+    normalized = os.path.normpath(
+        os.path.abspath(
+            os.path.expanduser(
+                project_path.strip()
+            )
+        )
+    )
+
+    if not os.path.isdir(normalized):
+        raise HTTPException(
+            status_code=400,
+            detail="Project directory does not exist",
+        )
+
+    git_marker = os.path.join(
+        normalized,
+        ".git",
+    )
+
+    if not os.path.exists(git_marker):
+        raise HTTPException(
+            status_code=400,
+            detail="Project path is not a Git repository",
+        )
+
+    return normalized
 
 
 TASKS: dict[str, TaskCreateResponse] = {}
@@ -364,6 +432,150 @@ def run_task_for_api(task_id: str):
         )
 
     return result
+
+
+
+
+@app.post(
+    "/projects",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_project_endpoint(
+    request: ProjectCreateRequest,
+):
+    project_path = normalize_and_validate_project_path(
+        request.path
+    )
+
+    existing = db_get_project_by_path(
+        project_path
+    )
+
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Project path is already registered",
+        )
+
+    while True:
+        project_id = (
+            f"PROJECT-{random.randint(1000, 9999)}"
+        )
+
+        if db_get_project(project_id) is None:
+            break
+
+    row = db_create_project(
+        project_id,
+        name=request.name.strip(),
+        path=project_path,
+    )
+
+    return project_row_to_response(row)
+
+
+@app.get(
+    "/projects",
+    response_model=list[ProjectResponse],
+)
+def list_projects_endpoint():
+    return [
+        project_row_to_response(row)
+        for row in db_list_projects()
+    ]
+
+
+@app.get(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+)
+def get_project_endpoint(
+    project_id: str,
+):
+    row = db_get_project(project_id)
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    return project_row_to_response(row)
+
+
+@app.put(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+)
+def update_project_endpoint(
+    project_id: str,
+    request: ProjectUpdateRequest,
+):
+    current = db_get_project(project_id)
+
+    if current is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    project_path = normalize_and_validate_project_path(
+        request.path
+    )
+
+    existing = db_get_project_by_path(
+        project_path
+    )
+
+    if (
+        existing is not None
+        and existing["project_id"] != project_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Project path is already registered",
+        )
+
+    row = db_update_project(
+        project_id,
+        name=request.name.strip(),
+        path=project_path,
+    )
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    return project_row_to_response(row)
+
+
+@app.delete(
+    "/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_project_endpoint(
+    project_id: str,
+):
+    current = db_get_project(project_id)
+
+    if current is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    deleted = db_delete_project(project_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    return None
 
 
 @app.get("/health")

@@ -429,3 +429,201 @@ def delete_task_diff(
         connection.commit()
     finally:
         connection.close()
+
+
+def create_project(
+    project_id: str,
+    *,
+    name: str,
+    path: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO projects (
+                project_id,
+                name,
+                path,
+                updated_at
+            )
+            VALUES (
+                ?, ?, ?, CURRENT_TIMESTAMP
+            )
+            """,
+            (
+                project_id,
+                name,
+                path,
+            ),
+        )
+
+        connection.commit()
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+        if row is None:
+            raise RuntimeError(
+                f"Project could not be created: {project_id}"
+            )
+
+        return dict(row)
+
+    finally:
+        connection.close()
+
+
+def get_project(
+    project_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict | None:
+    connection = get_connection(db_path)
+
+    try:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+    finally:
+        connection.close()
+
+
+def get_project_by_path(
+    project_path: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict | None:
+    connection = get_connection(db_path)
+
+    try:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE path = ?
+            """,
+            (project_path,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+    finally:
+        connection.close()
+
+
+def list_projects(
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[dict]:
+    connection = get_connection(db_path)
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            ORDER BY created_at ASC, name ASC
+            """
+        ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    finally:
+        connection.close()
+
+
+def update_project(
+    project_id: str,
+    *,
+    name: str,
+    path: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict | None:
+    connection = get_connection(db_path)
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE projects
+            SET
+                name = ?,
+                path = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE project_id = ?
+            """,
+            (
+                name,
+                path,
+                project_id,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            connection.rollback()
+            return None
+
+        connection.commit()
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+    finally:
+        connection.close()
+
+
+def delete_project(
+    project_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> bool:
+    connection = get_connection(db_path)
+
+    try:
+        cursor = connection.execute(
+            """
+            DELETE FROM projects
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        )
+
+        connection.commit()
+
+        return cursor.rowcount > 0
+
+    finally:
+        connection.close()
+
