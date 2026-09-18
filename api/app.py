@@ -1,6 +1,6 @@
 import random
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from factory.orchestrator import Orchestrator
@@ -24,6 +24,9 @@ class TaskCreateResponse(BaseModel):
     max_attempts: int
 
 
+TASKS: dict[str, TaskCreateResponse] = {}
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -45,12 +48,35 @@ def factory_status():
     status_code=status.HTTP_202_ACCEPTED,
 )
 def create_task(request: TaskCreateRequest):
-    task_id = f"TASK-{random.randint(1000, 9999)}"
+    while True:
+        task_id = f"TASK-{random.randint(1000, 9999)}"
+        if task_id not in TASKS:
+            break
 
-    return TaskCreateResponse(
+    task = TaskCreateResponse(
         task_id=task_id,
         status="queued",
         prompt=request.prompt,
         max_attempts=request.max_attempts,
     )
+
+    TASKS[task_id] = task
+
+    return task
+
+
+@app.get(
+    "/tasks/{task_id}",
+    response_model=TaskCreateResponse,
+)
+def get_task(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return task
 
