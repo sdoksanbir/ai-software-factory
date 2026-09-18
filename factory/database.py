@@ -156,3 +156,244 @@ def init_database(
 
     finally:
         connection.close()
+
+def upsert_task(
+    task_id: str,
+    *,
+    prompt: str,
+    status: str,
+    max_attempts: int,
+    state: str,
+    model: str | None = None,
+    attempt: int = 0,
+    test_result: str | None = None,
+    started_at: str | None = None,
+    completed_at: str | None = None,
+    project_id: str | None = None,
+    branch: str | None = None,
+    worktree_path: str | None = None,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO tasks (
+                task_id,
+                prompt,
+                status,
+                branch,
+                worktree_path,
+                project_id,
+                max_attempts,
+                state,
+                model,
+                attempt,
+                test_result,
+                started_at,
+                completed_at,
+                updated_at
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                CURRENT_TIMESTAMP
+            )
+            ON CONFLICT(task_id) DO UPDATE SET
+                prompt = excluded.prompt,
+                status = excluded.status,
+                branch = excluded.branch,
+                worktree_path = excluded.worktree_path,
+                project_id = excluded.project_id,
+                max_attempts = excluded.max_attempts,
+                state = excluded.state,
+                model = excluded.model,
+                attempt = excluded.attempt,
+                test_result = excluded.test_result,
+                started_at = excluded.started_at,
+                completed_at = excluded.completed_at,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                task_id,
+                prompt,
+                status,
+                branch,
+                worktree_path,
+                project_id,
+                max_attempts,
+                state,
+                model,
+                attempt,
+                test_result,
+                started_at,
+                completed_at,
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+def get_task(
+    task_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict | None:
+    connection = get_connection(db_path)
+
+    try:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM tasks
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+    finally:
+        connection.close()
+
+
+def list_tasks(
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[dict]:
+    connection = get_connection(db_path)
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM tasks
+            ORDER BY created_at DESC, task_id DESC
+            """
+        ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    finally:
+        connection.close()
+
+
+def append_task_log(
+    task_id: str,
+    message: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO task_logs (
+                task_id,
+                message
+            )
+            VALUES (?, ?)
+            """,
+            (
+                task_id,
+                message,
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+def list_task_logs(
+    task_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[str]:
+    connection = get_connection(db_path)
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT message
+            FROM task_logs
+            WHERE task_id = ?
+            ORDER BY log_id
+            """,
+            (task_id,),
+        ).fetchall()
+
+        return [
+            row["message"]
+            for row in rows
+        ]
+
+    finally:
+        connection.close()
+
+
+def save_task_diff(
+    task_id: str,
+    diff_output: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO task_diffs (
+                task_id,
+                diff,
+                updated_at
+            )
+            VALUES (
+                ?, ?, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT(task_id) DO UPDATE SET
+                diff = excluded.diff,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                task_id,
+                diff_output,
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+def get_task_diff(
+    task_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> str | None:
+    connection = get_connection(db_path)
+
+    try:
+        row = connection.execute(
+            """
+            SELECT diff
+            FROM task_diffs
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return str(row["diff"])
+
+    finally:
+        connection.close()
+
