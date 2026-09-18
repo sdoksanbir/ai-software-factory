@@ -77,10 +77,23 @@ class ModelClient:
         system_prompt: str,
         user_prompt: str,
         temperature: Optional[float] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        model_name_override: Optional[str] = None,
     ) -> ModelResponse:
-        
+
         params = self._resolve_model_params(model_role)
+
+        if model_name_override:
+            if params["provider"] != "ollama":
+                raise ValueError(
+                    "model_name_override yalnizca Ollama "
+                    "modellerinde kullanilabilir."
+                )
+
+            params = dict(params)
+            params["litellm_model"] = (
+                f"ollama/{model_name_override}"
+            )
         
         # Parametre override imkanı
         temp = temperature if temperature is not None else params["temperature"]

@@ -34,6 +34,11 @@ from factory.database import (
 from factory.control_center import get_control_center_status
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
+from factory.model_router import ModelRoute, route_model
+from factory.task_model_preferences import (
+    get_task_model_preference,
+    set_task_model_preference,
+)
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
 
@@ -124,6 +129,7 @@ class TaskCreateRequest(BaseModel):
     prompt: str = Field(min_length=1)
     max_attempts: int = Field(default=2, ge=1, le=5)
     project_id: str | None = None
+    model: str | None = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -489,11 +495,48 @@ def run_task_for_api(task_id: str):
     if task is None:
         raise KeyError(f"Unknown task: {task_id}")
 
+    requested_model = (
+        get_task_model_preference(
+            task_id,
+        )
+    )
+
+    if requested_model:
+        model_route = ModelRoute(
+            model=requested_model,
+            profile="manual",
+            reason=(
+                "Kullan\u0131c\u0131 taraf\u0131ndan "
+                "manuel olarak se\u00e7ildi."
+            ),
+            code_score=0,
+        )
+
+        selection_log = (
+            "Manuel Model: "
+            f"{model_route.model}"
+        )
+    else:
+        model_route = route_model(
+            task.prompt,
+        )
+
+        selection_log = (
+            "Model Router: "
+            f"{model_route.model} - "
+            f"{model_route.reason}"
+        )
+
     update_task_runtime(
         task_id,
         status="running",
         state="running",
-        model="fast_local",
+        model=model_route.model,
+    )
+
+    append_task_log(
+        task_id,
+        selection_log,
     )
 
     append_task_log(
@@ -524,6 +567,7 @@ def run_task_for_api(task_id: str):
             max_attempts=task.max_attempts,
             approval_handler=api_approval_handler,
             progress_handler=api_progress_handler,
+            model_route=model_route,
         )
     except Exception:
         append_task_log(
@@ -773,6 +817,15 @@ def create_task(
     )
 
     TASKS[task_id] = task
+
+
+    set_task_model_preference(
+
+        task_id,
+
+        request.model,
+
+    )
     persist_task(task)
 
     TASK_LOGS[task_id] = []

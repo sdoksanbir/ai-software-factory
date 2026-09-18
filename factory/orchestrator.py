@@ -6,9 +6,11 @@ from typing import Optional
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
 from factory.models import ModelClient
+from factory.model_router import ModelRoute, route_model
 from factory.tools.git_ops import GitWorktreeManager
 from factory.tools.repo import RepoTool
 from factory.tools.patch import PatchTool, PatchToolError
+from factory.model_patch_parser import parse_model_patch_response
 from factory.tools.sandbox import DockerSandbox
 
 
@@ -157,6 +159,7 @@ class Orchestrator:
         max_attempts: int = 2,
         approval_handler=None,
         progress_handler=None,
+        model_route: Optional[ModelRoute] = None,
     ) -> Optional[str]:
         if not task_id:
             rand_num = random.randint(1000, 9999)
@@ -164,6 +167,33 @@ class Orchestrator:
 
         print(f"\n[+] Yeni Görev Başlatıldı: {task_id}")
         print(f"[*] Prompt: {prompt}")
+
+        selected_model_route = (
+            model_route
+            if model_route is not None
+            else route_model(prompt)
+        )
+
+        print(
+            "[*] Model Router: "
+            f"{selected_model_route.model} "
+            f"({selected_model_route.profile})"
+        )
+        print(
+            "[*] Model Secim Nedeni: "
+            f"{selected_model_route.reason}"
+        )
+
+        if progress_handler is not None:
+            progress_handler(
+                task_id,
+                message=(
+                    "Model Router: "
+                    f"{selected_model_route.model} - "
+                    f"{selected_model_route.reason}"
+                ),
+            )
+
 
         # 1. TaskSpec ve State Machine
         try:
@@ -343,7 +373,10 @@ class Orchestrator:
                     model_role="fast_local",
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    temperature=0.2
+                    temperature=0.2,
+                    model_name_override=(
+                        selected_model_route.model
+                    ),
                 )
                 state_machine.transition(TaskStatus.MODEL_COMPLETED)
 
@@ -356,7 +389,7 @@ class Orchestrator:
 
                 state_machine.transition(TaskStatus.PATCH_VALIDATING)
 
-                multi_file_patch = PatchTool.parse_multi_file_response(
+                multi_file_patch = parse_model_patch_response(
                     response.content
                 )
 

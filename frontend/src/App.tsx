@@ -159,6 +159,9 @@ function App() {
   const [selectedModel, setSelectedModel] =
     useState<string | null>(null)
 
+  const [taskModelChoice, setTaskModelChoice] =
+    useState("")
+
 
   const [modelTestPrompt, setModelTestPrompt] =
     useState(
@@ -633,6 +636,7 @@ function App() {
         cleanPrompt,
         maxAttempts,
         selectedProject.project_id,
+        taskModelChoice || null,
       )
 
       setPrompt("")
@@ -1056,6 +1060,35 @@ function App() {
                 rows={4}
                 placeholder="AI ajan\u0131na g\u00f6revini yaz..."
               />
+
+              <div className="task-model-field">
+                <span>
+                  {"Model"}
+                </span>
+
+                <select
+                  className="task-model-select"
+                  value={taskModelChoice}
+                  onChange={(event) =>
+                    setTaskModelChoice(
+                      event.target.value,
+                    )
+                  }
+                >
+                  <option value="">
+                    {"Otomatik"}
+                  </option>
+
+                  {availableModels.map((model) => (
+                    <option
+                      key={model}
+                      value={model}
+                    >
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="rail-form-row">
                 <select

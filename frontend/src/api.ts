@@ -142,6 +142,7 @@ export function createTask(
   prompt: string,
   maxAttempts: number,
   projectId: string,
+  model: string | null = null,
 ) {
   return request<Task>("/tasks", {
     method: "POST",
@@ -149,6 +150,7 @@ export function createTask(
       prompt,
       max_attempts: maxAttempts,
       project_id: projectId,
+      model,
     }),
   })
 }
