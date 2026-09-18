@@ -3,11 +3,20 @@ export type Task = {
   status: string
   prompt: string
   max_attempts: number
+  project_id: string | null
   state: string
   model: string | null
   attempt: number
   test_result: string | null
   started_at: string | null
+}
+
+export type Project = {
+  project_id: string
+  name: string
+  path: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 export type TaskDiff = {
@@ -45,19 +54,27 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
-export function listTasks() {
-  return request<Task[]>("/tasks")
+export function listTasks(
+  projectId?: string | null,
+) {
+  const query = projectId
+    ? `?project_id=${encodeURIComponent(projectId)}`
+    : ""
+
+  return request<Task[]>(`/tasks${query}`)
 }
 
 export function createTask(
   prompt: string,
   maxAttempts: number,
+  projectId: string,
 ) {
   return request<Task>("/tasks", {
     method: "POST",
     body: JSON.stringify({
       prompt,
       max_attempts: maxAttempts,
+      project_id: projectId,
     }),
   })
 }
@@ -81,5 +98,61 @@ export function rejectTask(taskId: string) {
 export function retryTask(taskId: string) {
   return request<Task>(`/tasks/${taskId}/retry`, {
     method: "POST",
+  })
+}
+
+
+
+export function listProjects() {
+  return request<Project[]>("/projects")
+}
+
+
+export function createProject(
+  name: string,
+  path: string,
+) {
+  return request<Project>("/projects", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      path,
+    }),
+  })
+}
+
+
+export function updateProject(
+  projectId: string,
+  name: string,
+  path: string,
+) {
+  return request<Project>(
+    `/projects/${projectId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name,
+        path,
+      }),
+    },
+  )
+}
+
+
+export function deleteProject(
+  projectId: string,
+) {
+  return fetch(
+    `${API_BASE}/projects/${projectId}`,
+    {
+      method: "DELETE",
+    },
+  ).then((response) => {
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}`,
+      )
+    }
   })
 }

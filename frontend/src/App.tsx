@@ -9,10 +9,13 @@ import {
 import {
   approveTask,
   createTask,
+  createProject,
   getTaskDiff,
   listTasks,
+  listProjects,
   rejectTask,
   retryTask,
+  type Project,
   type Task,
 } from "./api"
 
@@ -37,6 +40,8 @@ function formatDate(value: string | null) {
 }
 
 function App() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [prompt, setPrompt] = useState("")
   const [maxAttempts, setMaxAttempts] = useState(3)
@@ -48,10 +53,50 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [backendOnline, setBackendOnline] = useState(true)
   const [liveLogs, setLiveLogs] = useState<string[]>([])
+  const [projectFormOpen, setProjectFormOpen] = useState(false)
+  const [newProjectName, setNewProjectName] = useState("")
+  const [newProjectPath, setNewProjectPath] = useState("")
+  const [projectSubmitting, setProjectSubmitting] = useState(false)
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await listProjects()
+
+      setProjects(data)
+
+      setSelectedProjectId((current) => {
+        if (
+          current &&
+          data.some(
+            (project) =>
+              project.project_id === current,
+          )
+        ) {
+          return current
+        }
+
+        return data[0]?.project_id ?? null
+      })
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Projeler y\u00fcklenemedi.",
+      )
+    }
+  }, [])
 
   const loadTasks = useCallback(async () => {
+    if (!selectedProjectId) {
+      setTasks([])
+      return
+    }
+
     try {
-      const data = await listTasks()
+      const data = await listTasks(
+        selectedProjectId,
+      )
+
       setTasks(data.slice().reverse())
       setBackendOnline(true)
       setError(null)
@@ -60,10 +105,14 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Backend bağlantısı kurulamadı.",
+          : "Backend ba\u011flant\u0131s\u0131 kurulamad\u0131.",
       )
     }
-  }, [])
+  }, [selectedProjectId])
+
+  useEffect(() => {
+    void loadProjects()
+  }, [loadProjects])
 
   useEffect(() => {
     void loadTasks()
@@ -74,6 +123,21 @@ function App() {
 
     return () => window.clearInterval(timer)
   }, [loadTasks])
+
+  useEffect(() => {
+    setSelectedTaskId(null)
+    setDiff("")
+    setLiveLogs([])
+  }, [selectedProjectId])
+
+  const selectedProject = useMemo(
+    () =>
+      projects.find(
+        (project) =>
+          project.project_id === selectedProjectId,
+      ) ?? null,
+    [projects, selectedProjectId],
+  )
 
   const selectedTask = useMemo(
     () => tasks.find((task) => task.task_id === selectedTaskId) ?? null,
@@ -137,6 +201,50 @@ function App() {
     }
   }, [tasks])
 
+  async function handleProjectCreate(
+    event: FormEvent,
+  ) {
+    event.preventDefault()
+
+    const cleanName = newProjectName.trim()
+    const cleanPath = newProjectPath.trim()
+
+    if (!cleanName || !cleanPath) {
+      setError(
+        "Proje ad\u0131 ve proje klas\u00f6r\u00fc zorunludur.",
+      )
+      return
+    }
+
+    setProjectSubmitting(true)
+    setError(null)
+
+    try {
+      const project = await createProject(
+        cleanName,
+        cleanPath,
+      )
+
+      await loadProjects()
+
+      setSelectedProjectId(
+        project.project_id,
+      )
+
+      setNewProjectName("")
+      setNewProjectPath("")
+      setProjectFormOpen(false)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Proje olu\u015fturulamad\u0131.",
+      )
+    } finally {
+      setProjectSubmitting(false)
+    }
+  }
+
   async function handleCreate(event: FormEvent) {
     event.preventDefault()
 
@@ -148,7 +256,18 @@ function App() {
     setError(null)
 
     try {
-      const task = await createTask(cleanPrompt, maxAttempts)
+      if (!selectedProject) {
+        setError(
+          "\u00d6nce bir proje se\u00e7melisin.",
+        )
+        return
+      }
+
+      const task = await createTask(
+        cleanPrompt,
+        maxAttempts,
+        selectedProject.project_id,
+      )
       setPrompt("")
       setSelectedTaskId(task.task_id)
       setDiff("")
@@ -231,10 +350,132 @@ function App() {
 
         <nav className="nav">
           <button className="nav-item active">Dashboard</button>
-          <button className="nav-item" disabled>Projects</button>
           <button className="nav-item" disabled>Models</button>
           <button className="nav-item" disabled>Settings</button>
         </nav>
+
+        <section className="project-selector">
+          <div className="project-selector-heading">
+            <span>Projeler</span>
+
+            <div className="project-selector-actions">
+              <small>{projects.length}</small>
+
+              <button
+                type="button"
+                className="project-add-button"
+                title="Yeni proje ekle"
+                onClick={() =>
+                  setProjectFormOpen(
+                    (current) => !current,
+                  )
+                }
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {projectFormOpen && (
+            <form
+              className="project-create-form"
+              onSubmit={handleProjectCreate}
+            >
+              <input
+                value={newProjectName}
+                onChange={(event) =>
+                  setNewProjectName(
+                    event.target.value,
+                  )
+                }
+                placeholder="Proje ad?"
+                autoFocus
+              />
+
+              <input
+                value={newProjectPath}
+                onChange={(event) =>
+                  setNewProjectPath(
+                    event.target.value,
+                  )
+                }
+                placeholder="C:\\Projects\\EduTest"
+              />
+
+              <div className="project-create-actions">
+                <button
+                  type="button"
+                  className="project-cancel-button"
+                  disabled={projectSubmitting}
+                  onClick={() => {
+                    setProjectFormOpen(false)
+                    setNewProjectName("")
+                    setNewProjectPath("")
+                  }}
+                >
+                  ?ptal
+                </button>
+
+                <button
+                  type="submit"
+                  className="project-save-button"
+                  disabled={
+                    projectSubmitting ||
+                    !newProjectName.trim() ||
+                    !newProjectPath.trim()
+                  }
+                >
+                  {projectSubmitting
+                    ? "Ekleniyor..."
+                    : "Projeyi Ekle"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="project-list">
+            {projects.length === 0 && (
+              <div className="project-empty">
+                Henüz proje yok.
+              </div>
+            )}
+
+            {projects.map((project) => (
+              <button
+                key={project.project_id}
+                type="button"
+                className={`project-item ${
+                  selectedProjectId === project.project_id
+                    ? "active"
+                    : ""
+                }`}
+                title={project.path}
+                onClick={() =>
+                  setSelectedProjectId(project.project_id)
+                }
+              >
+                <span className="project-mark">
+                  {project.name
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase()}
+                </span>
+
+                <span className="project-info">
+                  <strong>{project.name}</strong>
+                  <small>{project.path}</small>
+                </span>
+
+                {selectedProjectId === project.project_id && (
+                  <span
+                    className="project-active-dot"
+                    aria-label="Aktif proje"
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
 
         <div className="sidebar-footer">
           <span
@@ -255,7 +496,9 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">LOCAL DEVELOPMENT CONTROL</p>
-            <h1>AI Software Factory</h1>
+            <h1>
+              {selectedProject?.name ?? "AI Software Factory"}
+            </h1>
             <p className="subtitle">
               Görev oluştur, AI ajanını çalıştır, testleri izle ve
               değişiklikleri onayla.
@@ -334,7 +577,11 @@ function App() {
                 <button
                   className="primary-button"
                   type="submit"
-                  disabled={submitting || !prompt.trim()}
+                  disabled={
+                    submitting ||
+                    !prompt.trim() ||
+                    !selectedProject
+                  }
                 >
                   {submitting ? "Başlatılıyor..." : "Görevi Başlat"}
                 </button>
@@ -402,7 +649,7 @@ function App() {
                 <strong>Görev seç</strong>
                 <span>
                   Ayrıntıları, diff çıktısını ve işlem butonlarını
-                  görmek için listeden bir görev se?.
+                  görmek için listeden bir görev seç.
                 </span>
               </div>
             )}
