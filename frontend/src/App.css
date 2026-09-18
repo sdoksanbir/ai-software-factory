@@ -2863,3 +2863,46 @@ body {
 .task-model-select:focus {
   border-color: #319de5;
 }
+
+
+/* READ TASK RESULT */
+
+.read-result-panel {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #29445b;
+  border-radius: 7px;
+  background: #081722;
+}
+
+.read-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #1d3446;
+}
+
+.read-result-head span {
+  color: #7d98ad;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.read-result-head strong {
+  color: #7cc8ff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.read-result-content {
+  color: #d7e5f1;
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

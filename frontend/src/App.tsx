@@ -89,6 +89,121 @@ function formatBytes(value: number | null) {
   return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`
 }
 
+import { getTaskResult } from "./api"
+
+function buildReadPipelineStages(
+  state: string,
+) {
+  if (state === "queued") {
+    return [
+      {
+        id: "task",
+        label: "G?rev Al?nd?",
+        status: "active" as const,
+      },
+      {
+        id: "repo_analysis",
+        label: "Repo Analizi",
+        status: "pending" as const,
+      },
+      {
+        id: "model",
+        label: "Local Model",
+        status: "pending" as const,
+      },
+      {
+        id: "result",
+        label: "Tamamland?",
+        status: "pending" as const,
+      },
+    ]
+  }
+
+  if (state === "failed") {
+    return [
+      {
+        id: "task",
+        label: "G?rev Al?nd?",
+        status: "success" as const,
+      },
+      {
+        id: "repo_analysis",
+        label: "Repo Analizi",
+        status: "success" as const,
+      },
+      {
+        id: "model",
+        label: "Local Model",
+        status: "failed" as const,
+      },
+      {
+        id: "result",
+        label: "Sonu?",
+        status: "pending" as const,
+      },
+    ]
+  }
+
+  if (state === "completed") {
+    return [
+      {
+        id: "task",
+        label: "G?rev Al?nd?",
+        status: "success" as const,
+      },
+      {
+        id: "repo_analysis",
+        label: "Repo Analizi",
+        status: "success" as const,
+      },
+      {
+        id: "model",
+        label: "Local Model",
+        status: "success" as const,
+      },
+      {
+        id: "result",
+        label: "Tamamland?",
+        status: "success" as const,
+      },
+    ]
+  }
+
+  return [
+    {
+      id: "task",
+      label: "G?rev Al?nd?",
+      status: "success" as const,
+    },
+    {
+      id: "repo_analysis",
+      label: "Repo Analizi",
+      status: "success" as const,
+    },
+    {
+      id: "model",
+      label: "Local Model",
+      status: "active" as const,
+    },
+    {
+      id: "result",
+      label: "Sonu?",
+      status: "pending" as const,
+    },
+  ]
+}
+
+
+function getReadPipelineProgress(
+  state: string,
+) {
+  if (state === "queued") return 10
+  if (state === "completed") return 100
+  if (state === "failed") return 75
+  return 65
+}
+
+
 function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] =
@@ -124,6 +239,9 @@ function App() {
 
   const [loadingDiff, setLoadingDiff] =
     useState(false)
+
+  const [taskReadResult, setTaskReadResult] =
+    useState<string | null>(null)
 
   const [error, setError] =
     useState<string | null>(null)
@@ -400,6 +518,48 @@ function App() {
     }, [selectedTaskId])
 
   useEffect(() => {
+    let cancelled = false
+
+    async function loadSelectedTaskResult() {
+      if (!selectedTaskId) {
+        setTaskReadResult(null)
+        return
+      }
+
+      try {
+        const data =
+          await getTaskResult(
+            selectedTaskId,
+          )
+
+        if (!cancelled) {
+          setTaskReadResult(
+            data.result ?? null,
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setTaskReadResult(null)
+        }
+      }
+    }
+
+    void loadSelectedTaskResult()
+
+    const timer = window.setInterval(
+      () => {
+        void loadSelectedTaskResult()
+      },
+      2000,
+    )
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [selectedTaskId])
+
+  useEffect(() => {
     void loadProjects()
   }, [loadProjects])
 
@@ -442,6 +602,7 @@ function App() {
 
   useEffect(() => {
     setDiff("")
+    setTaskReadResult(null)
     setLiveLogs([])
     setLogQuery("")
 
@@ -1654,7 +1815,14 @@ function App() {
           </div>
 
           <div className="pipeline-flow">
-            {pipelineStages.map(
+            {(
+              selectedTask?.test_result ===
+              "not_required"
+                ? buildReadPipelineStages(
+                    selectedTask.state,
+                  )
+                : pipelineStages
+            ).map(
               (stage) => (
                 <div
                   className="pipeline-node-wrap"
@@ -1702,7 +1870,14 @@ function App() {
           </div>
 
           <div className="pipeline-tools">
-            {pipelineStages.map((stage) => (
+            {(
+              selectedTask?.test_result ===
+              "not_required"
+                ? buildReadPipelineStages(
+                    selectedTask.state,
+                  )
+                : pipelineStages
+            ).map((stage) => (
               <div
                 key={stage.id}
                 className="pipeline-tool"
@@ -1848,6 +2023,25 @@ function App() {
               </span>
             </div>
 
+            {taskReadResult && (
+              <div className="read-result-panel">
+                <div className="read-result-head">
+                  <span>
+                    {"AI Yan\u0131t\u0131"}
+                  </span>
+
+                  <strong>
+                    {selectedTask?.model ??
+                      "Local Model"}
+                  </strong>
+                </div>
+
+                <div className="read-result-content">
+                  {taskReadResult}
+                </div>
+              </div>
+            )}
+
             <div className="result-details">
               <div>
                 <span>
@@ -1885,9 +2079,14 @@ function App() {
                 </span>
 
                 <strong>
-                  {pipeline
-                    ? `${pipeline.progress_percent}%`
-                    : "\u2014"}
+                  {selectedTask?.test_result ===
+                  "not_required"
+                    ? `${getReadPipelineProgress(
+                        selectedTask.state,
+                      )}%`
+                    : pipeline
+                      ? `${pipeline.progress_percent}%`
+                      : "\u2014"}
                 </strong>
               </div>
 
@@ -1926,7 +2125,9 @@ function App() {
             </div>
 
             <div className="result-actions">
-              <button
+              {selectedTask?.test_result !==
+                "not_required" && (
+                <button
                 className="diff-action"
                 onClick={() =>
                   void handleDiff()
@@ -1940,6 +2141,7 @@ function App() {
                   ? "Y\u00fckleniyor..."
                   : "Diff'i G\u00f6r\u00fcnt\u00fcle"}
               </button>
+              )}
 
               {selectedTask?.state ===
                 "ready_for_approval" && (

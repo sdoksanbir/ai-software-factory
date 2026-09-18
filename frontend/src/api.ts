@@ -24,6 +24,13 @@ export type TaskDiff = {
   diff: string
 }
 
+
+export type TaskReadResult = {
+  task_id: string
+  state: string
+  result: string | null
+}
+
 export type PipelineStage = {
   id: string
   label: string
@@ -157,6 +164,13 @@ export function createTask(
 
 export function getTaskDiff(taskId: string) {
   return request<TaskDiff>(`/tasks/${taskId}/diff`)
+}
+
+
+export function getTaskResult(taskId: string) {
+  return request<TaskReadResult>(
+    `/tasks/${taskId}/result`,
+  )
 }
 
 export function approveTask(taskId: string) {
