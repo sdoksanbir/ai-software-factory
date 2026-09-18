@@ -34,7 +34,12 @@ class RepoTool:
 
         file_list = []
         for root, dirs, files in os.walk(abs_base):
-            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            dirs[:] = [
+                d for d in dirs
+                if d not in ignore_dirs
+                and not d.startswith(".venv-")
+                and not d.startswith("venv-")
+            ]
             
             for file in files:
                 full_path = os.path.join(root, file)
@@ -64,6 +69,93 @@ class RepoTool:
             return "".join(lines)
         except Exception as e:
             raise RepoToolError(f"Failed to read file {file_path}: {str(e)}")
+
+    @staticmethod
+    def build_context(
+        worktree_path: str,
+        max_files: int = 30,
+        max_chars_per_file: int = 12000,
+        max_total_chars: int = 60000
+    ) -> str:
+        """Build a bounded text context from source/config files in the worktree."""
+        allowed_extensions = {
+            ".py", ".js", ".jsx", ".ts", ".tsx",
+            ".json", ".yaml", ".yml", ".toml",
+            ".md", ".txt", ".html", ".css",
+            ".scss", ".sql"
+        }
+
+        allowed_names = {
+            "Dockerfile",
+            "requirements.txt",
+            "package.json",
+            "tsconfig.json",
+            "pyproject.toml"
+        }
+
+        blocked_names = {
+            ".env",
+            ".env.local",
+            ".env.production",
+            ".env.development",
+            "credentials.json",
+            "secrets.json"
+        }
+
+        files = RepoTool.list_files(worktree_path)
+        selected = []
+
+        for rel_path in files:
+            name = pathlib.Path(rel_path).name
+            suffix = pathlib.Path(rel_path).suffix.lower()
+
+            if name in blocked_names:
+                continue
+
+            if suffix in allowed_extensions or name in allowed_names:
+                selected.append(rel_path)
+
+        selected = selected[:max_files]
+
+        context_parts = []
+        total_chars = 0
+
+        for rel_path in selected:
+            try:
+                content = RepoTool.read_file(
+                    worktree_path,
+                    rel_path,
+                    max_lines=2000
+                )
+            except Exception:
+                continue
+
+            if len(content) > max_chars_per_file:
+                content = (
+                    content[:max_chars_per_file]
+                    + "\n... [CONTENT TRUNCATED]"
+                )
+
+            block = (
+                f"\n===== FILE: {rel_path} =====\n"
+                f"{content}"
+                f"\n===== END FILE =====\n"
+            )
+
+            remaining = max_total_chars - total_chars
+            if remaining <= 0:
+                break
+
+            if len(block) > remaining:
+                block = block[:remaining]
+                context_parts.append(block)
+                break
+
+            context_parts.append(block)
+            total_chars += len(block)
+
+        return "".join(context_parts).strip()
+
 
     @staticmethod
     def search_code(worktree_path: str, keyword: str, file_extension: str = None) -> List[str]:

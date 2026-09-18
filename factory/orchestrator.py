@@ -65,8 +65,11 @@ class Orchestrator:
         # 3. Repo Context
         try:
             state_machine.transition(TaskStatus.CONTEXT_BUILDING)
-            file_list = RepoTool.list_files(wt_result.path)
-            repo_summary = "\n".join(file_list[:100])
+
+            repo_summary = RepoTool.build_context(
+                wt_result.path
+            )
+
             state_machine.transition(TaskStatus.CONTEXT_READY)
         except Exception as e:
             repo_summary = "Dosyalar okunamadı."
