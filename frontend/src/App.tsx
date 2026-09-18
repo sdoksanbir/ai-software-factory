@@ -403,6 +403,15 @@ function App() {
     }
   }
 
+  function scrollToSection(sectionId: string) {
+    document
+      .getElementById(sectionId)
+      ?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -415,12 +424,56 @@ function App() {
         </div>
 
         <nav className="nav">
-          <button className="nav-item active">Dashboard</button>
-          <button className="nav-item" disabled>Models</button>
-          <button className="nav-item" disabled>Settings</button>
+          <span className="nav-section-label">
+            Kontrol
+          </span>
+
+          <button
+            className="nav-item active"
+            type="button"
+            onClick={() =>
+              scrollToSection("control-center")
+            }
+          >
+            <span>?</span>
+            Kontrol Merkezi
+          </button>
+
+          <button
+            className="nav-item"
+            type="button"
+            onClick={() =>
+              scrollToSection("tasks")
+            }
+          >
+            <span>?</span>
+            G?revler
+          </button>
+
+          <button
+            className="nav-item"
+            type="button"
+            onClick={() =>
+              scrollToSection("projects")
+            }
+          >
+            <span>?</span>
+            Projeler
+          </button>
+
+          <button
+            className="nav-item"
+            type="button"
+            onClick={() =>
+              scrollToSection("models")
+            }
+          >
+            <span>AI</span>
+            Modeller
+          </button>
         </nav>
 
-        <section className="project-selector">
+        <section className="project-selector" id="projects">
           <div className="project-selector-heading">
             <span>Projeler</span>
 
@@ -560,20 +613,94 @@ function App() {
 
       <main className="main">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">LOCAL DEVELOPMENT CONTROL</p>
-            <h1>
-              {selectedProject?.name ?? "AI Software Factory"}
-            </h1>
-            <p className="subtitle">
-              Görev oluştur, AI ajanını çalıştır, testleri izle ve
-              değişiklikleri onayla.
-            </p>
+          <div className="topbar-main">
+            <div className="topbar-copy">
+              <p className="eyebrow">
+                AI SOFTWARE FACTORY
+              </p>
+
+              <div className="topbar-title-row">
+                <h1>
+                  {selectedProject?.name ??
+                    "Control Center"}
+                </h1>
+
+                <span
+                  className={`runtime-pill ${
+                    backendOnline
+                      ? "online"
+                      : "offline"
+                  }`}
+                >
+                  <span />
+                  {backendOnline
+                    ? "Sistem Aktif"
+                    : "Ba?lant? Yok"}
+                </span>
+              </div>
+
+              <p className="subtitle">
+                Yerel AI geli?tirme hatt?n?,
+                g?revleri ve servisleri tek
+                merkezden y?net.
+              </p>
+            </div>
+
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() => {
+                void loadTasks()
+                void loadControlCenter()
+              }}
+            >
+              ? Yenile
+            </button>
           </div>
 
-          <button className="refresh-button" onClick={() => void loadTasks()}>
-            Yenile
-          </button>
+          <nav className="top-navigation">
+            <button
+              type="button"
+              className="top-nav-item active"
+              onClick={() =>
+                scrollToSection(
+                  "control-center",
+                )
+              }
+            >
+              Kontrol Paneli
+            </button>
+
+            <button
+              type="button"
+              className="top-nav-item"
+              onClick={() =>
+                scrollToSection("tasks")
+              }
+            >
+              G?revler
+            </button>
+
+            <button
+              type="button"
+              className="top-nav-item"
+              onClick={() =>
+                scrollToSection("projects")
+              }
+            >
+              Projeler
+            </button>
+
+            <button
+              type="button"
+              className="top-nav-item"
+              onClick={() =>
+                scrollToSection("models")
+              }
+            >
+              Modeller
+            </button>
+          </nav>
         </header>
 
         {error && (
@@ -584,7 +711,7 @@ function App() {
           </div>
         )}
 
-        <section className="control-center">
+        <section className="control-center" id="control-center">
           <div className="control-center-heading">
             <div>
               <span className="section-kicker">
@@ -741,7 +868,7 @@ function App() {
               </div>
             </article>
 
-            <article className="control-status-card model-card">
+            <article className="control-status-card model-card" id="models">
               <div className="control-card-title">
                 <span>Local Modeller</span>
                 <small>
@@ -919,7 +1046,7 @@ function App() {
               </div>
             </form>
 
-            <section className="task-list-panel">
+            <section className="task-list-panel" id="tasks">
               <div className="section-heading">
                 <div>
                   <span className="section-kicker">TASK QUEUE</span>
