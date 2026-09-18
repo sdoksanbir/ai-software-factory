@@ -356,9 +356,9 @@ function App() {
               <div className="task-list">
                 {tasks.length === 0 && (
                   <div className="empty-state">
-                    <strong>Hen?z görev yok.</strong>
+                    <strong>Henüz görev yok.</strong>
                     <span>
-                      Yukar?daki alandan ilk görevi oluşturabilirsin.
+                      Yukarıdaki alandan ilk görevi oluşturabilirsin.
                     </span>
                   </div>
                 )}
