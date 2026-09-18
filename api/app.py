@@ -1,3 +1,6 @@
+from urllib import error as urllib_error
+from urllib import request as urllib_request
+import time
 import asyncio
 import json
 import os
@@ -110,6 +113,11 @@ app = FastAPI(
     title="AI Software Factory API",
     version="1.0",
 )
+
+
+class ModelTestRequest(BaseModel):
+    model: str
+    prompt: str
 
 
 class TaskCreateRequest(BaseModel):
@@ -1214,4 +1222,93 @@ def open_project_terminal(project_id: str):
     return {
         "ok": True,
         "project_id": project_id,
+    }
+
+
+
+@app.post("/models/test")
+def test_local_model(payload: ModelTestRequest):
+    model = payload.model.strip()
+    prompt = payload.prompt.strip()
+
+    if not model:
+        raise HTTPException(
+            status_code=400,
+            detail="Model ad? zorunludur.",
+        )
+
+    if not prompt:
+        raise HTTPException(
+            status_code=400,
+            detail="Prompt zorunludur.",
+        )
+
+    body = json.dumps(
+        {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+        }
+    ).encode("utf-8")
+
+    request = urllib_request.Request(
+        "http://127.0.0.1:11434/api/generate",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    started = time.perf_counter()
+
+    try:
+        with urllib_request.urlopen(
+            request,
+            timeout=180,
+        ) as response:
+            raw = response.read().decode("utf-8")
+
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ollama hatas?: {detail}",
+        ) from exc
+
+    except urllib_error.URLError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama servisine ula??lam?yor.",
+        ) from exc
+
+    elapsed_ms = round(
+        (time.perf_counter() - started) * 1000
+    )
+
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Ollama ge?ersiz JSON d?nd?rd?.",
+        ) from exc
+
+    answer = result.get("response")
+
+    if not isinstance(answer, str):
+        raise HTTPException(
+            status_code=502,
+            detail="Ollama yan?t? bulunamad?.",
+        )
+
+    return {
+        "model": model,
+        "response": answer,
+        "duration_ms": elapsed_ms,
+        "done": bool(result.get("done", True)),
     }

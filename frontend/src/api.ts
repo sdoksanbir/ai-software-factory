@@ -278,3 +278,28 @@ export function openProjectTerminal(
     },
   )
 }
+
+
+
+export type ModelTestResult = {
+  model: string
+  response: string
+  duration_ms: number
+  done: boolean
+}
+
+export function testModel(
+  model: string,
+  prompt: string,
+) {
+  return request<ModelTestResult>(
+    "/models/test",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        model,
+        prompt,
+      }),
+    },
+  )
+}

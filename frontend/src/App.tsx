@@ -20,6 +20,7 @@ import {
   rejectTask,
   retryTask,
   updateProject,
+  testModel,
   type ControlCenterStatus,
   type Project,
   type Task,
@@ -158,6 +159,24 @@ function App() {
   const [selectedModel, setSelectedModel] =
     useState<string | null>(null)
 
+
+  const [modelTestPrompt, setModelTestPrompt] =
+    useState(
+      "Python ile basit bir fibonacci fonksiyonu yaz ve k\u0131saca a\u00e7\u0131kla.",
+    )
+
+  const [modelTestResponse, setModelTestResponse] =
+    useState("")
+
+  const [modelTestDuration, setModelTestDuration] =
+    useState<number | null>(null)
+
+  const [modelTestRunning, setModelTestRunning] =
+    useState(false)
+
+  const [modelTestError, setModelTestError] =
+    useState<string | null>(null)
+
   const [projectSettingsName, setProjectSettingsName] =
     useState("")
 
@@ -215,7 +234,17 @@ function App() {
       !selectedModel ||
       !availableModels.includes(selectedModel)
     ) {
-      setSelectedModel(availableModels[0])
+      const preferredModels = [
+        "qwen2.5-coder:14b",
+        "llama3.1:8b",
+      ]
+
+      const preferredModel =
+        preferredModels.find((model) =>
+          availableModels.includes(model),
+        ) ?? availableModels[0]
+
+      setSelectedModel(preferredModel)
     }
   }, [availableModels, selectedModel])
 
@@ -501,6 +530,84 @@ function App() {
       )
     } finally {
       setProjectSettingsSaving(false)
+    }
+  }
+
+  async function handleModelTest() {
+    if (!selectedModel) {
+      return
+    }
+
+    const prompt = modelTestPrompt.trim()
+
+    if (!prompt) {
+      setModelTestError(
+        "Test promptu bo\u015f olamaz.",
+      )
+      return
+    }
+
+    setModelTestRunning(true)
+    setModelTestError(null)
+    setModelTestResponse("")
+    setModelTestDuration(null)
+
+    try {
+      const result = await testModel(
+        selectedModel,
+        prompt,
+      )
+
+      setModelTestResponse(
+        result.response,
+      )
+
+      setModelTestDuration(
+        result.duration_ms,
+      )
+    } catch (err) {
+      const rawMessage =
+        err instanceof Error
+          ? err.message
+          : "Model testi ba\u015far\u0131s\u0131z oldu."
+
+      const normalized =
+        rawMessage.toLowerCase()
+
+      const resourceFailure =
+        normalized.includes("cuda") ||
+        normalized.includes("out of memory") ||
+        normalized.includes("llama-server process has terminated") ||
+        normalized.includes("stack-based buffer") ||
+        normalized.includes("shared object initialization failed")
+
+      if (resourceFailure) {
+        const fallbackModel =
+          availableModels.find(
+            (model) =>
+              model !== selectedModel &&
+              model.includes("14b"),
+          ) ??
+          availableModels.find(
+            (model) =>
+              model !== selectedModel &&
+              model.includes("8b"),
+          ) ??
+          availableModels.find(
+            (model) =>
+              model !== selectedModel,
+          )
+
+        setModelTestError(
+          fallbackModel
+            ? `Model ba\u015flat\u0131lamad\u0131. GPU/CUDA veya bellek s\u0131n\u0131r\u0131na tak\u0131lm\u0131\u015f olabilir. Alternatif olarak ${fallbackModel} modelini deneyebilirsin.`
+            : "Model ba\u015flat\u0131lamad\u0131. GPU/CUDA veya bellek s\u0131n\u0131r\u0131na tak\u0131lm\u0131\u015f olabilir.",
+        )
+      } else {
+        setModelTestError(rawMessage)
+      }
+    } finally {
+      setModelTestRunning(false)
     }
   }
 
@@ -1265,18 +1372,85 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="model-test-placeholder">
-                      <UiIcon name="terminal" />
+                    <div className="model-test-panel">
+                      <div className="model-test-title">
+                        <UiIcon name="terminal" />
 
-                      <div>
-                        <strong>
-                          {"Model Testi"}
-                        </strong>
+                        <div>
+                          <strong>
+                            {"Model Testi"}
+                          </strong>
 
-                        <span>
-                          {"Sonraki ad\u0131mda bu model ger\u00e7ek bir prompt ile test edilecek."}
-                        </span>
+                          <span>
+                            {"Se\u00e7ili modele do\u011frudan prompt g\u00f6nder."}
+                          </span>
+                        </div>
                       </div>
+
+                      <textarea
+                        className="model-test-input"
+                        value={modelTestPrompt}
+                        onChange={(event) =>
+                          setModelTestPrompt(
+                            event.target.value,
+                          )
+                        }
+                        placeholder={
+                          "Modele g\u00f6ndermek istedi\u011fin prompt..."
+                        }
+                        rows={6}
+                      />
+
+                      <div className="model-test-actions">
+                        <button
+                          type="button"
+                          className="model-test-button"
+                          disabled={
+                            modelTestRunning ||
+                            !selectedModel
+                          }
+                          onClick={() =>
+                            void handleModelTest()
+                          }
+                        >
+                          <UiIcon name="running" />
+
+                          {modelTestRunning
+                            ? "Model \u00e7al\u0131\u015f\u0131yor..."
+                            : "Testi Ba\u015flat"}
+                        </button>
+
+                        {modelTestDuration != null && (
+                          <span className="model-test-duration">
+                            {(modelTestDuration / 1000).toFixed(2)}
+                            {" sn"}
+                          </span>
+                        )}
+                      </div>
+
+                      {modelTestError && (
+                        <div className="model-test-error">
+                          {modelTestError}
+                        </div>
+                      )}
+
+                      {modelTestResponse && (
+                        <div className="model-test-result">
+                          <div className="model-test-result-head">
+                            <strong>
+                              MODEL RESPONSE
+                            </strong>
+
+                            <span>
+                              {selectedModel}
+                            </span>
+                          </div>
+
+                          <pre>
+                            {modelTestResponse}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
