@@ -6,3 +6,4 @@ __pycache__/
 data/*.db
 logs/
 test_worktrees/
+.venv-1/
