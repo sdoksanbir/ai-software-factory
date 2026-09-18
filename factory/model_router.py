@@ -153,7 +153,69 @@ def route_model(
         available_models,
     )
 
-    score = _code_score(clean_prompt)
+    score = _code_score(
+        clean_prompt,
+    )
+
+    translation_table = str.maketrans(
+        {
+            "\u0131": "i",
+            "\u0130": "i",
+            "\u015f": "s",
+            "\u015e": "s",
+            "\u011f": "g",
+            "\u011e": "g",
+            "\u00fc": "u",
+            "\u00dc": "u",
+            "\u00f6": "o",
+            "\u00d6": "o",
+            "\u00e7": "c",
+            "\u00c7": "c",
+        }
+    )
+
+    normalized_prompt = (
+        clean_prompt
+        .translate(translation_table)
+        .casefold()
+    )
+
+    repository_analysis_markers = (
+        "projenin mevcut yapisini",
+        "projenin yapisini",
+        "projeyi ozetle",
+        "proje mimarisi",
+        "projenin mimarisini",
+        "mimarisini ozetle",
+        "repository yapisi",
+        "repository analiz",
+        "repo yapisi",
+        "repo analiz",
+        "kod tabanini ozetle",
+        "kod tabanini analiz et",
+        "codebase",
+        "architecture",
+    )
+
+    if any(
+        marker in normalized_prompt
+        for marker in repository_analysis_markers
+    ):
+        selected = _pick_available(
+            CODER_MODEL,
+            FAST_MODEL,
+            models,
+        )
+
+        return ModelRoute(
+            model=selected,
+            profile="repository_analysis",
+            reason=(
+                "Repository analizi veya mimari "
+                "\u00f6zet g\u00f6revi alg\u0131land\u0131."
+            ),
+            code_score=score,
+        )
 
     if score >= 1:
         selected = _pick_available(
@@ -182,8 +244,8 @@ def route_model(
         model=selected,
         profile="fast_local",
         reason=(
-            "Genel veya hafif gorev; hizli yerel "
-            "model yeterli."
+            "Genel veya hafif gorev; "
+            "hizli yerel model yeterli."
         ),
         code_score=score,
     )
