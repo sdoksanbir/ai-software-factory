@@ -80,7 +80,10 @@ class Orchestrator:
             "Markdown, açıklama metni veya kod bloğu kullanma. "
             "JSON yapısı tam olarak şu biçimde olmalı: "
             '{"files":[{"path":"relative/path.py","content":"dosyanın tam içeriği"}],"explanation":"kısa açıklama"}. '
-            "Her dosya için content alanında dosyanın değişiklik sonrası TAM içeriğini ver."
+            "Her dosya için content alanında dosyanın değişiklik sonrası TAM içeriğini ver. "
+            "Görev çalıştırılabilir Python kodunda yeni davranış ekliyor veya mevcut davranışı değiştiriyorsa "
+            "uygun pytest test dosyasını da files dizisine ekle veya güncelle. "
+            "Testler gerçek davranışı doğrulamalı; yalnızca import veya smoke test yeterli değildir."
         )
 
         user_prompt = (
@@ -89,7 +92,8 @@ class Orchestrator:
             "Görevi tamamlamak için değiştirilmesi veya oluşturulması gereken tüm dosyaları "
             "files dizisinde belirt. Değişmeyen dosyaları ekleme. "
             "path alanları proje köküne göre relative olmalı. "
-            "Her content alanı ilgili dosyanın son halinin tamamını içermeli."
+            "Her content alanı ilgili dosyanın son halinin tamamını içermeli. "
+            "Python davranışı ekleniyor veya değiştiriliyorsa ilgili pytest testlerini de oluştur veya güncelle."
         )
 
         success = False
