@@ -45,15 +45,89 @@ class PatchTool:
 
     @staticmethod
     def apply_multi_file_patch(worktree_path: str, patch: MultiFilePatch) -> List[str]:
-        written_files = []
+        abs_base = pathlib.Path(worktree_path).resolve()
 
+        prepared = []
+        seen_targets = set()
+
+        # First validate every file before writing anything.
         for file_change in patch.files:
-            written_path = PatchTool.apply_file_patch(
-                worktree_path,
-                file_change.path,
+            target_path = pathlib.Path(
+                os.path.abspath(
+                    os.path.join(str(abs_base), file_change.path)
+                )
+            )
+
+            try:
+                target_path.relative_to(abs_base)
+            except ValueError:
+                raise PatchToolError(
+                    f"Access denied: Path is outside worktree -> {file_change.path}"
+                )
+
+            target_key = str(target_path).lower()
+            if target_key in seen_targets:
+                raise PatchToolError(
+                    f"Duplicate target path in patch: {file_change.path}"
+                )
+
+            seen_targets.add(target_key)
+
+            if target_path.exists() and not target_path.is_file():
+                raise PatchToolError(
+                    f"Target path is not a file: {file_change.path}"
+                )
+
+            existed = target_path.exists()
+            original_bytes = target_path.read_bytes() if existed else None
+
+            cleaned_content = PatchTool._clean_markdown_fences(
                 file_change.content
             )
-            written_files.append(written_path)
+
+            prepared.append(
+                (
+                    target_path,
+                    cleaned_content,
+                    existed,
+                    original_bytes
+                )
+            )
+
+        written_files = []
+
+        try:
+            for target_path, cleaned_content, _, _ in prepared:
+                target_path.parent.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
+
+                target_path.write_text(
+                    cleaned_content,
+                    encoding="utf-8"
+                )
+
+                written_files.append(str(target_path))
+
+        except Exception as e:
+            # Restore every file to its original state.
+            for target_path, _, existed, original_bytes in reversed(prepared):
+                try:
+                    if existed:
+                        target_path.parent.mkdir(
+                            parents=True,
+                            exist_ok=True
+                        )
+                        target_path.write_bytes(original_bytes)
+                    elif target_path.exists():
+                        target_path.unlink()
+                except Exception:
+                    pass
+
+            raise PatchToolError(
+                f"Multi-file patch failed and was rolled back: {e}"
+            ) from e
 
         return written_files
 
