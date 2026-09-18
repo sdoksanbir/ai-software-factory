@@ -71,7 +71,6 @@ class Orchestrator:
             if filename.endswith(".py"):
                 stem = filename[:-3]
                 allowed_paths.add(f"tests/test_{stem}.py")
-                allowed_paths.add(f"test_{stem}.py")
 
         normalized_changes = [
             path.replace("\\", "/").lstrip("./")
