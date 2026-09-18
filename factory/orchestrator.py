@@ -16,8 +16,7 @@ class Orchestrator:
         self.project_path = os.path.abspath(project_path)
         
         if worktree_root is None:
-            parent_dir = os.path.dirname(self.project_path)
-            self.worktree_root = os.path.join(parent_dir, "test_worktrees")
+            self.worktree_root = r"C:\AI-Worktrees"
         else:
             self.worktree_root = os.path.abspath(worktree_root)
 
