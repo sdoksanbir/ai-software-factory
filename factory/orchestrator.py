@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import subprocess
 from typing import Optional
 from factory.schemas import TaskSpec, TaskStatus
@@ -28,6 +29,67 @@ class Orchestrator:
             self.sandbox = DockerSandbox()
         except Exception:
             self.sandbox = None
+
+    @staticmethod
+    def _extract_explicit_file_targets(prompt: str) -> list[str]:
+        pattern = r"(?<![\w.-])([\w./\\-]+\.(?:py|js|jsx|ts|tsx|json|yaml|yml))(?![\w.-])"
+
+        matches = re.findall(
+            pattern,
+            prompt,
+            flags=re.IGNORECASE,
+        )
+
+        targets = []
+
+        for match in matches:
+            normalized = match.replace("\\", "/").lstrip("./")
+
+            if normalized not in targets:
+                targets.append(normalized)
+
+        return targets
+
+    @staticmethod
+    def _validate_explicit_file_scope(
+        prompt: str,
+        changed_paths: list[str],
+    ) -> None:
+        explicit_targets = Orchestrator._extract_explicit_file_targets(
+            prompt
+        )
+
+        if not explicit_targets:
+            return
+
+        allowed_paths = set(explicit_targets)
+
+        for target in explicit_targets:
+            normalized = target.replace("\\", "/")
+            filename = normalized.rsplit("/", 1)[-1]
+
+            if filename.endswith(".py"):
+                stem = filename[:-3]
+                allowed_paths.add(f"tests/test_{stem}.py")
+                allowed_paths.add(f"test_{stem}.py")
+
+        normalized_changes = [
+            path.replace("\\", "/").lstrip("./")
+            for path in changed_paths
+        ]
+
+        violations = [
+            path
+            for path in normalized_changes
+            if path not in allowed_paths
+        ]
+
+        if violations:
+            raise PatchToolError(
+                "Model attempted to modify files outside the explicit "
+                f"task scope. Allowed: {sorted(allowed_paths)}. "
+                f"Rejected: {sorted(violations)}"
+            )
 
     def _handle_cli_approval(
         self,
@@ -195,6 +257,16 @@ class Orchestrator:
                 )
 
                 state_machine.transition(TaskStatus.PATCH_READY)
+
+                changed_paths = [
+                    file_change.path
+                    for file_change in multi_file_patch.files
+                ]
+
+                self._validate_explicit_file_scope(
+                    prompt,
+                    changed_paths,
+                )
 
                 written_files = PatchTool.apply_multi_file_patch(
                     wt_result.path,
