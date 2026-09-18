@@ -31,6 +31,29 @@ class TaskCreateResponse(BaseModel):
 
 
 TASKS: dict[str, TaskCreateResponse] = {}
+TASK_CONTEXTS: dict[str, dict[str, object]] = {}
+
+
+def api_approval_handler(
+    task_id,
+    state_machine,
+    wt_result,
+    diff_output,
+):
+    update_task_runtime(
+        task_id,
+        status="waiting_approval",
+        state="ready_for_approval",
+        test_result="passed",
+    )
+
+    TASK_CONTEXTS[task_id] = {
+        "state_machine": state_machine,
+        "wt_result": wt_result,
+        "diff_output": diff_output,
+    }
+
+    return "ready_for_approval"
 
 
 def update_task_runtime(
