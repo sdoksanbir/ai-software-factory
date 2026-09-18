@@ -27,6 +27,7 @@ from factory.database import (
     update_project as db_update_project,
 )
 from factory.control_center import get_control_center_status
+from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
@@ -1042,4 +1043,26 @@ def control_center_status():
     return get_control_center_status(
         project_path=orchestrator.project_path,
         tasks=list(TASKS.values()),
+    )
+
+
+
+@app.get("/tasks/{task_id}/pipeline")
+def task_pipeline(task_id: str):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="G?rev bulunamad?.",
+        )
+
+    logs = TASK_LOGS.get(
+        task_id,
+        [],
+    )
+
+    return build_task_pipeline(
+        task,
+        logs,
     )
