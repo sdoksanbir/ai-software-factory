@@ -8,6 +8,17 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 
+from factory.database import (
+    append_task_log as db_append_task_log,
+    clear_task_logs as db_clear_task_logs,
+    delete_task_diff as db_delete_task_diff,
+    get_task_diff as db_get_task_diff,
+    init_database,
+    list_task_logs as db_list_task_logs,
+    list_tasks as db_list_tasks,
+    save_task_diff as db_save_task_diff,
+    upsert_task as db_upsert_task,
+)
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskStatus
 
@@ -46,7 +57,81 @@ def append_task_log(
     message: str,
 ) -> None:
     TASK_LOGS.setdefault(task_id, []).append(message)
+    db_append_task_log(task_id, message)
 
+
+def persist_task(
+    task: TaskCreateResponse,
+    *,
+    branch: str | None = None,
+    worktree_path: str | None = None,
+) -> None:
+    db_upsert_task(
+        task.task_id,
+        prompt=task.prompt,
+        status=task.status,
+        max_attempts=task.max_attempts,
+        state=task.state,
+        model=task.model,
+        attempt=task.attempt,
+        test_result=task.test_result,
+        started_at=task.started_at,
+        branch=branch,
+        worktree_path=(
+            str(worktree_path)
+            if worktree_path is not None
+            else None
+        ),
+    )
+
+
+def hydrate_runtime_from_database() -> None:
+    init_database()
+
+    TASKS.clear()
+    TASK_LOGS.clear()
+    TASK_DIFFS.clear()
+
+    rows = db_list_tasks()
+
+    for row in reversed(rows):
+        task = TaskCreateResponse(
+            task_id=row["task_id"],
+            status=row["status"],
+            prompt=row["prompt"],
+            max_attempts=int(
+                row["max_attempts"] or 2
+            ),
+            state=(
+                row["state"]
+                or row["status"]
+            ),
+            model=row["model"],
+            attempt=int(
+                row["attempt"] or 0
+            ),
+            test_result=row["test_result"],
+            started_at=row["started_at"],
+        )
+
+        TASKS[task.task_id] = task
+
+        logs = db_list_task_logs(
+            task.task_id
+        )
+
+        if logs:
+            TASK_LOGS[task.task_id] = logs
+
+        diff_output = db_get_task_diff(
+            task.task_id
+        )
+
+        if diff_output is not None:
+            TASK_DIFFS[task.task_id] = diff_output
+
+
+hydrate_runtime_from_database()
 
 def api_approval_handler(
     task_id,
@@ -68,6 +153,17 @@ def api_approval_handler(
     }
 
     TASK_DIFFS[task_id] = diff_output
+
+    db_save_task_diff(
+        task_id,
+        diff_output,
+    )
+
+    persist_task(
+        TASKS[task_id],
+        branch=wt_result.branch,
+        worktree_path=wt_result.path,
+    )
 
     append_task_log(
         task_id,
@@ -105,6 +201,8 @@ def update_task_runtime(
 
     if test_result is not None:
         task.test_result = test_result
+
+    persist_task(task)
 
     return task
 
@@ -265,9 +363,13 @@ def create_task(
     )
 
     TASKS[task_id] = task
-    TASK_LOGS[task_id] = [
-        "Görev sıraya alındı."
-    ]
+    persist_task(task)
+
+    TASK_LOGS[task_id] = []
+    append_task_log(
+        task_id,
+        "Görev sıraya alındı.",
+    )
 
     background_tasks.add_task(
         run_task_for_api,
@@ -360,6 +462,11 @@ def approve_task(task_id: str):
 
     TASK_CONTEXTS.pop(task_id, None)
 
+    append_task_log(
+        task_id,
+        "Görev onaylandı ve ana dala birleştirildi.",
+    )
+
     return TASKS[task_id]
 
 @app.post(
@@ -414,6 +521,11 @@ def reject_task(task_id: str):
     )
 
     TASK_CONTEXTS.pop(task_id, None)
+
+    append_task_log(
+        task_id,
+        "Görev reddedildi.",
+    )
 
     return TASKS[task_id]
 
@@ -475,6 +587,9 @@ def retry_task(
     TASK_CONTEXTS.pop(task_id, None)
     TASK_DIFFS.pop(task_id, None)
 
+    db_delete_task_diff(task_id)
+    db_clear_task_logs(task_id)
+
     task.status = "queued"
     task.state = "queued"
     task.model = None
@@ -484,9 +599,14 @@ def retry_task(
         timezone.utc
     ).isoformat()
 
-    TASK_LOGS[task_id] = [
-        "Görev yeniden sıraya alındı."
-    ]
+    TASK_LOGS[task_id] = []
+
+    persist_task(task)
+
+    append_task_log(
+        task_id,
+        "Görev yeniden sıraya alındı.",
+    )
 
     background_tasks.add_task(
         run_task_for_api,

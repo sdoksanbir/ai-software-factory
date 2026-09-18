@@ -202,9 +202,9 @@ def upsert_task(
             ON CONFLICT(task_id) DO UPDATE SET
                 prompt = excluded.prompt,
                 status = excluded.status,
-                branch = excluded.branch,
-                worktree_path = excluded.worktree_path,
-                project_id = excluded.project_id,
+                branch = COALESCE(excluded.branch, tasks.branch),
+                worktree_path = COALESCE(excluded.worktree_path, tasks.worktree_path),
+                project_id = COALESCE(excluded.project_id, tasks.project_id),
                 max_attempts = excluded.max_attempts,
                 state = excluded.state,
                 model = excluded.model,
@@ -397,3 +397,35 @@ def get_task_diff(
     finally:
         connection.close()
 
+
+
+def clear_task_logs(
+    task_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            "DELETE FROM task_logs WHERE task_id = ?",
+            (task_id,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def delete_task_diff(
+    task_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            "DELETE FROM task_diffs WHERE task_id = ?",
+            (task_id,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
