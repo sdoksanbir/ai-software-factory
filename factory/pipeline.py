@@ -104,10 +104,213 @@ def _mark_success_through(
             break
 
 
-def build_task_pipeline(
+
+
+READ_PIPELINE_STAGES = [
+    {
+        "id": "task",
+        "label": "G\u00f6rev Al\u0131nd\u0131",
+    },
+    {
+        "id": "repo_analysis",
+        "label": "Repo Analizi",
+    },
+    {
+        "id": "model",
+        "label": "Local Model",
+    },
+    {
+        "id": "completed",
+        "label": "Tamamland\u0131",
+    },
+]
+
+
+def _build_read_task_pipeline(
     task: Any,
     logs: Iterable[str] = (),
 ) -> dict[str, Any]:
+    log_items = [
+        str(item)
+        for item in logs
+    ]
+
+    task_state = str(
+        _value(
+            task,
+            "state",
+            "queued",
+        )
+    )
+
+    stages = [
+        {
+            "id": stage["id"],
+            "label": stage["label"],
+            "status": "pending",
+        }
+        for stage in READ_PIPELINE_STAGES
+    ]
+
+    by_id = {
+        stage["id"]: stage
+        for stage in stages
+    }
+
+    # Gorev API tarafindan alinmistir.
+    by_id["task"]["status"] = "success"
+
+    router_detected = _contains(
+        log_items,
+        "Task Router: READ",
+    )
+
+    model_routed = _contains(
+        log_items,
+        "Model Router:",
+    )
+
+    read_started = _contains(
+        log_items,
+        "READ gorevi calistiriliyor",
+    )
+
+    read_completed = _contains(
+        log_items,
+        "READ gorevi tamamlandi",
+    )
+
+    read_failed = _contains(
+        log_items,
+        "READ gorevi basarisiz",
+    )
+
+    # Tamamlanmis READ gorevinde tum asamalar
+    # basarili kabul edilir. Bu durum DB'den
+    # yeniden yuklenen eski gorevlerde log eksik
+    # olsa bile dogru pipeline uretir.
+    if (
+        read_completed
+        or task_state == "completed"
+    ):
+        for stage in stages:
+            stage["status"] = "success"
+
+    elif (
+        read_failed
+        or task_state == "failed"
+    ):
+        if read_started:
+            by_id[
+                "repo_analysis"
+            ]["status"] = "success"
+
+            by_id[
+                "model"
+            ]["status"] = "failed"
+
+        elif (
+            router_detected
+            or model_routed
+        ):
+            by_id[
+                "repo_analysis"
+            ]["status"] = "failed"
+
+        else:
+            by_id[
+                "repo_analysis"
+            ]["status"] = "failed"
+
+    elif read_started:
+        by_id[
+            "repo_analysis"
+        ]["status"] = "success"
+
+        by_id[
+            "model"
+        ]["status"] = "active"
+
+    elif (
+        model_routed
+        or router_detected
+        or task_state == "running"
+    ):
+        by_id[
+            "repo_analysis"
+        ]["status"] = "active"
+
+    current_stage = next(
+        (
+            stage["id"]
+            for stage in stages
+            if stage["status"]
+            in {
+                "active",
+                "failed",
+            }
+        ),
+        None,
+    )
+
+    if current_stage is None:
+        pending_stage = next(
+            (
+                stage["id"]
+                for stage in stages
+                if stage["status"]
+                == "pending"
+            ),
+            None,
+        )
+
+        current_stage = (
+            pending_stage
+            or "completed"
+        )
+
+    completed = sum(
+        stage["status"] == "success"
+        for stage in stages
+    )
+
+    progress_percent = round(
+        completed
+        / len(stages)
+        * 100
+    )
+
+    if task_state == "completed":
+        progress_percent = 100
+
+    return {
+        "task_id": _value(
+            task,
+            "task_id",
+        ),
+        "task_state": task_state,
+        "task_kind": "read",
+        "current_stage": current_stage,
+        "progress_percent": progress_percent,
+        "stages": stages,
+    }
+
+
+def build_task_pipeline(
+    task: Any,
+    logs: Iterable[str] = (),
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    if (
+        task_kind is not None
+        and task_kind.strip().casefold()
+        == "read"
+    ):
+        return _build_read_task_pipeline(
+            task,
+            logs,
+        )
+
     log_items = [
         str(item)
         for item in logs

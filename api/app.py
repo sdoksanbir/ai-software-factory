@@ -36,6 +36,10 @@ from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
+from factory.task_route_store import (
+    get_task_route,
+    save_task_route,
+)
 from factory.read_task_runner import run_read_task
 from factory.task_read_results import (
     get_task_read_result,
@@ -503,6 +507,12 @@ def run_task_for_api(task_id: str):
 
     task_route = route_task(
         task.prompt,
+    )
+
+    save_task_route(
+        task_id,
+        task_route.kind,
+        task_route.reason,
     )
 
     append_task_log(
@@ -1288,9 +1298,30 @@ def task_pipeline(task_id: str):
         [],
     )
 
+    route_record = get_task_route(
+        task_id
+    )
+
+    task_kind = (
+        route_record["kind"]
+        if route_record is not None
+        else None
+    )
+
+    # Eski gorevlerde DB route kaydi yoksa
+    # mevcut loglardan READ kararini geri kazan.
+    if task_kind is None:
+        if any(
+            "task router: read"
+            in str(item).casefold()
+            for item in logs
+        ):
+            task_kind = "read"
+
     return build_task_pipeline(
         task,
         logs,
+        task_kind=task_kind,
     )
 
 
