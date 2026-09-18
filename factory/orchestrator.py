@@ -193,13 +193,54 @@ class Orchestrator:
         try:
             state_machine.transition(TaskStatus.CONTEXT_BUILDING)
 
-            repo_summary = RepoTool.build_context(
-                wt_result.path
-            )
+            context_targets = self._extract_explicit_file_targets(prompt)
+
+            if context_targets:
+                context_paths = list(context_targets)
+
+                for target in context_targets:
+                    normalized = target.replace("\\", "/")
+                    filename = normalized.rsplit("/", 1)[-1]
+
+                    if filename.lower().endswith(".py"):
+                        stem = filename[:-3]
+                        test_path = f"tests/test_{stem}.py"
+
+                        if test_path not in context_paths:
+                            context_paths.append(test_path)
+
+                context_parts = []
+
+                for rel_path in context_paths:
+                    try:
+                        content = RepoTool.read_file(
+                            wt_result.path,
+                            rel_path,
+                        )
+                    except Exception:
+                        continue
+
+                    context_parts.append(
+                        f"===== TARGET FILE: {rel_path} =====\n"
+                        f"{content}\n"
+                        "===== END TARGET FILE ====="
+                    )
+
+                if context_parts:
+                    repo_summary = "\n\n".join(context_parts)
+                else:
+                    repo_summary = (
+                        "No existing target files were found. "
+                        "Create only the explicitly requested task files."
+                    )
+            else:
+                repo_summary = RepoTool.build_context(
+                    wt_result.path
+                )
 
             state_machine.transition(TaskStatus.CONTEXT_READY)
-        except Exception as e:
-            repo_summary = "Dosyalar okunamadı."
+        except Exception:
+            repo_summary = "Files could not be read."
             if not state_machine.is_terminal:
                 state_machine.transition(TaskStatus.FAILED)
             return None
@@ -221,14 +262,48 @@ class Orchestrator:
             "yaln\u0131zca g\u00f6rev bunu a\u00e7\u0131k\u00e7a gerektiriyorsa de\u011fi\u015ftir."
         )
 
+        explicit_targets = self._extract_explicit_file_targets(prompt)
+
+        allowed_scope_paths = list(explicit_targets)
+
+        for target in explicit_targets:
+            normalized = target.replace("\\", "/")
+            filename = normalized.rsplit("/", 1)[-1]
+
+            if filename.lower().endswith(".py"):
+                stem = filename[:-3]
+                test_path = f"tests/test_{stem}.py"
+
+                if test_path not in allowed_scope_paths:
+                    allowed_scope_paths.append(test_path)
+
+        scope_contract = ""
+
+        if allowed_scope_paths:
+            scope_contract = (
+                "MANDATORY TASK SCOPE:\n"
+                f"Only these file paths are allowed: {allowed_scope_paths}\n"
+                "Do not create or modify any other file. "
+                "Do not invent a different task from repository context.\n\n"
+            )
+
         user_prompt = (
-            f"Görev: {prompt}\n\n"
-            f"Mevcut Proje Dosyaları:\n{repo_summary}\n\n"
-            "Görevi tamamlamak için değiştirilmesi veya oluşturulması gereken tüm dosyaları "
-            "files dizisinde belirt. Değişmeyen dosyaları ekleme. "
-            "path alanları proje köküne göre relative olmalı. "
-            "Her content alanı ilgili dosyanın son halinin tamamını içermeli. "
-            "Python davranışı ekleniyor veya değiştiriliyorsa ilgili pytest testlerini de oluştur veya güncelle."
+            f"TASK:\n{prompt}\n\n"
+            f"{scope_contract}"
+            f"REPOSITORY CONTEXT - reference only:\n{repo_summary}\n\n"
+            "Complete exactly the TASK above. "
+            "Do not treat repository context as a new task. "
+            "Do not infer functionality from filenames, repository names, existing modules, "
+            "or repository context. Implement only the behavior explicitly requested in TASK. "
+            "OUTPUT SCHEMA IS MANDATORY: the top-level JSON object must contain a files key. "
+            "files must be a JSON array. Every files item must contain path and content. "
+            "Use exactly this structure: "
+            '{"files":[{"path":"relative/path.py","content":"FULL FILE CONTENT"}],"explanation":"short explanation"}. '
+            'Never return a filename-to-content object such as {"file.py":"content"}. '
+            "Return exactly one valid JSON object using this schema. "
+            "The first character of your response must be { and the last character must be }. "
+            "Do not use Markdown, code fences, headings, commentary, or text outside JSON. "
+            f"{scope_contract}"
         )
 
         success = False
