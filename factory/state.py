@@ -61,11 +61,13 @@ class TaskStateMachine:
 
             TaskStatus.PATCH_VALIDATING: {
                 TaskStatus.PATCH_READY,
+                TaskStatus.MODEL_RUNNING,
                 TaskStatus.FAILED,
             },
 
             TaskStatus.PATCH_READY: {
                 TaskStatus.PATCH_APPLIED,
+                TaskStatus.MODEL_RUNNING,
                 TaskStatus.FAILED,
             },
 

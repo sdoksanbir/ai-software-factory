@@ -7,7 +7,7 @@ from factory.state import TaskStateMachine
 from factory.models import ModelClient
 from factory.tools.git_ops import GitWorktreeManager
 from factory.tools.repo import RepoTool
-from factory.tools.patch import PatchTool
+from factory.tools.patch import PatchTool, PatchToolError
 from factory.tools.sandbox import DockerSandbox
 
 
@@ -181,6 +181,21 @@ class Orchestrator:
                     state_machine.transition(TaskStatus.TEST_FAILED)
                     print(f"[-] Test hatası: {test_output}")
                     user_prompt += f"\n\nÖnceki deneme başarısız oldu. Hata:\n{test_output}\nLütfen düzelt."
+
+            except PatchToolError as e:
+                print(f"[-] Patch/JSON hatası: {str(e)}")
+
+                if task_spec.attempt < task_spec.max_attempts:
+                    user_prompt += (
+                        f"\n\nÖnceki yanıt uygulanamadı. Hata:\n{str(e)}\n"
+                        "Yanıtını yalnızca belirtilen JSON şemasına uygun olarak yeniden üret."
+                    )
+                    continue
+
+                if not state_machine.is_terminal:
+                    state_machine.transition(TaskStatus.FAILED)
+
+                break
 
             except Exception as e:
                 print(f"[-] Deneme sırasında hata: {str(e)}")
