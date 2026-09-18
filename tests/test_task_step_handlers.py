@@ -368,3 +368,103 @@ def test_read_delegates_to_read_runner(
     assert captured["model"] == (
         "fake-model"
     )
+
+
+
+def test_verify_uses_scoped_test_files(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    class Result:
+        success = True
+        stdout = ""
+        stderr = ""
+
+    class RecordingSandbox:
+        def __init__(self):
+            self.commands = []
+
+        def run_command(
+            self,
+            worktree_path,
+            command,
+            timeout_seconds=60,
+        ):
+            self.commands.append(command)
+            return Result()
+
+    source = tmp_path / "multi_step_probe.py"
+    source.write_text(
+        "def normalize_name(value):\n"
+        "    return ' '.join(value.split())\n",
+        encoding="utf-8",
+    )
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+
+    test_file = (
+        tests_dir
+        / "test_multi_step_probe.py"
+    )
+
+    test_file.write_text(
+        "def test_placeholder():\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    sandbox = RecordingSandbox()
+
+    orchestrator = SimpleNamespace(
+        sandbox=sandbox,
+    )
+
+    handlers = TaskStepHandlers(
+        orchestrator,
+        scope_prompt=(
+            "multi_step_probe.py dosyasini "
+            "olustur ve "
+            "tests/test_multi_step_probe.py "
+            "dosyasinda testlerini yaz."
+        ),
+    )
+
+    result = handlers.verify(
+        {
+            "instruction": (
+                "Testleri calistir."
+            )
+        },
+        str(tmp_path),
+    )
+
+    assert len(sandbox.commands) == 2
+
+    compile_command = sandbox.commands[0]
+    pytest_command = sandbox.commands[1]
+
+    assert (
+        "python -m py_compile"
+        in compile_command
+    )
+    assert (
+        "multi_step_probe.py"
+        in compile_command
+    )
+    assert (
+        "tests/test_multi_step_probe.py"
+        in compile_command
+    )
+
+    assert pytest_command == (
+        "python -m pytest -q "
+        "tests/test_multi_step_probe.py"
+    )
+
+    assert pytest_command != (
+        "python -m pytest -q"
+    )
+
+    assert "Scoped dogrulama" in result

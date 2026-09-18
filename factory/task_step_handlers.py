@@ -287,55 +287,216 @@ class TaskStepHandlers:
         step: dict[str, Any],
         worktree_path: str,
     ) -> str:
+        instruction = str(
+            step.get("instruction", "")
+        ).strip()
+
         sandbox = self.orchestrator.sandbox
 
         if sandbox is None:
             raise RuntimeError(
-                "Docker sandbox is not available"
+                "Docker sandbox kullanilamiyor."
             )
 
-        compile_result = sandbox.run_command(
-            worktree_path,
-            "python -m compileall -q .",
-            timeout_seconds=120,
+        import shlex
+        from pathlib import Path as FilePath
+        from factory.orchestrator import Orchestrator
+
+        # Multi-step gorevde ana kullanici scope'u
+        # varsa tum repository yerine yalnizca o
+        # gorevin dosyalarini dogrula.
+        scope_source = (
+            self.scope_prompt
+            or instruction
+        )
+
+        explicit_targets = (
+            Orchestrator
+            ._extract_explicit_file_targets(
+                scope_source
+            )
+        )
+
+        python_targets = [
+            target
+            for target in explicit_targets
+            if target.lower().endswith(".py")
+        ]
+
+        test_targets = []
+
+        for target in python_targets:
+            normalized = (
+                target
+                .replace("\\", "/")
+            )
+
+            filename = (
+                normalized
+                .rsplit("/", 1)[-1]
+            )
+
+            if (
+                normalized.startswith("tests/")
+                or filename.startswith("test_")
+            ):
+                if target not in test_targets:
+                    test_targets.append(
+                        target
+                    )
+
+        # Kaynak Python dosyasi verildiyse ve
+        # karsilik gelen test dosyasi worktree'de
+        # mevcutsa onu da scoped teste ekle.
+        for target in python_targets:
+            normalized = (
+                target
+                .replace("\\", "/")
+            )
+
+            if normalized.startswith("tests/"):
+                continue
+
+            filename = (
+                normalized
+                .rsplit("/", 1)[-1]
+            )
+
+            if not filename.lower().endswith(".py"):
+                continue
+
+            stem = filename[:-3]
+
+            candidate = (
+                f"tests/test_{stem}.py"
+            )
+
+            candidate_path = (
+                FilePath(worktree_path)
+                / candidate
+            )
+
+            if (
+                candidate_path.exists()
+                and candidate not in test_targets
+            ):
+                test_targets.append(
+                    candidate
+                )
+
+        # Scope varsa sadece ilgili Python
+        # dosyalarini derle.
+        if python_targets:
+            compile_command = (
+                "python -m py_compile "
+                + " ".join(
+                    shlex.quote(target)
+                    for target
+                    in python_targets
+                )
+            )
+        else:
+            # Eski / genel davranis.
+            compile_command = (
+                "python -m compileall -q ."
+            )
+
+        compile_result = (
+            sandbox.run_command(
+                worktree_path,
+                compile_command,
+                timeout_seconds=120,
+            )
         )
 
         if not compile_result.success:
             raise RuntimeError(
-                "Python compile validation failed:\n"
+                "Compile validation failed:\n"
                 + (
                     compile_result.stderr
                     or compile_result.stdout
-                    or "unknown compile error"
+                    or "Unknown compile error"
                 )
             )
 
-        test_command = (
-            "python -m pytest -q; "
-            "code=$?; "
-            "if [ $code -eq 5 ]; "
-            "then exit 0; "
-            "else exit $code; fi"
-        )
-
-        test_result = sandbox.run_command(
-            worktree_path,
-            test_command,
-            timeout_seconds=180,
-        )
-
-        if not test_result.success:
-            raise RuntimeError(
-                "Test validation failed:\n"
-                + (
-                    test_result.stderr
-                    or test_result.stdout
-                    or "unknown test error"
+        # Explicit test dosyalari varsa yalnizca
+        # onlari calistir. Boylece gorevle ilgisiz
+        # proje testleri sandbox dependency
+        # eksiklikleri yuzunden gorevi bozmaz.
+        if test_targets:
+            test_command = (
+                "python -m pytest -q "
+                + " ".join(
+                    shlex.quote(target)
+                    for target
+                    in test_targets
                 )
             )
 
+            test_result = (
+                sandbox.run_command(
+                    worktree_path,
+                    test_command,
+                    timeout_seconds=180,
+                )
+            )
+
+            if not test_result.success:
+                raise RuntimeError(
+                    "Test validation failed:\n"
+                    + (
+                        test_result.stderr
+                        or test_result.stdout
+                        or "Unknown pytest error"
+                    )
+                )
+
+            return (
+                "Scoped dogrulama tamamlandi. "
+                "Python dosyalari derlendi ve "
+                "ilgili pytest testleri basarili."
+            )
+
+        # Scope verilmediyse eski full-suite
+        # davranisini koru.
+        if not explicit_targets:
+            test_command = (
+                "python -m pytest -q; "
+                "code=$?; "
+                "if [ $code -eq 5 ]; "
+                "then exit 0; "
+                "else exit $code; fi"
+            )
+
+            test_result = (
+                sandbox.run_command(
+                    worktree_path,
+                    test_command,
+                    timeout_seconds=180,
+                )
+            )
+
+            if not test_result.success:
+                raise RuntimeError(
+                    "Test validation failed:\n"
+                    + (
+                        test_result.stderr
+                        or test_result.stdout
+                        or "Unknown pytest error"
+                    )
+                )
+
+            return (
+                "Dogrulama tamamlandi. "
+                "Python compile ve pytest basarili."
+            )
+
+        # Explicit scope var fakat o scope'ta
+        # pytest dosyasi yoksa scoped compile
+        # yeterli kabul edilir.
         return (
-            "Dogrulama tamamlandi. "
-            "Python compile ve pytest basarili."
+            "Scoped dogrulama tamamlandi. "
+            "Python dosyalari derlendi; "
+            "scope icinde pytest dosyasi yok."
         )
 
