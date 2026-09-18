@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import random
+import subprocess
+import sys
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
@@ -31,6 +33,77 @@ from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
+
+
+
+def open_local_project_folder(
+    project_path: str,
+) -> None:
+    if os.name == "nt":
+        os.startfile(project_path)  # type: ignore[attr-defined]
+        return
+
+    if sys.platform == "darwin":
+        subprocess.Popen(
+            ["open", project_path],
+        )
+        return
+
+    subprocess.Popen(
+        ["xdg-open", project_path],
+    )
+
+
+def open_local_project_terminal(
+    project_path: str,
+) -> None:
+    if os.name == "nt":
+        safe_path = project_path.replace(
+            "'",
+            "''",
+        )
+
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoExit",
+                "-Command",
+                (
+                    "Set-Location "
+                    f"-LiteralPath '{safe_path}'"
+                ),
+            ],
+            creationflags=getattr(
+                subprocess,
+                "CREATE_NEW_CONSOLE",
+                0,
+            ),
+        )
+        return
+
+    if sys.platform == "darwin":
+        script = (
+            'tell application "Terminal" '
+            'to do script "cd '
+            + project_path.replace(
+                '"',
+                '\\"',
+            )
+            + '"'
+        )
+
+        subprocess.Popen(
+            ["osascript", "-e", script],
+        )
+        return
+
+    subprocess.Popen(
+        [
+            "x-terminal-emulator",
+            "--working-directory",
+            project_path,
+        ],
+    )
 
 
 app = FastAPI(
@@ -1089,3 +1162,56 @@ def task_pipeline(task_id: str):
         task,
         logs,
     )
+
+
+
+@app.post("/projects/{project_id}/open")
+def open_project_folder(project_id: str):
+    project = db_get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Proje bulunamad?.",
+        )
+
+    try:
+        open_local_project_folder(
+            project["path"]
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Proje a??lamad?: {exc}",
+        ) from exc
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+    }
+
+
+@app.post("/projects/{project_id}/terminal")
+def open_project_terminal(project_id: str):
+    project = db_get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Proje bulunamad?.",
+        )
+
+    try:
+        open_local_project_terminal(
+            project["path"]
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Terminal a??lamad?: {exc}",
+        ) from exc
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+    }

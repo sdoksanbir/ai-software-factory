@@ -253,3 +253,28 @@ export function getTaskPipeline(
     `/tasks/${taskId}/pipeline`,
   )
 }
+
+
+
+export function openProject(
+  projectId: string,
+) {
+  return request<{ ok: boolean; project_id: string }>(
+    `/projects/${projectId}/open`,
+    {
+      method: "POST",
+    },
+  )
+}
+
+
+export function openProjectTerminal(
+  projectId: string,
+) {
+  return request<{ ok: boolean; project_id: string }>(
+    `/projects/${projectId}/terminal`,
+    {
+      method: "POST",
+    },
+  )
+}

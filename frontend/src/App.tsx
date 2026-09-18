@@ -8,63 +8,222 @@ import {
 
 import {
   approveTask,
-  createTask,
   createProject,
+  createTask,
+  getControlCenterStatus,
   getTaskDiff,
   getTaskPipeline,
-  getControlCenterStatus,
-  listTasks,
   listProjects,
+  listTasks,
+  openProject,
+  openProjectTerminal,
   rejectTask,
   retryTask,
-  type Project,
-  type TaskPipeline,
+  updateProject,
   type ControlCenterStatus,
+  type Project,
   type Task,
+  type TaskPipeline,
 } from "./api"
+
+import { UiIcon } from "./UiIcon"
 
 import "./App.css"
 
 const stateLabels: Record<string, string> = {
-  queued: "Sırada",
-  running: "Çalışıyor",
+  queued: "S\u0131rada",
+  running: "\u0130\u015fleniyor",
   ready_for_approval: "Onay Bekliyor",
-  approved: "Onaylandı",
+  approved: "Tamamland\u0131",
   rejected: "Reddedildi",
-  failed: "Başarısız",
+  failed: "Ba\u015far\u0131s\u0131z",
+}
+
+const defaultPipeline = [
+  { id: "task", label: "Kullan\u0131c\u0131 G\u00f6revi" },
+  { id: "worktree", label: "Worktree" },
+  { id: "repo_analysis", label: "Repo Analizi" },
+  { id: "model", label: "Lokal Model" },
+  { id: "patch", label: "Patch Olu\u015fturma" },
+  { id: "tests", label: "Docker Test" },
+  { id: "diff", label: "Diff Olu\u015fturma" },
+  { id: "approval", label: "\u0130nsan Onay\u0131" },
+]
+
+const pipelineTools: Record<string, string> = {
+  task: "Orchestrator",
+  worktree: "Git Worktree",
+  repo_analysis: "Kod Analizi",
+  model: "Ollama",
+  patch: "Patch Do\u011frulama",
+  tests: "Docker Sandbox",
+  diff: "Git Diff",
+  approval: "Manuel Onay",
+}
+
+function formatTime(value: string | null) {
+  if (!value) return "\u2014"
+
+  return new Intl.DateTimeFormat("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value))
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "?"
+  if (!value) return "\u2014"
 
   return new Intl.DateTimeFormat("tr-TR", {
-    dateStyle: "short",
-    timeStyle: "medium",
+    dateStyle: "medium",
+    timeStyle: "short",
   }).format(new Date(value))
+}
+
+function formatBytes(value: number | null) {
+  if (value == null) return "\u2014"
+
+  const gb = value / 1024 / 1024 / 1024
+
+  return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`
 }
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedProjectId, setSelectedProjectId] =
+    useState<string | null>(null)
+
   const [tasks, setTasks] = useState<Task[]>([])
+  const [selectedTaskId, setSelectedTaskId] =
+    useState<string | null>(null)
+
   const [prompt, setPrompt] = useState("")
-  const [maxAttempts, setMaxAttempts] = useState(3)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [diff, setDiff] = useState("")
-  const [loadingDiff, setLoadingDiff] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [actionLoading, setActionLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [backendOnline, setBackendOnline] = useState(true)
-  const [liveLogs, setLiveLogs] = useState<string[]>([])
+  const [maxAttempts, setMaxAttempts] = useState(2)
+
+  const [showTaskComposer, setShowTaskComposer] =
+    useState(false)
+
+  const [showProjectComposer, setShowProjectComposer] =
+    useState(false)
+
+  const [newProjectName, setNewProjectName] =
+    useState("")
+
+  const [newProjectPath, setNewProjectPath] =
+    useState("")
+
+  const [submitting, setSubmitting] =
+    useState(false)
+
+  const [projectSubmitting, setProjectSubmitting] =
+    useState(false)
+
+  const [actionLoading, setActionLoading] =
+    useState(false)
+
+  const [loadingDiff, setLoadingDiff] =
+    useState(false)
+
+  const [error, setError] =
+    useState<string | null>(null)
+
+  const [backendOnline, setBackendOnline] =
+    useState(true)
+
+  const [liveLogs, setLiveLogs] =
+    useState<string[]>([])
+
+  const [logQuery, setLogQuery] =
+    useState("")
+
+  const [diff, setDiff] =
+    useState("")
+
   const [controlCenter, setControlCenter] =
     useState<ControlCenterStatus | null>(null)
+
   const [pipeline, setPipeline] =
     useState<TaskPipeline | null>(null)
-  const [projectFormOpen, setProjectFormOpen] = useState(false)
-  const [newProjectName, setNewProjectName] = useState("")
-  const [newProjectPath, setNewProjectPath] = useState("")
-  const [projectSubmitting, setProjectSubmitting] = useState(false)
+
+  const [activeProjectTab, setActiveProjectTab] =
+    useState<"overview" | "running" | "history" | "settings">(
+      "overview",
+    )
+
+  const [projectSettingsName, setProjectSettingsName] =
+    useState("")
+
+  const [projectSettingsPath, setProjectSettingsPath] =
+    useState("")
+
+  const [projectSettingsSaving, setProjectSettingsSaving] =
+    useState(false)
+
+  const selectedProject = useMemo(
+    () =>
+      projects.find(
+        (project) =>
+          project.project_id === selectedProjectId,
+      ) ?? null,
+    [projects, selectedProjectId],
+  )
+
+  useEffect(() => {
+    setProjectSettingsName(
+      selectedProject?.name ?? "",
+    )
+
+    setProjectSettingsPath(
+      selectedProject?.path ?? "",
+    )
+
+    setActiveProjectTab("overview")
+  }, [selectedProject])
+
+  const selectedTask = useMemo(
+    () =>
+      tasks.find(
+        (task) =>
+          task.task_id === selectedTaskId,
+      ) ?? null,
+    [tasks, selectedTaskId],
+  )
+
+  const runningTasks = useMemo(
+    () =>
+      tasks.filter((task) =>
+        [
+          "queued",
+          "running",
+          "ready_for_approval",
+        ].includes(task.state),
+      ),
+    [tasks],
+  )
+
+  const historyTasks = useMemo(
+    () =>
+      tasks.filter((task) =>
+        [
+          "approved",
+          "rejected",
+          "failed",
+        ].includes(task.state),
+      ),
+    [tasks],
+  )
+
+  const filteredLogs = useMemo(() => {
+    const query = logQuery.trim().toLowerCase()
+
+    if (!query) {
+      return liveLogs
+    }
+
+    return liveLogs.filter((log) =>
+      log.toLowerCase().includes(query),
+    )
+  }, [liveLogs, logQuery])
 
   const loadProjects = useCallback(async () => {
     try {
@@ -85,7 +244,11 @@ function App() {
 
         return data[0]?.project_id ?? null
       })
+
+      setBackendOnline(true)
     } catch (err) {
+      setBackendOnline(false)
+
       setError(
         err instanceof Error
           ? err.message
@@ -97,6 +260,7 @@ function App() {
   const loadTasks = useCallback(async () => {
     if (!selectedProjectId) {
       setTasks([])
+      setSelectedTaskId(null)
       return
     }
 
@@ -105,18 +269,73 @@ function App() {
         selectedProjectId,
       )
 
-      setTasks(data.slice().reverse())
+      const ordered = data.slice().reverse()
+
+      setTasks(ordered)
+
+      setSelectedTaskId((current) => {
+        if (
+          current &&
+          ordered.some(
+            (task) =>
+              task.task_id === current,
+          )
+        ) {
+          return current
+        }
+
+        return ordered[0]?.task_id ?? null
+      })
+
       setBackendOnline(true)
-      setError(null)
     } catch (err) {
       setBackendOnline(false)
+
       setError(
         err instanceof Error
           ? err.message
-          : "Backend ba\u011flant\u0131s\u0131 kurulamad\u0131.",
+          : "G\u00f6revler y\u00fcklenemedi.",
       )
     }
   }, [selectedProjectId])
+
+  const loadControlCenter =
+    useCallback(async () => {
+      if (!selectedProjectId) {
+        setControlCenter(null)
+        return
+      }
+
+      try {
+        const data =
+          await getControlCenterStatus(
+            selectedProjectId,
+          )
+
+        setControlCenter(data)
+      } catch {
+        setControlCenter(null)
+      }
+    }, [selectedProjectId])
+
+  const loadPipeline =
+    useCallback(async () => {
+      if (!selectedTaskId) {
+        setPipeline(null)
+        return
+      }
+
+      try {
+        const data =
+          await getTaskPipeline(
+            selectedTaskId,
+          )
+
+        setPipeline(data)
+      } catch {
+        setPipeline(null)
+      }
+    }, [selectedTaskId])
 
   useEffect(() => {
     void loadProjects()
@@ -129,31 +348,9 @@ function App() {
       void loadTasks()
     }, 2000)
 
-    return () => window.clearInterval(timer)
+    return () =>
+      window.clearInterval(timer)
   }, [loadTasks])
-
-  useEffect(() => {
-    setSelectedTaskId(null)
-    setDiff("")
-    setLiveLogs([])
-  }, [selectedProjectId])
-
-  const loadControlCenter = useCallback(async () => {
-    if (!selectedProjectId) {
-      setControlCenter(null)
-      return
-    }
-
-    try {
-      const data = await getControlCenterStatus(
-        selectedProjectId,
-      )
-
-      setControlCenter(data)
-    } catch {
-      setControlCenter(null)
-    }
-  }, [selectedProjectId])
 
   useEffect(() => {
     void loadControlCenter()
@@ -162,25 +359,9 @@ function App() {
       void loadControlCenter()
     }, 5000)
 
-    return () => window.clearInterval(timer)
+    return () =>
+      window.clearInterval(timer)
   }, [loadControlCenter])
-
-  const loadPipeline = useCallback(async () => {
-    if (!selectedTaskId) {
-      setPipeline(null)
-      return
-    }
-
-    try {
-      const data = await getTaskPipeline(
-        selectedTaskId,
-      )
-
-      setPipeline(data)
-    } catch {
-      setPipeline(null)
-    }
-  }, [selectedTaskId])
 
   useEffect(() => {
     void loadPipeline()
@@ -193,30 +374,18 @@ function App() {
       void loadPipeline()
     }, 2000)
 
-    return () => window.clearInterval(timer)
+    return () =>
+      window.clearInterval(timer)
   }, [loadPipeline, selectedTaskId])
 
-  const selectedProject = useMemo(
-    () =>
-      projects.find(
-        (project) =>
-          project.project_id === selectedProjectId,
-      ) ?? null,
-    [projects, selectedProjectId],
-  )
-
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.task_id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId],
-  )
-
   useEffect(() => {
+    setDiff("")
+    setLiveLogs([])
+    setLogQuery("")
+
     if (!selectedTaskId) {
-      setLiveLogs([])
       return
     }
-
-    setLiveLogs([])
 
     const source = new EventSource(
       `/api/tasks/${selectedTaskId}/events`,
@@ -224,7 +393,9 @@ function App() {
 
     source.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as {
+        const payload = JSON.parse(
+          event.data,
+        ) as {
           message?: string
         }
 
@@ -235,13 +406,16 @@ function App() {
           ])
         }
       } catch {
-        // Ignore malformed log events.
+        // Ignore malformed events.
       }
     }
 
-    source.addEventListener("done", () => {
-      source.close()
-    })
+    source.addEventListener(
+      "done",
+      () => {
+        source.close()
+      },
+    )
 
     source.onerror = () => {
       source.close()
@@ -250,35 +424,108 @@ function App() {
     return () => {
       source.close()
     }
-  }, [selectedTaskId, selectedTask?.started_at])
+  }, [
+    selectedTaskId,
+    selectedTask?.started_at,
+  ])
 
-  const stats = useMemo(() => {
-    return {
-      total: tasks.length,
-      running: tasks.filter(
-        (task) => task.state === "running" || task.state === "queued",
-      ).length,
-      approval: tasks.filter(
-        (task) => task.state === "ready_for_approval",
-      ).length,
-      failed: tasks.filter(
-        (task) => task.state === "failed",
-      ).length,
-    }
-  }, [tasks])
-
-  async function handleProjectCreate(
+  async function handleProjectSettingsSave(
     event: FormEvent,
   ) {
     event.preventDefault()
 
-    const cleanName = newProjectName.trim()
-    const cleanPath = newProjectPath.trim()
+    if (!selectedProject) {
+      return
+    }
+
+    const cleanName =
+      projectSettingsName.trim()
+
+    const cleanPath =
+      projectSettingsPath.trim()
 
     if (!cleanName || !cleanPath) {
       setError(
-        "Proje ad\u0131 ve proje klas\u00f6r\u00fc zorunludur.",
+        "Proje ad\u0131 ve yolu zorunludur.",
       )
+      return
+    }
+
+    setProjectSettingsSaving(true)
+    setError(null)
+
+    try {
+      await updateProject(
+        selectedProject.project_id,
+        cleanName,
+        cleanPath,
+      )
+
+      await loadProjects()
+      await loadControlCenter()
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Proje ayarlar\u0131 kaydedilemedi.",
+      )
+    } finally {
+      setProjectSettingsSaving(false)
+    }
+  }
+
+  async function handleCreateTask(
+    event: FormEvent,
+  ) {
+    event.preventDefault()
+
+    const cleanPrompt = prompt.trim()
+
+    if (
+      !cleanPrompt ||
+      !selectedProject
+    ) {
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      const task = await createTask(
+        cleanPrompt,
+        maxAttempts,
+        selectedProject.project_id,
+      )
+
+      setPrompt("")
+      setShowTaskComposer(false)
+      setSelectedTaskId(task.task_id)
+
+      await loadTasks()
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "G\u00f6rev olu\u015fturulamad\u0131.",
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleCreateProject(
+    event: FormEvent,
+  ) {
+    event.preventDefault()
+
+    const cleanName =
+      newProjectName.trim()
+
+    const cleanPath =
+      newProjectPath.trim()
+
+    if (!cleanName || !cleanPath) {
       return
     }
 
@@ -286,10 +533,11 @@ function App() {
     setError(null)
 
     try {
-      const project = await createProject(
-        cleanName,
-        cleanPath,
-      )
+      const project =
+        await createProject(
+          cleanName,
+          cleanPath,
+        )
 
       await loadProjects()
 
@@ -299,7 +547,7 @@ function App() {
 
       setNewProjectName("")
       setNewProjectPath("")
-      setProjectFormOpen(false)
+      setShowProjectComposer(false)
     } catch (err) {
       setError(
         err instanceof Error
@@ -311,58 +559,27 @@ function App() {
     }
   }
 
-  async function handleCreate(event: FormEvent) {
-    event.preventDefault()
+  async function handleDiff() {
+    if (!selectedTask) return
 
-    const cleanPrompt = prompt.trim()
-
-    if (!cleanPrompt) return
-
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      if (!selectedProject) {
-        setError(
-          "\u00d6nce bir proje se\u00e7melisin.",
-        )
-        return
-      }
-
-      const task = await createTask(
-        cleanPrompt,
-        maxAttempts,
-        selectedProject.project_id,
-      )
-      setPrompt("")
-      setSelectedTaskId(task.task_id)
-      setDiff("")
-      await loadTasks()
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Görev oluşturulamadı.",
-      )
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleDiff(taskId: string) {
-    setSelectedTaskId(taskId)
     setLoadingDiff(true)
-    setDiff("")
     setError(null)
 
     try {
-      const result = await getTaskDiff(taskId)
-      setDiff(result.diff || "Değişiklik bulunamadı.")
+      const result =
+        await getTaskDiff(
+          selectedTask.task_id,
+        )
+
+      setDiff(
+        result.diff ||
+          "De\u011fi\u015fiklik bulunamad\u0131.",
+      )
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Diff alınamadı.",
+          : "Diff al\u0131namad\u0131.",
       )
     } finally {
       setLoadingDiff(false)
@@ -370,7 +587,10 @@ function App() {
   }
 
   async function handleAction(
-    action: "approve" | "reject" | "retry",
+    action:
+      | "approve"
+      | "reject"
+      | "retry",
   ) {
     if (!selectedTask) return
 
@@ -379,126 +599,192 @@ function App() {
 
     try {
       if (action === "approve") {
-        await approveTask(selectedTask.task_id)
+        await approveTask(
+          selectedTask.task_id,
+        )
       }
 
       if (action === "reject") {
-        await rejectTask(selectedTask.task_id)
+        await rejectTask(
+          selectedTask.task_id,
+        )
       }
 
       if (action === "retry") {
-        await retryTask(selectedTask.task_id)
+        await retryTask(
+          selectedTask.task_id,
+        )
       }
 
-      setDiff("")
       await loadTasks()
+      await loadControlCenter()
+      await loadPipeline()
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "İşlem tamamlanamadı.",
+          : "\u0130\u015flem tamamlanamad\u0131.",
       )
     } finally {
       setActionLoading(false)
     }
   }
 
-  function scrollToSection(sectionId: string) {
-    document
-      .getElementById(sectionId)
-      ?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      })
+  function scrollToLogs() {
+    const container = document.querySelector(
+      ".center-stage",
+    ) as HTMLElement | null
+
+    const target = document.getElementById(
+      "live-logs",
+    )
+
+    if (!container || !target) {
+      return
+    }
+
+    const containerRect =
+      container.getBoundingClientRect()
+
+    const targetRect =
+      target.getBoundingClientRect()
+
+    const targetTop =
+      container.scrollTop +
+      targetRect.top -
+      containerRect.top -
+      12
+
+    container.scrollTo({
+      top: targetTop,
+      behavior: "smooth",
+    })
   }
 
+  const pipelineStages =
+    pipeline?.stages ??
+    defaultPipeline.map((stage) => ({
+      ...stage,
+      status: "pending" as const,
+    }))
+
+  const systemHealthy =
+    backendOnline &&
+    controlCenter?.services.docker.online &&
+    controlCenter?.services.ollama.online
+
+  const ramUsed =
+    controlCenter?.system.memory.total_bytes != null &&
+    controlCenter?.system.memory.available_bytes != null
+      ? controlCenter.system.memory.total_bytes -
+        controlCenter.system.memory.available_bytes
+      : null
+
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">AF</div>
-          <div>
-            <strong>AI Factory</strong>
-            <span>Software Agent</span>
+    <div className="factory-shell">
+      <header className="factory-topbar">
+        <div className="factory-brand">
+          <div className="factory-logo"><UiIcon name="factory" /></div>
+
+          <div className="factory-brand-copy">
+            <strong>
+              AI Software Factory
+            </strong>
+
+            <small>
+              Local-First
+              <i>{"\u2022"}</i>
+              Build More
+              <i>{"\u2022"}</i>
+              Your Machine, Your Rules
+            </small>
           </div>
         </div>
 
-        <nav className="nav">
-          <span className="nav-section-label">
-            Kontrol
-          </span>
-
-          <button
-            className="nav-item active"
-            type="button"
-            onClick={() =>
-              scrollToSection("control-center")
-            }
-          >
-            <span>?</span>
-            Kontrol Merkezi
+        <nav className="main-nav">
+          <button className="active">
+            <UiIcon name="dashboard" />
+            {"Kontrol Paneli"}
           </button>
 
           <button
-            className="nav-item"
-            type="button"
             onClick={() =>
-              scrollToSection("tasks")
+              document
+                .getElementById("task-list")
+                ?.scrollIntoView({
+                  behavior: "smooth",
+                })
             }
           >
-            <span>?</span>
-            G?revler
+            <UiIcon name="tasks" />
+            {"G\u00f6revler"}
           </button>
 
-          <button
-            className="nav-item"
-            type="button"
-            onClick={() =>
-              scrollToSection("projects")
-            }
-          >
-            <span>?</span>
-            Projeler
+          <button>
+            <UiIcon name="projects" />
+            {"Projeler"}
           </button>
 
-          <button
-            className="nav-item"
-            type="button"
-            onClick={() =>
-              scrollToSection("models")
-            }
-          >
-            <span>AI</span>
-            Modeller
+          <button>
+            <UiIcon name="models" />
+            {"Modeller"}
+          </button>
+
+          <button>
+            <UiIcon name="settings" />
+            {"Ayarlar"}
           </button>
         </nav>
 
-        <section className="project-selector" id="projects">
-          <div className="project-selector-heading">
-            <span>Projeler</span>
+        <div
+          className={`system-pill ${
+            systemHealthy
+              ? "healthy"
+              : "warning"
+          }`}
+        >
+          <span className="system-light" />
 
-            <div className="project-selector-actions">
-              <small>{projects.length}</small>
+          <div>
+            <strong>
+              {systemHealthy
+                ? "Sistem \u00c7al\u0131\u015f\u0131yor"
+                : "Sistem Kontrol Ediliyor"}
+            </strong>
 
-              <button
-                type="button"
-                className="project-add-button"
-                title="Yeni proje ekle"
-                onClick={() =>
-                  setProjectFormOpen(
-                    (current) => !current,
-                  )
-                }
-              >
-                +
-              </button>
-            </div>
+            <small>
+              {systemHealthy
+                ? "T\u00fcm servisler haz\u0131r"
+                : "Servis durumlar\u0131n\u0131 kontrol et"}
+            </small>
+          </div>
+        </div>
+      </header>
+
+      <aside className="left-sidebar">
+        <section className="rail-section">
+          <div className="rail-heading">
+            <h2>{"Projeler"}</h2>
+
+            <button
+              className="rail-add-button"
+              onClick={() =>
+                setShowProjectComposer(
+                  (current) =>
+                    !current,
+                )
+              }
+            >
+              + {"Yeni Proje"}
+            </button>
           </div>
 
-          {projectFormOpen && (
+          {showProjectComposer && (
             <form
-              className="project-create-form"
-              onSubmit={handleProjectCreate}
+              className="rail-form"
+              onSubmit={
+                handleCreateProject
+              }
             >
               <input
                 value={newProjectName}
@@ -507,8 +793,7 @@ function App() {
                     event.target.value,
                   )
                 }
-                placeholder="Proje ad?"
-                autoFocus
+                placeholder="Proje ad\u0131"
               />
 
               <input
@@ -518,746 +803,1296 @@ function App() {
                     event.target.value,
                   )
                 }
-                placeholder="C:\\Projects\\EduTest"
+                placeholder="C:\Projects\EduTest"
               />
 
-              <div className="project-create-actions">
+              <button
+                type="submit"
+                disabled={
+                  projectSubmitting
+                }
+              >
+                {projectSubmitting
+                  ? "Ekleniyor..."
+                  : "Projeyi Ekle"}
+              </button>
+            </form>
+          )}
+
+          <div className="project-rail-list">
+            {projects.map(
+              (project) => (
                 <button
-                  type="button"
-                  className="project-cancel-button"
-                  disabled={projectSubmitting}
-                  onClick={() => {
-                    setProjectFormOpen(false)
-                    setNewProjectName("")
-                    setNewProjectPath("")
-                  }}
+                  key={
+                    project.project_id
+                  }
+                  className={`project-rail-card ${
+                    selectedProjectId ===
+                    project.project_id
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setSelectedProjectId(
+                      project.project_id,
+                    )
+                  }
                 >
-                  ?ptal
+                  <span className="project-folder"><UiIcon name="folder" /></span>
+
+                  <span className="project-rail-copy">
+                    <strong>
+                      {project.name}
+                    </strong>
+
+                    <small>
+                      {project.path}
+                    </small>
+                  </span>
                 </button>
+              ),
+            )}
+          </div>
+        </section>
+
+        <section
+          className="rail-section task-rail-section"
+          id="task-list"
+        >
+          <div className="rail-heading">
+            <h2>{"G\u00f6revler"}</h2>
+
+            <button
+              className="rail-add-button"
+              onClick={() =>
+                setShowTaskComposer(
+                  (current) =>
+                    !current,
+                )
+              }
+              disabled={
+                !selectedProject
+              }
+            >
+              + {"Yeni G\u00f6rev"}
+            </button>
+          </div>
+
+          {showTaskComposer && (
+            <form
+              className="rail-form"
+              onSubmit={
+                handleCreateTask
+              }
+            >
+              <textarea
+                value={prompt}
+                onChange={(event) =>
+                  setPrompt(
+                    event.target.value,
+                  )
+                }
+                rows={4}
+                placeholder="AI ajan\u0131na g\u00f6revini yaz..."
+              />
+
+              <div className="rail-form-row">
+                <select
+                  value={maxAttempts}
+                  onChange={(event) =>
+                    setMaxAttempts(
+                      Number(
+                        event.target
+                          .value,
+                      ),
+                    )
+                  }
+                >
+                  {[1, 2, 3, 4, 5].map(
+                    (value) => (
+                      <option
+                        key={value}
+                        value={value}
+                      >
+                        {value} deneme
+                      </option>
+                    ),
+                  )}
+                </select>
 
                 <button
                   type="submit"
-                  className="project-save-button"
                   disabled={
-                    projectSubmitting ||
-                    !newProjectName.trim() ||
-                    !newProjectPath.trim()
+                    submitting ||
+                    !prompt.trim()
                   }
                 >
-                  {projectSubmitting
-                    ? "Ekleniyor..."
-                    : "Projeyi Ekle"}
+                  {submitting
+                    ? "Ba\u015flat\u0131l\u0131yor"
+                    : "Ba\u015flat"}
                 </button>
               </div>
             </form>
           )}
 
-          <div className="project-list">
-            {projects.length === 0 && (
-              <div className="project-empty">
-                Henüz proje yok.
+          <div className="task-rail-list">
+            {tasks.length === 0 && (
+              <div className="rail-empty">
+                {"Hen\u00fcz g\u00f6rev yok."}
               </div>
             )}
 
-            {projects.map((project) => (
+            {tasks.map((task) => (
               <button
-                key={project.project_id}
-                type="button"
-                className={`project-item ${
-                  selectedProjectId === project.project_id
+                key={task.task_id}
+                className={`task-rail-card ${
+                  selectedTaskId ===
+                  task.task_id
                     ? "active"
                     : ""
                 }`}
-                title={project.path}
                 onClick={() =>
-                  setSelectedProjectId(project.project_id)
+                  setSelectedTaskId(
+                    task.task_id,
+                  )
                 }
               >
-                <span className="project-mark">
-                  {project.name
-                    .trim()
-                    .charAt(0)
-                    .toUpperCase()}
-                </span>
+                <span
+                  className={`task-state-light state-${task.state}`}
+                />
 
-                <span className="project-info">
-                  <strong>{project.name}</strong>
-                  <small>{project.path}</small>
-                </span>
+                <span className="task-rail-copy">
+                  <strong>
+                    {task.task_id}
+                  </strong>
 
-                {selectedProjectId === project.project_id && (
-                  <span
-                    className="project-active-dot"
-                    aria-label="Aktif proje"
-                  />
-                )}
+                  <span>
+                    {task.prompt}
+                  </span>
+
+                  <small>
+                    {stateLabels[
+                      task.state
+                    ] ?? task.state}
+                    <i>{"\u2022"}</i>
+                    {formatTime(
+                      task.started_at,
+                    )}
+                  </small>
+                </span>
               </button>
             ))}
           </div>
         </section>
 
-        <div className="sidebar-footer">
-          <span
-            className={`connection-dot ${
-              backendOnline ? "online" : "offline"
-            }`}
-          />
-          <div>
-            <strong>
-              {backendOnline ? "Backend Online" : "Backend Offline"}
-            </strong>
-            <span>Local Factory API</span>
-          </div>
-        </div>
+        <section className="rail-section quick-actions">
+          <h2>
+            {"H\u0131zl\u0131 \u0130\u015flemler"}
+          </h2>
+
+          <button
+            disabled={!selectedProject}
+            onClick={() => {
+              if (!selectedProject) return
+
+              void openProjectTerminal(
+                selectedProject.project_id,
+              ).catch((err) => {
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : "Terminal a\u00e7\u0131lamad\u0131.",
+                )
+              })
+            }}
+          >
+            <UiIcon name="terminal" />
+            {"Terminali A\u00e7"}
+          </button>
+
+          <button onClick={scrollToLogs}>
+            <UiIcon name="logs" />
+            {"Loglar\u0131 G\u00f6r\u00fcnt\u00fcle"}
+          </button>
+
+          <button>
+            <UiIcon name="settings" />
+            {"Ayarlar\u0131 D\u00fczenle"}
+          </button>
+
+          <button>
+            <UiIcon name="models" />
+            {"Model Testi Yap"}
+          </button>
+        </section>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar-main">
-            <div className="topbar-copy">
-              <p className="eyebrow">
-                AI SOFTWARE FACTORY
-              </p>
-
-              <div className="topbar-title-row">
-                <h1>
-                  {selectedProject?.name ??
-                    "Control Center"}
-                </h1>
-
-                <span
-                  className={`runtime-pill ${
-                    backendOnline
-                      ? "online"
-                      : "offline"
-                  }`}
-                >
-                  <span />
-                  {backendOnline
-                    ? "Sistem Aktif"
-                    : "Ba?lant? Yok"}
-                </span>
-              </div>
-
-              <p className="subtitle">
-                Yerel AI geli?tirme hatt?n?,
-                g?revleri ve servisleri tek
-                merkezden y?net.
-              </p>
-            </div>
-
-            <button
-              className="refresh-button"
-              type="button"
-              onClick={() => {
-                void loadTasks()
-                void loadControlCenter()
-              }}
-            >
-              ? Yenile
-            </button>
-          </div>
-
-          <nav className="top-navigation">
-            <button
-              type="button"
-              className="top-nav-item active"
-              onClick={() =>
-                scrollToSection(
-                  "control-center",
-                )
-              }
-            >
-              Kontrol Paneli
-            </button>
-
-            <button
-              type="button"
-              className="top-nav-item"
-              onClick={() =>
-                scrollToSection("tasks")
-              }
-            >
-              G?revler
-            </button>
-
-            <button
-              type="button"
-              className="top-nav-item"
-              onClick={() =>
-                scrollToSection("projects")
-              }
-            >
-              Projeler
-            </button>
-
-            <button
-              type="button"
-              className="top-nav-item"
-              onClick={() =>
-                scrollToSection("models")
-              }
-            >
-              Modeller
-            </button>
-          </nav>
-        </header>
-
+      <main className="center-stage">
         {error && (
           <div className="error-banner">
-            <strong>İşlem hatası</strong>
+            <strong>
+              {"\u0130\u015flem Hatas\u0131"}
+            </strong>
+
             <span>{error}</span>
-            <button onClick={() => setError(null)}>?</button>
+
+            <button
+              onClick={() =>
+                setError(null)
+              }
+            >
+              ?
+            </button>
           </div>
         )}
 
-        <section className="control-center" id="control-center">
-          <div className="control-center-heading">
-            <div>
-              <span className="section-kicker">
-                CONTROL CENTER
-              </span>
-              <h2>Sistem ve Ajan Durumu</h2>
-            </div>
+        <section className="project-header-card">
+          <div className="project-header-top">
+            <div className="project-header-main">
+              <span className="project-large-icon"><UiIcon name="projects" /></span>
 
-            <div className="control-project-badge">
-              <span className="connection-dot online" />
-              <span>
-                {selectedProject?.name ??
-                  "Proje seçilmedi"}
-              </span>
-            </div>
-          </div>
-
-          <div className="control-status-grid">
-            <article className="control-status-card">
-              <div className="control-card-title">
-                <span>Sistem</span>
-                <small>
-                  {controlCenter?.system.platform ?? "—"}
-                </small>
-              </div>
-
-              <div className="resource-grid">
-                <div className="resource-item">
-                  <span>CPU</span>
-                  <strong>
-                    {controlCenter?.system.cpu.used_percent !=
-                    null
-                      ? `${Math.round(
-                          controlCenter.system.cpu
-                            .used_percent,
-                        )}%`
-                      : "—"}
-                  </strong>
-                  <small>
-                    {controlCenter?.system.cpu.logical_count ??
-                      "—"}{" "}
-                    mantıksal çekirdek
-                  </small>
-                </div>
-
-                <div className="resource-item">
-                  <span>RAM</span>
-                  <strong>
-                    {controlCenter?.system.memory
-                      .used_percent != null
-                      ? `${Math.round(
-                          controlCenter.system.memory
-                            .used_percent,
-                        )}%`
-                      : "—"}
-                  </strong>
-                  <small>Bellek kullanımı</small>
-                </div>
-
-                <div className="resource-item">
-                  <span>Disk</span>
-                  <strong>
-                    {controlCenter?.system.disk
-                      .used_percent != null
-                      ? `${Math.round(
-                          controlCenter.system.disk
-                            .used_percent,
-                        )}%`
-                      : "—"}
-                  </strong>
-                  <small>Disk kullanımı</small>
-                </div>
-
-                <div className="resource-item">
-                  <span>Git</span>
-                  <strong>
-                    {controlCenter?.git.branch ?? "—"}
-                  </strong>
-                  <small>
-                    {controlCenter?.git.clean === true
-                      ? "Temiz"
-                      : controlCenter?.git.clean === false
-                        ? "Değişiklik var"
-                        : "Bilinmiyor"}
-                  </small>
-                </div>
-              </div>
-            </article>
-
-            <article className="control-status-card">
-              <div className="control-card-title">
-                <span>Servisler</span>
-                <small>Local Runtime</small>
-              </div>
-
-              <div className="service-list">
-                <div className="service-row">
-                  <span
-                    className={`service-dot ${
-                      controlCenter?.services.docker
-                        .online
-                        ? "online"
-                        : "offline"
-                    }`}
-                  />
-                  <div>
-                    <strong>Docker</strong>
-                    <small>
-                      {controlCenter?.services.docker
-                        .online
-                        ? "Online"
-                        : "Offline"}
-                    </small>
-                  </div>
-                </div>
-
-                <div className="service-row">
-                  <span
-                    className={`service-dot ${
-                      controlCenter?.services.ollama
-                        .online
-                        ? "online"
-                        : "offline"
-                    }`}
-                  />
-                  <div>
-                    <strong>Ollama</strong>
-                    <small>
-                      {controlCenter?.services.ollama
-                        .online
-                        ? "Online"
-                        : "Offline"}
-                    </small>
-                  </div>
-                </div>
-
-                <div className="service-row git-service-row">
-                  <span
-                    className={`service-dot ${
-                      controlCenter?.git.available
-                        ? "online"
-                        : "offline"
-                    }`}
-                  />
-                  <div>
-                    <strong>Git Repository</strong>
-                    <small>
-                      {controlCenter?.git.commit
-                        ? `Commit ${controlCenter.git.commit}`
-                        : "Durum alınamadı"}
-                    </small>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <article className="control-status-card model-card" id="models">
-              <div className="control-card-title">
-                <span>Local Modeller</span>
-                <small>
-                  {controlCenter?.services.ollama.models
-                    .length ?? 0}{" "}
-                  model
-                </small>
-              </div>
-
-              <div className="model-list">
-                {controlCenter?.services.ollama.models
-                  .slice(0, 5)
-                  .map((model) => (
-                    <div
-                      className="model-row"
-                      key={model.name}
-                    >
-                      <span className="model-icon">
-                        AI
-                      </span>
-
-                      <span>{model.name}</span>
-                    </div>
-                  ))}
-
-                {controlCenter &&
-                  controlCenter.services.ollama.models
-                    .length === 0 && (
-                    <div className="model-empty">
-                      Yüklü model bulunamadı.
-                    </div>
-                  )}
-              </div>
-            </article>
-          </div>
-
-          <article className="pipeline-card">
-            <div className="pipeline-header">
               <div>
-                <span className="section-kicker">
-                  AGENT PIPELINE
-                </span>
+                <h1>
+                  {selectedProject?.name ??
+                    "Proje Se\u00e7"}
+                </h1>
 
+                <p>
+                  {selectedProject?.path ??
+                    "Sol panelden bir proje se\u00e7."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              className="open-project-button"
+              type="button"
+              disabled={!selectedProject}
+              onClick={() => {
+                if (!selectedProject) return
+
+                void openProject(
+                  selectedProject.project_id,
+                ).catch((err) => {
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Proje a??lamad?.",
+                  )
+                })
+              }}
+            >
+              <UiIcon name="open" />
+              {"Projeyi A\u00e7"}
+            </button>
+          </div>
+
+          <nav className="project-tabs">
+            <button
+              className={
+                activeProjectTab === "overview"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setActiveProjectTab("overview")
+              }
+            >
+              <UiIcon name="overview" />
+              {"Genel Bak\u0131\u015f"}
+            </button>
+
+            <button
+              className={
+                activeProjectTab === "running"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setActiveProjectTab("running")
+              }
+            >
+              <UiIcon name="running" />
+              {"\u00c7al\u0131\u015fan G\u00f6rev"}
+            </button>
+
+            <button
+              className={
+                activeProjectTab === "history"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setActiveProjectTab("history")
+              }
+            >
+              <UiIcon name="history" />
+              {"Ge\u00e7mi\u015f"}
+            </button>
+
+            <button
+              className={
+                activeProjectTab === "settings"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setActiveProjectTab("settings")
+              }
+            >
+              <UiIcon name="settings" />
+              {"Proje Ayarlar\u0131"}
+            </button>
+          </nav>
+        </section>
+
+        {activeProjectTab === "overview" && (
+          <>
+        <section className="active-task-card">
+          <div className="active-task-head">
+            <div>
+              <span className="task-id-title"><UiIcon name="task" />{" "}
+                {selectedTask?.task_id ??
+                  "G\u00f6rev Se\u00e7ilmedi"}
+              </span>
+
+              <h2>
+                {selectedTask?.prompt ??
+                  "Pipeline durumunu g\u00f6rmek i\u00e7in bir g\u00f6rev se\u00e7."}
+              </h2>
+            </div>
+
+            <div className="active-task-state">
+              <span
+                className={`state-badge state-${selectedTask?.state ?? "queued"}`}
+              >
+                {stateLabels[
+                  selectedTask?.state ??
+                    "queued"
+                ] ??
+                  selectedTask?.state}
+              </span>
+
+              <small>
+                {"Ba\u015flang\u0131\u00e7:"}{" "}
+                {formatTime(
+                  selectedTask?.started_at ??
+                    null,
+                )}
+              </small>
+            </div>
+          </div>
+
+          <div className="pipeline-flow">
+            {pipelineStages.map(
+              (stage) => (
+                <div
+                  className="pipeline-node-wrap"
+                  key={stage.id}
+                >
+                  <div
+                    className={`pipeline-node stage-${stage.status}`}
+                  >
+                    <span className="pipeline-node-icon">
+                      <UiIcon
+                        name={
+                          stage.status === "success"
+                            ? "check"
+                            : stage.id
+                        }
+                      />
+                    </span>
+
+                    <strong>
+                      {stage.label}
+                    </strong>
+                  </div>
+
+                  <small className="pipeline-caption">
+                    {stage.status ===
+                    "success"
+                      ? "Tamamland\u0131"
+                      : stage.status ===
+                          "active"
+                        ? "\u00c7al\u0131\u015f\u0131yor..."
+                        : stage.status ===
+                            "waiting"
+                          ? "Onay Bekliyor"
+                          : stage.status ===
+                              "failed"
+                            ? "Ba\u015far\u0131s\u0131z"
+                            : stage.status ===
+                                "rejected"
+                              ? "Reddedildi"
+                              : "Bekliyor"}
+                  </small>
+                </div>
+              ),
+            )}
+          </div>
+
+          <div className="pipeline-tools">
+            {pipelineStages.map((stage) => (
+              <div
+                key={stage.id}
+                className="pipeline-tool"
+              >
+                <UiIcon name={stage.id} />
+
+                <div>
+                  <strong>
+                    {pipelineTools[stage.id] ??
+                      stage.label}
+                  </strong>
+
+                  <small>
+                    {stage.id === "task"
+                      ? "(Python)"
+                      : stage.id === "worktree"
+                        ? "(İzolasyon)"
+                        : stage.id === "repo_analysis"
+                          ? "(Repo Context)"
+                          : stage.id === "model"
+                            ? selectedTask?.model ??
+                              "Local Model"
+                            : stage.id === "patch"
+                              ? "(Güvenlik Kontrolü)"
+                              : stage.id === "tests"
+                                ? "(Test / Build / Lint)"
+                                : stage.id === "diff"
+                                  ? "(Değişiklikler)"
+                                  : stage.id === "approval"
+                                    ? "(Merge)"
+                                    : ""}
+                  </small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="lower-workspace">
+          <article
+            className="console-card"
+            id="live-logs"
+          >
+            <div className="panel-titlebar">
+              <div>
+                <UiIcon name="logs" />
                 <strong>
-                  {selectedTask
-                    ? selectedTask.task_id
-                    : "Görev seç"}
+                  {"Canl\u0131 Loglar"}
                 </strong>
               </div>
 
-              <div className="pipeline-progress-text">
-                {pipeline
-                  ? `${pipeline.progress_percent}%`
-                  : "—"}
-              </div>
+              <label className="autosave-label">
+                <span className="toggle on" />
+                {"Otomatik Kayd\u0131rma"}
+              </label>
             </div>
 
-            <div className="pipeline-track">
-              {pipeline ? (
-                pipeline.stages.map(
-                  (stage, index) => (
+            <div className="console-body">
+              {filteredLogs.length >
+              0 ? (
+                filteredLogs.map(
+                  (log, index) => (
                     <div
-                      className="pipeline-stage-wrap"
-                      key={stage.id}
+                      className="console-line"
+                      key={`${index}-${log}`}
                     >
-                      <div
-                        className={`pipeline-stage pipeline-${stage.status}`}
-                      >
-                        <span className="pipeline-stage-dot">
-                          {stage.status === "success"
-                            ? "✓"
-                            : stage.status === "failed"
-                              ? "!"
-                              : stage.status === "rejected"
-                                ? "×"
-                                : index + 1}
-                        </span>
+                      <span className="console-time">
+                        [
+                        {String(
+                          index + 1,
+                        ).padStart(
+                          2,
+                          "0",
+                        )}
+                        ]
+                      </span>
 
-                        <span className="pipeline-stage-label">
-                          {stage.label}
-                        </span>
-                      </div>
+                      <span className="console-tag">
+                        INFO
+                      </span>
 
-                      {index <
-                        pipeline.stages.length - 1 && (
-                        <span
-                          className={`pipeline-connector ${
-                            stage.status ===
-                              "success"
-                              ? "complete"
-                              : ""
-                          }`}
-                        />
-                      )}
+                      <span className="console-message">
+                        {log}
+                      </span>
                     </div>
                   ),
                 )
               ) : (
-                <div className="pipeline-empty">
-                  Pipeline durumunu görmek için
-                  bir görev seç.
+                <div className="console-empty">
+                  {selectedTask
+                    ? "Hen\u00fcz log kayd\u0131 yok."
+                    : "Canl\u0131 loglar i\u00e7in bir g\u00f6rev se\u00e7."}
                 </div>
+              )}
+            </div>
+
+            <div className="console-search">
+              <input
+                value={logQuery}
+                onChange={(event) =>
+                  setLogQuery(
+                    event.target.value,
+                  )
+                }
+                placeholder="Loglarda ara..."
+              />
+
+              <UiIcon name="search" /></div>
+
+            {diff && (
+              <pre className="inline-diff">
+                {diff}
+              </pre>
+            )}
+          </article>
+
+          <article className="result-card">
+            <div className="panel-titlebar">
+              <div>
+                <UiIcon name="result" />
+                <strong>
+                  {"G\u00f6rev Sonucu"}
+                </strong>
+              </div>
+
+              <span
+                className={`result-status state-${selectedTask?.state ?? "queued"}`}
+              >
+                {selectedTask?.state ===
+                "ready_for_approval"
+                  ? "Onay Bekliyor"
+                  : stateLabels[
+                      selectedTask?.state ??
+                        "queued"
+                    ] ??
+                    "\u2014"}
+              </span>
+            </div>
+
+            <div className="result-details">
+              <div>
+                <span>
+                  {"Testler"}
+                </span>
+
+                <strong
+                  className={
+                    selectedTask?.test_result ===
+                    "passed"
+                      ? "good"
+                      : ""
+                  }
+                >
+                  {selectedTask?.test_result ??
+                    "\u2014"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  {"Deneme"}
+                </span>
+
+                <strong>
+                  {selectedTask
+                    ? `${selectedTask.attempt}/${selectedTask.max_attempts}`
+                    : "\u2014"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  {"Pipeline"}
+                </span>
+
+                <strong>
+                  {pipeline
+                    ? `${pipeline.progress_percent}%`
+                    : "\u2014"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  {"Model Kullan\u0131m\u0131"}
+                </span>
+
+                <strong>
+                  {selectedTask?.model ??
+                    "\u2014"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  {"Git Branch"}
+                </span>
+
+                <strong>
+                  {controlCenter?.git
+                    .branch ?? "\u2014"}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  {"Commit"}
+                </span>
+
+                <strong>
+                  {controlCenter?.git
+                    .commit ?? "\u2014"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="result-actions">
+              <button
+                className="diff-action"
+                onClick={() =>
+                  void handleDiff()
+                }
+                disabled={
+                  !selectedTask ||
+                  loadingDiff
+                }
+              >
+                {loadingDiff
+                  ? "Y\u00fckleniyor..."
+                  : "Diff'i G\u00f6r\u00fcnt\u00fcle"}
+              </button>
+
+              {selectedTask?.state ===
+                "ready_for_approval" && (
+                <>
+                  <button
+                    className="approve-action"
+                    disabled={
+                      actionLoading
+                    }
+                    onClick={() =>
+                      void handleAction(
+                        "approve",
+                      )
+                    }
+                  >
+                    {"Onayla ve Birle\u015ftir"}
+                  </button>
+
+                  <button
+                    className="reject-action"
+                    disabled={
+                      actionLoading
+                    }
+                    onClick={() =>
+                      void handleAction(
+                        "reject",
+                      )
+                    }
+                  >
+                    {"Reddet"}
+                  </button>
+                </>
+              )}
+
+              {selectedTask?.state ===
+                "failed" && (
+                <button
+                  className="approve-action"
+                  disabled={
+                    actionLoading
+                  }
+                  onClick={() =>
+                    void handleAction(
+                      "retry",
+                    )
+                  }
+                >
+                  {"Tekrar Dene"}
+                </button>
               )}
             </div>
           </article>
         </section>
+          </>
+        )}
 
-        <section className="stats-grid">
-          <article className="stat-card">
-            <span>Toplam Görev</span>
-            <strong>{stats.total}</strong>
-          </article>
 
-          <article className="stat-card">
-            <span>Aktif</span>
-            <strong>{stats.running}</strong>
-          </article>
-
-          <article className="stat-card">
-            <span>Onay Bekleyen</span>
-            <strong>{stats.approval}</strong>
-          </article>
-
-          <article className="stat-card">
-            <span>Başarısız</span>
-            <strong>{stats.failed}</strong>
-          </article>
-        </section>
-
-        <section className="workspace">
-          <div className="left-column">
-            <form className="task-composer" onSubmit={handleCreate}>
-              <div className="section-heading">
-                <div>
-                  <span className="section-kicker">NEW TASK</span>
-                  <h2>Yeni görev oluştur</h2>
-                </div>
+        {activeProjectTab === "running" && (
+          <section className="project-tab-page running-page">
+            <div className="tab-page-heading">
+              <div>
+                <span className="tab-page-kicker">
+                  LIVE TASKS
+                </span>
+                <h2>
+                  {"\u00c7al\u0131\u015fan G\u00f6revler"}
+                </h2>
               </div>
 
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Örn: math_utils.py dosyasında factorial(n) fonksiyonu oluştur..."
-                rows={5}
-              />
+              <span className="tab-page-count">
+                {runningTasks.length}
+              </span>
+            </div>
 
-              <div className="composer-footer">
+            <div className="tab-task-list">
+              {runningTasks.length === 0 && (
+                <div className="tab-empty">
+                  {"Aktif veya onay bekleyen g\u00f6rev bulunmuyor."}
+                </div>
+              )}
+
+              {runningTasks.map((task) => (
+                <button
+                  key={task.task_id}
+                  className="tab-task-card"
+                  onClick={() => {
+                    setSelectedTaskId(task.task_id)
+                    setActiveProjectTab("overview")
+                  }}
+                >
+                  <span
+                    className={`task-state-light state-${task.state}`}
+                  />
+
+                  <div>
+                    <strong>{task.task_id}</strong>
+                    <p>{task.prompt}</p>
+                    <small>
+                      {stateLabels[task.state] ??
+                        task.state}
+                      {" \u2022 "}
+                      {formatTime(task.started_at)}
+                    </small>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeProjectTab === "history" && (
+          <section className="project-tab-page history-page">
+            <div className="tab-page-heading">
+              <div>
+                <span className="tab-page-kicker">
+                  TASK HISTORY
+                </span>
+                <h2>
+                  {"G\u00f6rev Ge\u00e7mi\u015fi"}
+                </h2>
+              </div>
+
+              <span className="tab-page-count">
+                {historyTasks.length}
+              </span>
+            </div>
+
+            <div className="tab-task-list">
+              {historyTasks.length === 0 && (
+                <div className="tab-empty">
+                  {"Hen\u00fcz tamamlanm\u0131\u015f g\u00f6rev yok."}
+                </div>
+              )}
+
+              {historyTasks.map((task) => (
+                <button
+                  key={task.task_id}
+                  className="tab-task-card"
+                  onClick={() => {
+                    setSelectedTaskId(task.task_id)
+                    setActiveProjectTab("overview")
+                  }}
+                >
+                  <span
+                    className={`task-state-light state-${task.state}`}
+                  />
+
+                  <div>
+                    <strong>{task.task_id}</strong>
+                    <p>{task.prompt}</p>
+                    <small>
+                      {stateLabels[task.state] ??
+                        task.state}
+                      {" \u2022 "}
+                      {formatDate(task.started_at)}
+                    </small>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeProjectTab === "settings" && (
+          <section className="project-tab-page settings-page">
+            <div className="tab-page-heading">
+              <div>
+                <span className="tab-page-kicker">
+                  PROJECT SETTINGS
+                </span>
+                <h2>
+                  {"Proje Ayarlar\u0131"}
+                </h2>
+              </div>
+            </div>
+
+            {!selectedProject ? (
+              <div className="tab-empty">
+                {"Ayarlar i\u00e7in bir proje se\u00e7."}
+              </div>
+            ) : (
+              <form
+                className="project-settings-form"
+                onSubmit={
+                  handleProjectSettingsSave
+                }
+              >
                 <label>
-                  Maksimum deneme
-                  <select
-                    value={maxAttempts}
+                  <span>{"Proje Ad\u0131"}</span>
+
+                  <input
+                    value={projectSettingsName}
                     onChange={(event) =>
-                      setMaxAttempts(Number(event.target.value))
+                      setProjectSettingsName(
+                        event.target.value,
+                      )
                     }
-                  >
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
 
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={
-                    submitting ||
-                    !prompt.trim() ||
-                    !selectedProject
-                  }
-                >
-                  {submitting ? "Başlatılıyor..." : "Görevi Başlat"}
-                </button>
-              </div>
-            </form>
+                <label>
+                  <span>{"Proje Yolu"}</span>
 
-            <section className="task-list-panel" id="tasks">
-              <div className="section-heading">
-                <div>
-                  <span className="section-kicker">TASK QUEUE</span>
-                  <h2>Görevler</h2>
-                </div>
+                  <input
+                    value={projectSettingsPath}
+                    onChange={(event) =>
+                      setProjectSettingsPath(
+                        event.target.value,
+                      )
+                    }
+                  />
+                </label>
 
-                <span className="task-count">
-                  {tasks.length} görev
-                </span>
-              </div>
-
-              <div className="task-list">
-                {tasks.length === 0 && (
-                  <div className="empty-state">
-                    <strong>Henüz görev yok.</strong>
-                    <span>
-                      Yukarıdaki alandan ilk görevi oluşturabilirsin.
-                    </span>
-                  </div>
-                )}
-
-                {tasks.map((task) => (
-                  <button
-                    key={task.task_id}
-                    className={`task-row ${
-                      selectedTaskId === task.task_id ? "selected" : ""
-                    }`}
-                    onClick={() => {
-                      setSelectedTaskId(task.task_id)
-                      setDiff("")
-                    }}
-                  >
-                    <div className="task-main">
-                      <div className="task-id-line">
-                        <strong>{task.task_id}</strong>
-                        <span className={`status status-${task.state}`}>
-                          {stateLabels[task.state] ?? task.state}
-                        </span>
-                      </div>
-
-                      <p>{task.prompt}</p>
-                    </div>
-
-                    <div className="task-meta">
-                      <span>{task.model ?? "?"}</span>
-                      <span>{formatDate(task.started_at)}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <aside className="detail-panel">
-            {!selectedTask && (
-              <div className="detail-empty">
-                <div className="detail-icon">?</div>
-                <strong>Görev seç</strong>
-                <span>
-                  Ayrıntıları, diff çıktısını ve işlem butonlarını
-                  görmek için listeden bir görev seç.
-                </span>
-              </div>
-            )}
-
-            {selectedTask && (
-              <>
-                <div className="task-summary-panel">
-                  <div className="detail-header">
+                <div className="settings-info-grid">
                   <div>
-                    <span className="section-kicker">TASK DETAIL</span>
-                    <h2>{selectedTask.task_id}</h2>
-                  </div>
-
-                  <span className={`status status-${selectedTask.state}`}>
-                    {stateLabels[selectedTask.state] ?? selectedTask.state}
-                  </span>
-                </div>
-
-                <div className="detail-grid">
-                  <div>
-                    <span>Model</span>
-                    <strong>{selectedTask.model ?? "?"}</strong>
-                  </div>
-                  <div>
-                    <span>Deneme</span>
+                    <span>Project ID</span>
                     <strong>
-                      {selectedTask.attempt}/{selectedTask.max_attempts}
+                      {selectedProject.project_id}
                     </strong>
                   </div>
+
                   <div>
-                    <span>Test</span>
-                    <strong>{selectedTask.test_result ?? "?"}</strong>
+                    <span>Git Branch</span>
+                    <strong>
+                      {controlCenter?.git.branch ??
+                        "\u2014"}
+                    </strong>
                   </div>
+
                   <div>
-                    <span>Başlangıç</span>
-                    <strong>{formatDate(selectedTask.started_at)}</strong>
+                    <span>Commit</span>
+                    <strong>
+                      {controlCenter?.git.commit ??
+                        "\u2014"}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Repository</span>
+                    <strong>
+                      {controlCenter?.git.available
+                        ? "Git"
+                        : "\u2014"}
+                    </strong>
                   </div>
                 </div>
 
-                <div className="prompt-box">
-                  <span>Görev</span>
-                  <p>{selectedTask.prompt}</p>
-                </div>
-
-                {selectedTask.state === "ready_for_approval" && (
-                  <div className="approval-actions">
-                    <button
-                      className="primary-button"
-                      disabled={actionLoading}
-                      onClick={() => void handleAction("approve")}
-                    >
-                      Onayla
-                    </button>
-
-                    <button
-                      className="danger-button"
-                      disabled={actionLoading}
-                      onClick={() => void handleAction("reject")}
-                    >
-                      Reddet
-                    </button>
-                  </div>
-                )}
-
-                {selectedTask.state === "failed" && (
-                  <button
-                    className="primary-button full"
-                    disabled={actionLoading}
-                    onClick={() => void handleAction("retry")}
-                  >
-                    Tekrar Dene
-                  </button>
-                )}
-
-                </div>
-
-                <div className="task-output-panel">
-                  <div className="output-panel-heading">
-                    <div>
-                      <span className="section-kicker">
-                        LIVE EXECUTION
-                      </span>
-                      <h2>Agent ?al??ma Alan?</h2>
-                    </div>
-
-                    <span
-                      className={`status status-${selectedTask.state}`}
-                    >
-                      {stateLabels[selectedTask.state] ??
-                        selectedTask.state}
-                    </span>
-                  </div>
-
-                  <div className="live-log-section">
-                  <div className="diff-heading">
-                    <div>
-                      <span>Canlı Log</span>
-                      <small>AI ajanının anlık işlem adımları</small>
-                    </div>
-                  </div>
-
-                  <pre className="live-log-view">
-                    {liveLogs.length > 0
-                      ? liveLogs.join("\n")
-                      : "Henüz log kaydı yok."}
-                  </pre>
-                </div>
-
-                <div className="diff-section">
-                  <div className="diff-heading">
-                    <div>
-                      <span>Git Diff</span>
-                      <small>AI tarafından oluşturulan değişiklikler</small>
-                    </div>
-
-                    <button
-                      className="secondary-button"
-                      disabled={
-                        ![
-                          "ready_for_approval",
-                          "approved",
-                          "rejected",
-                        ].includes(selectedTask.state) ||
-                        loadingDiff
-                      }
-                      onClick={() =>
-                        void handleDiff(selectedTask.task_id)
-                      }
-                    >
-                      {loadingDiff ? "Yükleniyor..." : "Diff Göster"}
-                    </button>
-                  </div>
-
-                  <pre className="diff-view">
-                    {diff ||
-                      ([
-                        "ready_for_approval",
-                        "approved",
-                        "rejected",
-                      ].includes(selectedTask.state)
-                        ? "Diff görüntülemek için butona bas."
-                        : "Bu görev için kullanılabilir diff yok.")}
-                  </pre>
-                </div>
-                </div>
-              </>
+                <button
+                  className="settings-save-button"
+                  type="submit"
+                  disabled={
+                    projectSettingsSaving
+                  }
+                >
+                  {projectSettingsSaving
+                    ? "Kaydediliyor..."
+                    : "Ayarlar\u0131 Kaydet"}
+                </button>
+              </form>
             )}
-          </aside>
-        </section>
+          </section>
+        )}
+
       </main>
+
+      <aside className="right-sidebar">
+        <section className="right-panel resource-panel">
+          <div className="right-panel-title">
+            <strong>
+              {"Sistem Kaynaklar\u0131"}
+            </strong>
+
+            <span className="live-badge"><i className="live-dot" />{"Canl\u0131"}
+            </span>
+          </div>
+
+          <div className="hardware-main">
+            <span className="hardware-icon"><UiIcon name="cpu" /></span>
+
+            <div>
+              <strong>
+                {controlCenter
+                  ? `${controlCenter.system.cpu.logical_count ?? "\u2014"} Mant\u0131ksal CPU`
+                  : "Sistem CPU"}
+              </strong>
+
+              <small>
+                {controlCenter?.system.platform ??
+                  "\u2014"}{" "}
+                {controlCenter?.system.platform_release ??
+                  ""}
+              </small>
+            </div>
+          </div>
+
+          <div className="metric-block">
+            <div>
+              <span>
+                {"CPU Kullan\u0131m\u0131"}
+              </span>
+
+              <strong>
+                {controlCenter?.system.cpu
+                  .used_percent != null
+                  ? `${Math.round(
+                      controlCenter
+                        .system.cpu
+                        .used_percent,
+                    )}%`
+                  : "\u2014"}
+              </strong>
+            </div>
+
+            <div className="meter">
+              <span
+                style={{
+                  width: `${Math.min(
+                    controlCenter?.system
+                      .cpu.used_percent ??
+                      0,
+                    100,
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="metric-block">
+            <div>
+              <span>
+                {"RAM Kullan\u0131m\u0131"}
+              </span>
+
+              <strong>
+                {ramUsed != null
+                  ? `${formatBytes(
+                      ramUsed,
+                    )} / ${formatBytes(
+                      controlCenter?.system
+                        .memory
+                        .total_bytes ??
+                        null,
+                    )}`
+                  : "\u2014"}
+              </strong>
+            </div>
+
+            <div className="meter blue">
+              <span
+                style={{
+                  width: `${Math.min(
+                    controlCenter?.system
+                      .memory.used_percent ??
+                      0,
+                    100,
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="metric-block">
+            <div>
+              <span>
+                {"Disk Kullan\u0131m\u0131"}
+              </span>
+
+              <strong>
+                {controlCenter?.system.disk
+                  .used_percent != null
+                  ? `${Math.round(
+                      controlCenter
+                        .system.disk
+                        .used_percent,
+                    )}%`
+                  : "\u2014"}
+              </strong>
+            </div>
+
+            <div className="meter violet">
+              <span
+                style={{
+                  width: `${Math.min(
+                    controlCenter?.system
+                      .disk.used_percent ??
+                      0,
+                    100,
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="right-panel">
+          <div className="right-panel-title">
+            <strong>
+              {"Model Durumu"}
+            </strong>
+          </div>
+
+          <h3>
+            {"Lokal Modeller"}
+          </h3>
+
+          <div className="model-status-list">
+            {controlCenter?.services
+              .ollama.models.length ? (
+              controlCenter.services.ollama.models
+                .slice(0, 5)
+                .map(
+                  (
+                    model,
+                    index,
+                  ) => (
+                    <div
+                      className="model-status-row"
+                      key={model.name}
+                    >
+                      <span className="model-provider"><UiIcon name="models" /></span>
+
+                      <span>
+                        {model.name}
+                      </span>
+
+                      <i
+                        className={
+                          controlCenter
+                            .services
+                            .ollama.online
+                            ? "online"
+                            : ""
+                        }
+                      />
+
+                      <small>
+                        {index === 0
+                          ? "Aktif"
+                          : "Haz\u0131r"}
+                      </small>
+                    </div>
+                  ),
+                )
+            ) : (
+              <div className="panel-empty">
+                {"Model bulunamad\u0131."}
+              </div>
+            )}
+          </div>
+
+          <div className="cost-row">
+            <span>
+              {"Maliyet (Bu Ay)"}
+            </span>
+
+            <strong>$0.00</strong>
+          </div>
+        </section>
+
+        <section className="right-panel">
+          <div className="right-panel-title">
+            <strong>
+              {"Servis Durumu"}
+            </strong>
+          </div>
+
+          <div className="service-status-list">
+            <div>
+              <UiIcon name="models" />
+              <strong>
+                Ollama (Local LLM)
+              </strong>
+              <i
+                className={
+                  controlCenter?.services
+                    .ollama.online
+                    ? "online"
+                    : "offline"
+                }
+              />
+              <small>
+                {controlCenter?.services
+                  .ollama.online
+                  ? "\u00c7al\u0131\u015f\u0131yor"
+                  : "Kapal\u0131"}
+              </small>
+            </div>
+
+            <div>
+              <UiIcon name="tests" />
+              <strong>
+                Docker Sandbox
+              </strong>
+              <i
+                className={
+                  controlCenter?.services
+                    .docker.online
+                    ? "online"
+                    : "offline"
+                }
+              />
+              <small>
+                {controlCenter?.services
+                  .docker.online
+                  ? "\u00c7al\u0131\u015f\u0131yor"
+                  : "Kapal\u0131"}
+              </small>
+            </div>
+
+            <div>
+              <UiIcon name="worktree" />
+              <strong>
+                Git (Worktree)
+              </strong>
+              <i
+                className={
+                  controlCenter?.git
+                    .available
+                    ? "online"
+                    : "offline"
+                }
+              />
+              <small>
+                {controlCenter?.git
+                  .available
+                  ? "\u00c7al\u0131\u015f\u0131yor"
+                  : "Kapal\u0131"}
+              </small>
+            </div>
+
+            <div>
+              <UiIcon name="sqlite" />
+              <strong>
+                SQLite
+              </strong>
+              <i className="online" />
+              <small>
+                {"\u00c7al\u0131\u015f\u0131yor"}
+              </small>
+            </div>
+
+            <div>
+              <UiIcon name="dashboard" />
+              <strong>
+                Factory API
+              </strong>
+              <i
+                className={
+                  backendOnline
+                    ? "online"
+                    : "offline"
+                }
+              />
+              <small>
+                {backendOnline
+                  ? "\u00c7al\u0131\u015f\u0131yor"
+                  : "Kapal\u0131"}
+              </small>
+            </div>
+          </div>
+        </section>
+
+        <section className="right-panel quick-info">
+          <div className="right-panel-title">
+            <strong>
+              {"H\u0131zl\u0131 Bilgiler"}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              {"Proje Yolu"}
+            </span>
+
+            <strong>
+              {selectedProject?.path ??
+                "\u2014"}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              {"Aktif G\u00f6rev"}
+            </span>
+
+            <strong className="accent">
+              {selectedTask?.task_id ??
+                "\u2014"}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              {"Olu\u015fturulma"}
+            </span>
+
+            <strong>
+              {formatDate(
+                selectedTask?.started_at ??
+                  null,
+              )}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              {"Ortam"}
+            </span>
+
+            <strong>
+              {controlCenter
+                ? `${controlCenter.system.platform} ${controlCenter.system.platform_release}`
+                : "\u2014"}
+            </strong>
+          </div>
+        </section>
+      </aside>
+
+      <footer className="factory-footer">
+        <span>
+          AI Software Factory v0.1.0
+          <i>|</i>
+          Local-First Development Platform
+        </span>
+
+        <span>
+          {"Daha iyi yaz\u0131l\u0131mlar, daha \u00f6zg\u00fcr geli\u015ftiriciler."}
+        </span>
+      </footer>
     </div>
   )
 }
