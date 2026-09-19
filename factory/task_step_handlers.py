@@ -1,8 +1,12 @@
 from typing import Any
 
+from factory.agents.capabilities import (
+    AgentCapability,
+)
 from factory.agents.contracts import AgentRequest
-from factory.agents.providers.model_client import (
-    ModelClientProvider,
+from factory.agents.runtime import (
+    build_default_agent_execution_router,
+    resolve_provider_for_role,
 )
 from factory.model_router import route_model
 from factory.read_task_runner import run_read_task
@@ -221,11 +225,21 @@ class TaskStepHandlers:
         else:
             scope_contract = ""
 
-        provider = ModelClientProvider(
-            self.orchestrator.model_client
+        runtime = (
+            build_default_agent_execution_router(
+                self.orchestrator.model_client
+            )
         )
 
-        response = provider.complete(
+        preferred_provider = (
+            resolve_provider_for_role(
+                self.orchestrator.model_client,
+                "fast_local",
+                runtime.provider_registry,
+            )
+        )
+
+        response = runtime.complete(
             AgentRequest(
                 model_role="fast_local",
                 system_prompt=(
@@ -284,7 +298,12 @@ class TaskStepHandlers:
                 ),
                 temperature=0.0,
                 model_name=selected_model,
-            )
+            ),
+            {
+                AgentCapability.READ_REPOSITORY,
+                AgentCapability.WRITE_CODE,
+            },
+            preferred_provider=preferred_provider,
         )
 
         patch = (

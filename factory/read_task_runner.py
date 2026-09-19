@@ -4,9 +4,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from factory.agents.capabilities import (
+    AgentCapability,
+)
 from factory.agents.contracts import AgentRequest
-from factory.agents.providers.model_client import (
-    ModelClientProvider,
+from factory.agents.runtime import (
+    build_default_agent_execution_router,
+    resolve_provider_for_role,
 )
 from factory.model_router import ModelRoute
 from factory.repository_context import build_smart_read_context
@@ -36,11 +40,21 @@ def _complete_agent(
     timeout: int | None = None,
     model_name_override: str | None = None,
 ):
-    provider = ModelClientProvider(
-        model_client
+    runtime = (
+        build_default_agent_execution_router(
+            model_client
+        )
     )
 
-    return provider.complete(
+    preferred_provider = (
+        resolve_provider_for_role(
+            model_client,
+            model_role,
+            runtime.provider_registry,
+        )
+    )
+
+    return runtime.complete(
         AgentRequest(
             model_role=model_role,
             system_prompt=system_prompt,
@@ -48,7 +62,11 @@ def _complete_agent(
             temperature=temperature,
             timeout=timeout,
             model_name=model_name_override,
-        )
+        ),
+        {
+            AgentCapability.READ_REPOSITORY,
+        },
+        preferred_provider=preferred_provider,
     )
 
 
