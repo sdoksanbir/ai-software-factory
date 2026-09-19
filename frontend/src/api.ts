@@ -106,6 +106,39 @@ export type ControlCenterStatus = {
   }
 }
 
+
+export type TaskPlanStep = {
+  step_index: number
+  title: string
+  instruction: string
+  kind: "read" | "write" | "verify"
+  status:
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "skipped"
+  attempt: number
+  result: string | null
+  error: string | null
+}
+
+export type TaskPlan = {
+  task_id: string
+  status: string
+  summary: string | null
+  created_at?: string
+  updated_at?: string
+  steps: TaskPlanStep[]
+}
+
+export type TaskPlanResponse = {
+  task_id: string
+  state: string
+  task_kind: string | null
+  plan: TaskPlan | null
+}
+
 const API_BASE = "/api"
 
 async function request<T>(
@@ -318,5 +351,13 @@ export function testModel(
         prompt,
       }),
     },
+  )
+}
+
+export function getTaskPlan(
+  taskId: string,
+) {
+  return request<TaskPlanResponse>(
+    `/tasks/${taskId}/plan`,
   )
 }

@@ -1534,6 +1534,29 @@ def test_local_model(payload: ModelTestRequest):
 
 
 
+
+@app.get("/tasks/{task_id}/plan")
+def get_task_plan_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    plan = get_task_plan(task_id)
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "task_kind": task.task_kind,
+        "plan": plan,
+    }
+
+
 @app.get("/tasks/{task_id}/result")
 def get_task_result_endpoint(
     task_id: str,

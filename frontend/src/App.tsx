@@ -13,6 +13,7 @@ import {
   getControlCenterStatus,
   getTaskDiff,
   getTaskPipeline,
+  getTaskPlan,
   listProjects,
   listTasks,
   openProject,
@@ -25,6 +26,7 @@ import {
   type Project,
   type Task,
   type TaskPipeline,
+  type TaskPlanResponse,
 } from "./api"
 
 import { UiIcon } from "./UiIcon"
@@ -60,6 +62,25 @@ const pipelineTools: Record<string, string> = {
   tests: "Docker Sandbox",
   diff: "Git Diff",
   approval: "Manuel Onay",
+}
+
+
+function getStageIconName(
+  stageId: string,
+) {
+  if (stageId.startsWith("plan-read-")) {
+    return "repo_analysis"
+  }
+
+  if (stageId.startsWith("plan-write-")) {
+    return "patch"
+  }
+
+  if (stageId.startsWith("plan-verify-")) {
+    return "tests"
+  }
+
+  return stageId
 }
 
 function formatTime(value: string | null) {
@@ -150,6 +171,9 @@ function App() {
 
   const [pipeline, setPipeline] =
     useState<TaskPipeline | null>(null)
+
+  const [taskPlan, setTaskPlan] =
+    useState<TaskPlanResponse | null>(null)
 
   const [activeProjectTab, setActiveProjectTab] =
     useState<"overview" | "running" | "history" | "settings">(
@@ -472,8 +496,28 @@ function App() {
       window.clearInterval(timer)
   }, [loadControlCenter])
 
+  const loadTaskPlan =
+    useCallback(async () => {
+      if (!selectedTaskId) {
+        setTaskPlan(null)
+        return
+      }
+
+      try {
+        const data =
+          await getTaskPlan(
+            selectedTaskId,
+          )
+
+        setTaskPlan(data)
+      } catch {
+        setTaskPlan(null)
+      }
+    }, [selectedTaskId])
+
   useEffect(() => {
     void loadPipeline()
+    void loadTaskPlan()
 
     if (!selectedTaskId) {
       return
@@ -481,15 +525,21 @@ function App() {
 
     const timer = window.setInterval(() => {
       void loadPipeline()
+      void loadTaskPlan()
     }, 2000)
 
     return () =>
       window.clearInterval(timer)
-  }, [loadPipeline, selectedTaskId])
+  }, [
+    loadPipeline,
+    loadTaskPlan,
+    selectedTaskId,
+  ])
 
   useEffect(() => {
     setDiff("")
     setTaskReadResult(null)
+    setTaskPlan(null)
     setLiveLogs([])
     setLogQuery("")
 
@@ -850,12 +900,33 @@ function App() {
     })
   }
 
+  const dynamicPlanStages =
+    taskPlan?.plan?.steps.map((step) => ({
+      id: `plan-${step.kind}-${step.step_index}`,
+      label: step.title,
+      status:
+        step.status === "running"
+          ? ("active" as const)
+          : step.status === "completed" ||
+              step.status === "skipped"
+            ? ("completed" as const)
+            : step.status === "failed"
+              ? ("failed" as const)
+              : ("pending" as const),
+    })) ?? []
+
+  const hasDynamicPlan =
+    selectedTask?.task_kind === "write" &&
+    dynamicPlanStages.length > 0
+
   const pipelineStages =
-    pipeline?.stages ??
-    defaultPipeline.map((stage) => ({
-      ...stage,
-      status: "pending" as const,
-    }))
+    hasDynamicPlan
+      ? dynamicPlanStages
+      : pipeline?.stages ??
+        defaultPipeline.map((stage) => ({
+          ...stage,
+          status: "pending" as const,
+        }))
 
   const isReadPipeline =
     selectedTask?.task_kind === "read"
@@ -1712,14 +1783,16 @@ function App() {
                   key={stage.id}
                 >
                   <div
-                    className={`pipeline-node stage-${stage.status}`}
+                    className={`pipeline-node stage-${stage.status === "completed" ? "success" : stage.status}`}
                   >
                     <span className="pipeline-node-icon">
                       <UiIcon
                         name={
-                          stage.status === "success"
+                          (stage.status === "success" || stage.status === "completed")
                             ? "check"
-                            : stage.id
+                            : getStageIconName(
+                                stage.id,
+                              )
                         }
                       />
                     </span>
@@ -1730,22 +1803,16 @@ function App() {
                   </div>
 
                   <small className="pipeline-caption">
-                    {stage.status ===
-                    "success"
+                    {stage.status === "success" ||
+                    stage.status === "completed"
                       ? "Tamamland\u0131"
-                      : stage.status ===
-                          "active"
+                      : stage.status === "active"
                         ? "\u00c7al\u0131\u015f\u0131yor..."
-                        : stage.status ===
-                            "waiting"
+                        : stage.status === "waiting"
                           ? "Onay Bekliyor"
-                          : stage.status ===
-                              "failed"
+                          : stage.status === "failed"
                             ? "Ba\u015far\u0131s\u0131z"
-                            : stage.status ===
-                                "rejected"
-                              ? "Reddedildi"
-                              : "Bekliyor"}
+                            : "Bekliyor"}
                   </small>
                 </div>
               ),
@@ -1760,9 +1827,11 @@ function App() {
               >
                 <UiIcon
                   name={
-                    stage.id === "completed"
+                    (stage.status === "success" || stage.status === "completed")
                       ? "check"
-                      : stage.id
+                      : getStageIconName(
+                          stage.id,
+                        )
                   }
                 />
 
