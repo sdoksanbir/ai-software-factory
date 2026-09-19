@@ -2,6 +2,10 @@ import json
 import re
 from typing import Any
 
+from factory.agents.contracts import AgentRequest
+from factory.agents.providers.model_client import (
+    ModelClientProvider,
+)
 from factory.model_router import route_model
 from factory.task_plan_store import save_task_plan
 from factory.task_router import route_task
@@ -531,57 +535,63 @@ def build_task_plan(
         ).model
     )
 
-    response = model_client.complete(
-        model_role="fast_local",
-        system_prompt=(
-            "Sen bir yazilim gorev "
-            "planlayicisisin. "
-            "Kod yazma veya dosya degistirme. "
-            "Yalnizca uygulanabilir bir gorev "
-            "plani uret. "
-            "Yanitin sadece gecerli JSON olmali. "
-            "Markdown kullanma. "
-            "En az 2, en fazla 6 adim uret. "
-            "Tercihen 3-5 adim kullan. "
-            "Her adim tek bir net amaca "
-            "sahip olmali. "
-            "kind sadece read, write veya "
-            "verify olabilir. "
-            "Mevcut bir repository degisecekse "
-            "ilk adim genellikle read olmali. "
-            "read yalnizca mevcut sistemi "
-            "incelemek icindir. "
-            "write dosya veya kod olusturma, "
-            "degistirme ve test kodu yazma "
-            "isleri icindir. "
-            "Test yazmak verify degil write'tir. "
-            "verify dosya degistirmez; yalnizca "
-            "testleri calistirir ve sonucu "
-            "dogrular. "
-            "Ayni mantiksal ozellige ait kod ve "
-            "testleri mumkunse ayni write "
-            "adiminda tut. "
-            "Frontend formu ile onun API "
-            "baglantisini gereksiz yere ayri "
-            "write adimlarina bolme. "
-            "Gereksiz adim olusturma. "
-            "Ayni isi birden fazla adima bolme. "
-            "JSON semasi: "
-            '{"summary":"kisa ozet",'
-            '"steps":['
-            '{"title":"kisa baslik",'
-            '"instruction":"net gorev",'
-            '"kind":"read|write|verify"}'
-            "]}"
-        ),
-        user_prompt=(
-            "KULLANICI GOREVI:\n"
-            f"{clean_prompt}\n\n"
-            "Bu gorevi uygulanabilir ve "
-            "sirali adimlara ayir."
-        ),
-        temperature=0.0,
-        model_name_override=selected_model,
+    provider = ModelClientProvider(
+        model_client
+    )
+
+    response = provider.complete(
+        AgentRequest(
+            model_role="fast_local",
+            system_prompt=(
+                "Sen bir yazilim gorev "
+                "planlayicisisin. "
+                "Kod yazma veya dosya degistirme. "
+                "Yalnizca uygulanabilir bir gorev "
+                "plani uret. "
+                "Yanitin sadece gecerli JSON olmali. "
+                "Markdown kullanma. "
+                "En az 2, en fazla 6 adim uret. "
+                "Tercihen 3-5 adim kullan. "
+                "Her adim tek bir net amaca "
+                "sahip olmali. "
+                "kind sadece read, write veya "
+                "verify olabilir. "
+                "Mevcut bir repository degisecekse "
+                "ilk adim genellikle read olmali. "
+                "read yalnizca mevcut sistemi "
+                "incelemek icindir. "
+                "write dosya veya kod olusturma, "
+                "degistirme ve test kodu yazma "
+                "isleri icindir. "
+                "Test yazmak verify degil write'tir. "
+                "verify dosya degistirmez; yalnizca "
+                "testleri calistirir ve sonucu "
+                "dogrular. "
+                "Ayni mantiksal ozellige ait kod ve "
+                "testleri mumkunse ayni write "
+                "adiminda tut. "
+                "Frontend formu ile onun API "
+                "baglantisini gereksiz yere ayri "
+                "write adimlarina bolme. "
+                "Gereksiz adim olusturma. "
+                "Ayni isi birden fazla adima bolme. "
+                "JSON semasi: "
+                '{"summary":"kisa ozet",'
+                '"steps":['
+                '{"title":"kisa baslik",'
+                '"instruction":"net gorev",'
+                '"kind":"read|write|verify"}'
+                "]}"
+            ),
+            user_prompt=(
+                "KULLANICI GOREVI:\n"
+                f"{clean_prompt}\n\n"
+                "Bu gorevi uygulanabilir ve "
+                "sirali adimlara ayir."
+            ),
+            temperature=0.0,
+            model_name=selected_model,
+        )
     )
 
     payload = _extract_json_object(

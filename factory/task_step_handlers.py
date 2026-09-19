@@ -1,5 +1,9 @@
 from typing import Any
 
+from factory.agents.contracts import AgentRequest
+from factory.agents.providers.model_client import (
+    ModelClientProvider,
+)
 from factory.model_router import route_model
 from factory.read_task_runner import run_read_task
 from factory.tools.patch import PatchTool
@@ -217,10 +221,12 @@ class TaskStepHandlers:
         else:
             scope_contract = ""
 
-        response = (
-            self.orchestrator
-            .model_client
-            .complete(
+        provider = ModelClientProvider(
+            self.orchestrator.model_client
+        )
+
+        response = provider.complete(
+            AgentRequest(
                 model_role="fast_local",
                 system_prompt=(
                     "Sen otonom bir yazilim "
@@ -277,9 +283,7 @@ class TaskStepHandlers:
                     "dondurme."
                 ),
                 temperature=0.0,
-                model_name_override=(
-                    selected_model
-                ),
+                model_name=selected_model,
             )
         )
 

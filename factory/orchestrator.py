@@ -7,6 +7,10 @@ from typing import Optional
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
 from factory.models import ModelClient
+from factory.agents.contracts import AgentRequest
+from factory.agents.providers.model_client import (
+    ModelClientProvider,
+)
 from factory.model_router import ModelRoute, route_model
 from factory.tools.git_ops import GitWorktreeManager
 from factory.tools.repo import RepoTool
@@ -377,14 +381,20 @@ class Orchestrator:
                         task_id,
                         message="Model kod üretiyor.",
                     )
-                response = self.model_client.complete(
-                    model_role="fast_local",
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=0.2,
-                    model_name_override=(
-                        selected_model_route.model
-                    ),
+                provider = ModelClientProvider(
+                    self.model_client
+                )
+
+                response = provider.complete(
+                    AgentRequest(
+                        model_role="fast_local",
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=0.2,
+                        model_name=(
+                            selected_model_route.model
+                        ),
+                    )
                 )
                 state_machine.transition(TaskStatus.MODEL_COMPLETED)
 

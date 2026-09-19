@@ -4,6 +4,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from factory.agents.contracts import AgentRequest
+from factory.agents.providers.model_client import (
+    ModelClientProvider,
+)
 from factory.model_router import ModelRoute
 from factory.repository_context import build_smart_read_context
 from factory.architecture_digest import build_architecture_digest
@@ -21,6 +25,32 @@ SKIP_DIRS = {
     ".pytest_cache",
     "AI-Worktrees",
 }
+
+def _complete_agent(
+    model_client: Any,
+    *,
+    model_role: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float | None = None,
+    timeout: int | None = None,
+    model_name_override: str | None = None,
+):
+    provider = ModelClientProvider(
+        model_client
+    )
+
+    return provider.complete(
+        AgentRequest(
+            model_role=model_role,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            timeout=timeout,
+            model_name=model_name_override,
+        )
+    )
+
 
 TEXT_SUFFIXES = {
     ".py",
@@ -331,7 +361,8 @@ def _force_turkish(
     model_route: ModelRoute,
     model_client: Any,
 ) -> str:
-    response = model_client.complete(
+    response = _complete_agent(
+            model_client,
         model_role="fast_local",
         system_prompt=(
             "OUTPUT LANGUAGE RULE: "
@@ -479,7 +510,8 @@ def run_read_task(
             prompt,
         )
 
-        evidence_response = model_client.complete(
+        evidence_response = _complete_agent(
+            model_client,
             model_role="fast_local",
             system_prompt=(
                 "Sen bir repository kanit cikarma ajanisin. "
@@ -512,7 +544,8 @@ def run_read_task(
                 "Repository kanit cikarma asamasi bos sonuc verdi."
             )
 
-        synthesis_response = model_client.complete(
+        synthesis_response = _complete_agent(
+            model_client,
             model_role="fast_local",
             system_prompt=(
                 "Sen bir yazilim mimarisi ozetleme ajanisin. "
@@ -550,7 +583,8 @@ def run_read_task(
             explicit_file
         )
 
-        evidence_response = model_client.complete(
+        evidence_response = _complete_agent(
+            model_client,
             model_role="fast_local",
             system_prompt=(
                 "Sen tek bir kaynak dosyadan teknik kanit "
@@ -590,7 +624,8 @@ def run_read_task(
                 "bos sonuc verdi."
             )
 
-        synthesis_response = model_client.complete(
+        synthesis_response = _complete_agent(
+            model_client,
             model_role="fast_local",
             system_prompt=(
                 "Sen kanita dayali teknik aciklama "
@@ -626,7 +661,8 @@ def run_read_task(
         )
 
     else:
-        response = model_client.complete(
+        response = _complete_agent(
+            model_client,
             model_role="fast_local",
             system_prompt=(
                 "Sen salt-okuma modunda calisan bir yazilim "
