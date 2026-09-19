@@ -3005,6 +3005,57 @@ body {
   background: rgba(148, 163, 184, 0.055);
 }
 
+
+.agent-execution-fallback-failed {
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+
+.agent-execution-fallback-success {
+  border: 1px solid rgba(34, 197, 94, 0.18);
+}
+
+.agent-fallback-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -2px 0 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.12);
+  font-size: 9px;
+}
+
+.agent-fallback-label span {
+  opacity: 0.62;
+}
+
+.agent-fallback-label strong {
+  color: rgb(252, 165, 165);
+  font-size: 9px;
+}
+
+.agent-fallback-label-success {
+  border-bottom-color: rgba(34, 197, 94, 0.12);
+}
+
+.agent-fallback-label-success strong {
+  color: rgb(134, 239, 172);
+}
+
+.agent-fallback-chip {
+  background: rgba(168, 85, 247, 0.12) !important;
+  color: rgb(216, 180, 254);
+  opacity: 1 !important;
+}
+
+.agent-error-type {
+  margin-top: 7px;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgb(252, 165, 165);
+  opacity: 0.84;
+}
+
 .agent-execution-top {
   display: flex;
   align-items: flex-start;

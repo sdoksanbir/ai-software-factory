@@ -1980,59 +1980,147 @@ function App() {
                       .slice()
                       .reverse()
                       .slice(0, 6)
-                      .map((execution) => (
-                        <div
-                          className="agent-execution-card"
-                          key={execution.execution_id}
-                        >
-                          <div className="agent-execution-top">
-                            <div>
-                              <strong>
-                                {execution.agent_name}
-                              </strong>
+                      .map((execution) => {
+                        const providerAttempt =
+                          typeof execution.metadata
+                            .provider_attempt === "number"
+                            ? execution.metadata
+                                .provider_attempt
+                            : null
 
-                              <small>
-                                {execution.provider_name}
-                                {execution.model_name
-                                  ? ` / ${execution.model_name}`
-                                  : ""}
-                              </small>
+                        const fallback =
+                          execution.metadata.fallback ===
+                          true
+
+                        const fallbackCount =
+                          typeof execution.metadata
+                            .fallback_count === "number"
+                            ? execution.metadata
+                                .fallback_count
+                            : 0
+
+                        const errorType =
+                          typeof execution.metadata
+                            .error_type === "string"
+                            ? execution.metadata.error_type
+                            : ""
+
+                        const fallbackFailure =
+                          fallback &&
+                          execution.status === "failed"
+
+                        const fallbackSuccess =
+                          fallback &&
+                          execution.status === "completed"
+
+                        return (
+                          <div
+                            className={[
+                              "agent-execution-card",
+                              fallbackFailure
+                                ? "agent-execution-fallback-failed"
+                                : "",
+                              fallbackSuccess
+                                ? "agent-execution-fallback-success"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            key={execution.execution_id}
+                          >
+                            {fallbackFailure && (
+                              <div className="agent-fallback-label">
+                                <span>
+                                  Fallback attempt
+                                </span>
+                                <strong>
+                                  Failed
+                                </strong>
+                              </div>
+                            )}
+
+                            {fallbackSuccess && (
+                              <div className="agent-fallback-label agent-fallback-label-success">
+                                <span>
+                                  Fallback resolved
+                                </span>
+                                <strong>
+                                  {fallbackCount} failed
+                                  {fallbackCount === 1
+                                    ? " attempt"
+                                    : " attempts"}
+                                </strong>
+                              </div>
+                            )}
+
+                            <div className="agent-execution-top">
+                              <div>
+                                <strong>
+                                  {execution.agent_name}
+                                </strong>
+
+                                <small>
+                                  {execution.provider_name}
+                                  {execution.model_name
+                                    ? ` / ${execution.model_name}`
+                                    : ""}
+                                </small>
+                              </div>
+
+                              <span
+                                className={`agent-status agent-status-${execution.status}`}
+                              >
+                                {execution.status}
+                              </span>
                             </div>
 
-                            <span
-                              className={`agent-status agent-status-${execution.status}`}
-                            >
-                              {execution.status}
-                            </span>
-                          </div>
-
-                          <div className="agent-execution-meta">
-                            <span>
-                              Step{" "}
-                              {execution.step_index ??
-                                "-"}
-                            </span>
-
-                            <span>
-                              {execution.duration_ms != null
-                                ? `${execution.duration_ms} ms`
-                                : "-"}
-                            </span>
-
-                            {execution.result_checkpoint_id && (
+                            <div className="agent-execution-meta">
                               <span>
-                                Checkpoint
+                                Step{" "}
+                                {execution.step_index ??
+                                  "-"}
                               </span>
+
+                              {providerAttempt != null && (
+                                <span>
+                                  Provider attempt{" "}
+                                  {providerAttempt}
+                                </span>
+                              )}
+
+                              {fallback && (
+                                <span className="agent-fallback-chip">
+                                  Fallback
+                                </span>
+                              )}
+
+                              <span>
+                                {execution.duration_ms != null
+                                  ? `${execution.duration_ms} ms`
+                                  : "-"}
+                              </span>
+
+                              {execution.result_checkpoint_id && (
+                                <span>
+                                  Checkpoint
+                                </span>
+                              )}
+                            </div>
+
+                            {errorType && (
+                              <div className="agent-error-type">
+                                {errorType}
+                              </div>
+                            )}
+
+                            {execution.error && (
+                              <div className="agent-error">
+                                {execution.error}
+                              </div>
                             )}
                           </div>
-
-                          {execution.error && (
-                            <div className="agent-error">
-                              {execution.error}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 </div>
 

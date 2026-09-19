@@ -33,6 +33,7 @@ class AgentFallbackFailure:
     agent_name: str
     provider_name: str
     error: str
+    error_type: str
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,9 @@ class AgentExecutionRouter:
                             agent.provider_name
                         ),
                         error=str(exc),
+                        error_type=(
+                            type(exc).__name__
+                        ),
                     )
                 )
 

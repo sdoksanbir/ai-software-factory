@@ -30,6 +30,12 @@ class StepHandlerResult:
     checkpoint_payload: dict[str, Any] = field(
         default_factory=dict
     )
+    fallback_attempts: tuple[
+        dict[str, Any],
+        ...,
+    ] = field(
+        default_factory=tuple
+    )
 
 
 StepHandler = Callable[
@@ -345,6 +351,111 @@ def execute_task_plan(
                     != "run_tests"
                 ]
 
+                fallback_attempts = tuple(
+                    checkpoint_result
+                    .fallback_attempts
+                )
+
+                for (
+                    provider_attempt,
+                    fallback_attempt,
+                ) in enumerate(
+                    fallback_attempts,
+                    start=1,
+                ):
+                    failure_agent_name = str(
+                        fallback_attempt.get(
+                            "agent_name",
+                            "",
+                        )
+                    ).strip()
+
+                    failure_provider_name = str(
+                        fallback_attempt.get(
+                            "provider_name",
+                            "",
+                        )
+                    ).strip()
+
+                    failure_error = str(
+                        fallback_attempt.get(
+                            "error",
+                            "",
+                        )
+                    ).strip()
+
+                    if not (
+                        failure_agent_name
+                        and failure_provider_name
+                        and failure_error
+                    ):
+                        continue
+
+                    failure_metadata = {
+                        "attempt": current_attempt,
+                        "step_kind": kind,
+                        "fallback": True,
+                        "provider_attempt": (
+                            provider_attempt
+                        ),
+                        "error_type": str(
+                            fallback_attempt.get(
+                                "error_type",
+                                "",
+                            )
+                        ).strip(),
+                    }
+
+                    failure_execution = (
+                        create_agent_execution(
+                            task_id,
+                            step_index=step_index,
+                            agent_name=(
+                                failure_agent_name
+                            ),
+                            provider_name=(
+                                failure_provider_name
+                            ),
+                            model_name=(
+                                fallback_attempt.get(
+                                    "model_name"
+                                )
+                                or checkpoint_payload.get(
+                                    "model"
+                                )
+                            ),
+                            capabilities=capabilities,
+                            metadata=(
+                                failure_metadata
+                            ),
+                            db_path=db_path,
+                        )
+                    )
+
+                    fail_agent_execution(
+                        failure_execution[
+                            "execution_id"
+                        ],
+                        error=failure_error,
+                        metadata=failure_metadata,
+                        db_path=db_path,
+                    )
+
+                success_metadata = {
+                    "attempt": current_attempt,
+                    "step_kind": kind,
+                    "fallback": bool(
+                        fallback_attempts
+                    ),
+                    "provider_attempt": (
+                        len(fallback_attempts)
+                        + 1
+                    ),
+                    "fallback_count": len(
+                        fallback_attempts
+                    ),
+                }
+
                 execution = create_agent_execution(
                     task_id,
                     step_index=step_index,
@@ -356,10 +467,7 @@ def execute_task_plan(
                         )
                     ),
                     capabilities=capabilities,
-                    metadata={
-                        "attempt": current_attempt,
-                        "step_kind": kind,
-                    },
+                    metadata=success_metadata,
                     db_path=db_path,
                 )
 
@@ -393,12 +501,9 @@ def execute_task_plan(
                             ]
                         ),
                         duration_ms=duration_ms,
-                        metadata={
-                            "attempt": (
-                                current_attempt
-                            ),
-                            "step_kind": kind,
-                        },
+                        metadata=(
+                            success_metadata
+                        ),
                         db_path=db_path,
                     )
 

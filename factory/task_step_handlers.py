@@ -75,10 +75,19 @@ class TaskStepHandlers:
         )
 
         actual_execution = None
+        fallback_failures = []
 
         def observe_execution(execution):
             nonlocal actual_execution
             actual_execution = execution
+
+            fallback_failures.extend(
+                getattr(
+                    execution,
+                    "failures",
+                    (),
+                )
+            )
 
         try:
             output = run_read_task(
@@ -142,6 +151,21 @@ class TaskStepHandlers:
             checkpoint_payload={
                 "model": actual_model,
             },
+            fallback_attempts=tuple(
+                {
+                    "agent_name": failure.agent_name,
+                    "provider_name": (
+                        failure.provider_name
+                    ),
+                    "model_name": model_route.model,
+                    "error": failure.error,
+                    "error_type": (
+                        failure.error_type
+                    ),
+                }
+                for failure
+                in fallback_failures
+            ),
         )
 
     def write(
@@ -492,6 +516,21 @@ class TaskStepHandlers:
                     for item in written_files
                 ],
             },
+            fallback_attempts=tuple(
+                {
+                    "agent_name": failure.agent_name,
+                    "provider_name": (
+                        failure.provider_name
+                    ),
+                    "model_name": selected_model,
+                    "error": failure.error,
+                    "error_type": (
+                        failure.error_type
+                    ),
+                }
+                for failure
+                in fallback_execution.failures
+            ),
         )
 
 
