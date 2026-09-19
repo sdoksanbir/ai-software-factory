@@ -289,3 +289,125 @@ def test_progress_reports_planner_mode(
         in item.get("message", "")
         for item in events
     )
+
+
+def test_failed_multi_step_resumes_existing_worktree(
+    monkeypatch,
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    task_id = "TASK-RESUME-1"
+
+    project_path = tmp_path / "repo"
+    worktree_root = tmp_path / "worktrees"
+
+    project_path.mkdir()
+    worktree_root.mkdir()
+
+    repo_name = project_path.name
+    worktree_path = (
+        worktree_root
+        / repo_name
+        / task_id.lower()
+    )
+
+    worktree_path.mkdir(parents=True)
+
+    # Git worktree'lerde .git genellikle dosyadir.
+    (worktree_path / ".git").write_text(
+        "gitdir: fake",
+        encoding="utf-8",
+    )
+
+    orchestrator = SimpleNamespace(
+        project_path=str(project_path),
+        worktree_root=str(worktree_root),
+    )
+
+    existing_steps = [
+        {
+            "step_index": 1,
+            "title": "Read",
+            "instruction": "Inspect",
+            "kind": "read",
+            "status": "completed",
+            "attempt": 1,
+            "result": "ok",
+            "error": None,
+        },
+        {
+            "step_index": 2,
+            "title": "Verify",
+            "instruction": "Verify",
+            "kind": "verify",
+            "status": "failed",
+            "attempt": 1,
+            "result": None,
+            "error": "test failed",
+        },
+    ]
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "get_task_plan",
+        lambda *_args, **_kwargs: {
+            "task_id": task_id,
+            "status": "failed",
+            "summary": "Resume plan",
+            "steps": existing_steps,
+        },
+    )
+
+    def fail_if_planner_runs(*args, **kwargs):
+        raise AssertionError(
+            "build_task_plan must not run during resume"
+        )
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "build_task_plan",
+        fail_if_planner_runs,
+    )
+
+    def fail_if_plan_saved(*args, **kwargs):
+        raise AssertionError(
+            "save_task_plan must not overwrite resume plan"
+        )
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "save_task_plan",
+        fail_if_plan_saved,
+    )
+
+    captured = {}
+
+    def fake_multi_step(**kwargs):
+        captured.update(kwargs)
+        return "ready_for_approval"
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "run_multi_step_task",
+        fake_multi_step,
+    )
+
+    result, plan = execute_write_task(
+        orchestrator=orchestrator,
+        prompt="Resume existing task",
+        task_id=task_id,
+        max_attempts=2,
+        model_route=_model_route(),
+    )
+
+    assert result == "ready_for_approval"
+    assert plan["planner_mode"] == "multi_step"
+    assert plan["steps"] == existing_steps
+
+    assert captured["resume_worktree_path"] == str(
+        worktree_path
+    )
+    assert captured["resume_branch"] == (
+        f"agent/{task_id.lower()}"
+    )

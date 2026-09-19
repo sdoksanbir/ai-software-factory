@@ -1,9 +1,17 @@
+from types import SimpleNamespace
 from typing import Any, Callable
 
-from factory.schemas import TaskSpec, TaskStatus
+from factory.schemas import (
+    TaskSpec,
+    TaskStatus,
+)
 from factory.state import TaskStateMachine
-from factory.task_step_executor import execute_task_plan
-from factory.task_step_handlers import TaskStepHandlers
+from factory.task_step_executor import (
+    execute_task_plan,
+)
+from factory.task_step_handlers import (
+    TaskStepHandlers,
+)
 
 
 def run_multi_step_task(
@@ -15,6 +23,8 @@ def run_multi_step_task(
     approval_handler: Callable | None = None,
     progress_handler: Callable | None = None,
     model_name: str | None = None,
+    resume_worktree_path: str | None = None,
+    resume_branch: str | None = None,
 ) -> str | None:
     task_spec = TaskSpec(
         task_id=task_id,
@@ -32,13 +42,33 @@ def run_multi_step_task(
             TaskStatus.WORKTREE_CREATING
         )
 
-        wt_result = (
-            orchestrator
-            .git_manager
-            .create_worktree(
-                task_id.lower()
+        if resume_worktree_path:
+            wt_result = SimpleNamespace(
+                path=resume_worktree_path,
+                branch=(
+                    resume_branch
+                    or f"agent/{task_id.lower()}"
+                ),
             )
-        )
+
+            worktree_message = (
+                "Multi-step mevcut worktree "
+                "resume edildi."
+            )
+
+        else:
+            wt_result = (
+                orchestrator
+                .git_manager
+                .create_worktree(
+                    task_id.lower()
+                )
+            )
+
+            worktree_message = (
+                "Multi-step worktree "
+                "hazirlandi."
+            )
 
         state_machine.transition(
             TaskStatus.WORKTREE_READY
@@ -47,16 +77,13 @@ def run_multi_step_task(
         if progress_handler is not None:
             progress_handler(
                 task_id,
-                message=(
-                    "Multi-step worktree "
-                    "hazirlandi."
-                ),
+                message=worktree_message,
             )
 
-        # Legacy TaskStateMachine gorevin genel
+        # Legacy state machine gorevin genel
         # pipeline durumunu izler.
         # Alt adim durumlari task_plan_store
-        # tarafindan ayrica tutulur.
+        # tarafindan kalici olarak tutulur.
         state_machine.transition(
             TaskStatus.CONTEXT_BUILDING
         )
@@ -96,10 +123,6 @@ def run_multi_step_task(
             max_step_attempts=max_attempts,
         )
 
-        # Step Executor tum alt adimlari
-        # tamamladiktan sonra legacy state
-        # machine genel pipeline'i final
-        # approval noktasina tasir.
         state_machine.transition(
             TaskStatus.MODEL_COMPLETED
         )
@@ -188,4 +211,7 @@ def run_multi_step_task(
             f"basarisiz: {exc}"
         )
 
+        # Burada worktree SILINMEZ.
+        # API retry ayni worktree ve kalici
+        # plan uzerinden devam edebilir.
         return None

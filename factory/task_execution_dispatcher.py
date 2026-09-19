@@ -1,10 +1,37 @@
+import os
 from typing import Any, Callable
 
 from factory.task_planner import build_task_plan
-from factory.task_plan_store import save_task_plan
+from factory.task_plan_store import (
+    get_task_plan,
+    save_task_plan,
+)
 from factory.multi_step_task_runner import (
     run_multi_step_task,
 )
+
+
+def _get_expected_worktree(
+    orchestrator: Any,
+    task_id: str,
+) -> tuple[str, str]:
+    repo_name = os.path.basename(
+        os.path.normpath(
+            orchestrator.project_path
+        )
+    )
+
+    worktree_path = os.path.join(
+        orchestrator.worktree_root,
+        repo_name,
+        task_id.lower(),
+    )
+
+    branch_name = (
+        f"agent/{task_id.lower()}"
+    )
+
+    return worktree_path, branch_name
 
 
 def execute_write_task(
@@ -17,24 +44,86 @@ def execute_write_task(
     approval_handler: Callable | None = None,
     progress_handler: Callable | None = None,
 ) -> tuple[str | None, dict[str, Any]]:
-    plan = build_task_plan(
-        prompt,
-        model_client=orchestrator.model_client,
-        model_name=model_route.model,
+    existing_plan = get_task_plan(
+        task_id
     )
 
-    save_task_plan(
-        task_id,
-        plan["steps"],
-        summary=plan.get("summary"),
+    existing_steps = (
+        existing_plan.get("steps", [])
+        if existing_plan
+        else []
     )
+
+    worktree_path = None
+    branch_name = None
+    resume_multi_step = False
+
+    # Worktree bilgisi yalnizca gercekten
+    # resume adayi olan eski multi-step
+    # planlarda hesaplanir.
+    if (
+        existing_plan
+        and len(existing_steps) > 1
+    ):
+        worktree_path, branch_name = (
+            _get_expected_worktree(
+                orchestrator,
+                task_id,
+            )
+        )
+
+        resume_multi_step = bool(
+            os.path.isdir(worktree_path)
+            and os.path.exists(
+                os.path.join(
+                    worktree_path,
+                    ".git",
+                )
+            )
+        )
+
+    if resume_multi_step:
+        plan = {
+            "planner_mode": "multi_step",
+            "summary": (
+                existing_plan.get("summary")
+            ),
+            "steps": existing_steps,
+        }
+
+        if progress_handler is not None:
+            progress_handler(
+                task_id,
+                message=(
+                    "Planner: mevcut multi-step "
+                    "plan resume ediliyor."
+                ),
+            )
+
+    else:
+        plan = build_task_plan(
+            prompt,
+            model_client=(
+                orchestrator.model_client
+            ),
+            model_name=model_route.model,
+        )
+
+        save_task_plan(
+            task_id,
+            plan["steps"],
+            summary=plan.get("summary"),
+        )
 
     planner_mode = plan.get(
         "planner_mode",
         "single_step",
     )
 
-    if progress_handler is not None:
+    if (
+        progress_handler is not None
+        and not resume_multi_step
+    ):
         progress_handler(
             task_id,
             message=(
@@ -53,6 +142,16 @@ def execute_write_task(
             approval_handler=approval_handler,
             progress_handler=progress_handler,
             model_name=model_route.model,
+            resume_worktree_path=(
+                worktree_path
+                if resume_multi_step
+                else None
+            ),
+            resume_branch=(
+                branch_name
+                if resume_multi_step
+                else None
+            ),
         )
 
         return result, plan

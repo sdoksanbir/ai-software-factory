@@ -34,6 +34,7 @@ from factory.database import (
 from factory.control_center import get_control_center_status
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
+from factory.task_plan_store import get_task_plan
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
 from factory.task_route_store import (
@@ -461,7 +462,9 @@ def cleanup_failed_task_for_api(
     task_id: str,
 ) -> None:
     repo_name = os.path.basename(
-        os.path.normpath(orchestrator.project_path)
+        os.path.normpath(
+            orchestrator.project_path
+        )
     )
 
     worktree_path = os.path.join(
@@ -470,8 +473,46 @@ def cleanup_failed_task_for_api(
         task_id.lower(),
     )
 
-    branch_name = f"agent/{task_id.lower()}"
+    branch_name = (
+        f"agent/{task_id.lower()}"
+    )
 
+    # Multi-step gorevde plan ve worktree
+    # birlikte mevcutsa FAILED durumu
+    # retry edilebilir kabul edilir.
+    # Bu nedenle calisma alani korunur.
+    plan = get_task_plan(task_id)
+
+    steps = (
+        plan.get("steps", [])
+        if plan
+        else []
+    )
+
+    resumable_multi_step = bool(
+        len(steps) > 1
+        and os.path.isdir(worktree_path)
+        and os.path.exists(
+            os.path.join(
+                worktree_path,
+                ".git",
+            )
+        )
+    )
+
+    if resumable_multi_step:
+        append_task_log(
+            task_id,
+            (
+                "Multi-step worktree retry "
+                "icin korundu."
+            ),
+        )
+        return
+
+    # Legacy/single-step veya yarim kalmis
+    # worktree olusumu eski davranisla
+    # temizlenir.
     try:
         orchestrator.git_manager.remove_worktree(
             worktree_path,

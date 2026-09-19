@@ -1,3 +1,4 @@
+from pathlib import Path
 import json
 from types import SimpleNamespace
 
@@ -468,3 +469,23 @@ def test_verify_uses_scoped_test_files(
     )
 
     assert "Scoped dogrulama" in result
+
+
+def test_write_prompt_guards_against_invented_requirements():
+    source = Path(
+        "factory/task_step_handlers.py"
+    ).read_text(
+        encoding="utf-8",
+    )
+
+    assert "ORIGINAL USER TASK:" in source
+
+    assert "Testler yalnizca ORIGINAL USER TASK " in source
+    assert "ve mevcut WRITE STEP icinde acikca " in source
+    assert "istenen davranislari dogrulamali. " in source
+
+    assert "Kullanicinin istemedigi yeni davranis " in source
+    assert "veya edge-case uydurma. " in source
+
+    assert "whitespace collapsing" in source
+    assert "ic bosluklari degistirme veya teke indirme" in source

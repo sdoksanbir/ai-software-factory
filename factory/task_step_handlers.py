@@ -156,22 +156,49 @@ class TaskStepHandlers:
         )
 
         # Step kendi hedef dosyalarini acikca
-        # belirtiyorsa izin yalnizca o step'e aittir.
-        # Step'te hedef yoksa ana gorev scope'una
-        # geri don.
+        # belirtiyorsa o hedefler esas alinir.
+        # Ana gorevde ayni dosya adi daha kesin bir
+        # yol ile verilmisse (ornegin
+        # test_string_utils.py ->
+        # tests/test_string_utils.py), bu canonical
+        # yol da ayni step icin izinli sayilir.
+        if step_targets:
+            allowed_targets = list(step_targets)
+
+            step_basenames = {
+                target.replace("\\", "/")
+                .rsplit("/", 1)[-1]
+                for target in step_targets
+            }
+
+            for target in global_targets:
+                normalized = target.replace(
+                    "\\",
+                    "/",
+                )
+                basename = normalized.rsplit(
+                    "/",
+                    1,
+                )[-1]
+
+                if (
+                    basename in step_basenames
+                    and target not in allowed_targets
+                ):
+                    allowed_targets.append(target)
+        else:
+            allowed_targets = list(global_targets)
+
+        # Scope validator ayni izin listesini kullansin.
+        # Boylece prompttaki kisa dosya adi ile ana
+        # gorevdeki tam yol birbiriyle celismez.
         scope_source = (
-            instruction
-            if step_targets
+            "\n".join(allowed_targets)
+            if allowed_targets
             else (
                 self.scope_prompt
                 or instruction
             )
-        )
-
-        allowed_targets = (
-            step_targets
-            if step_targets
-            else global_targets
         )
 
         if allowed_targets:
@@ -217,11 +244,25 @@ class TaskStepHandlers:
                     "dosyalari degistirme. "
                     "Bir onceki adim tarafindan "
                     "yapilmis degisiklikleri koru. "
+                    "TEST REQUIREMENT RULE: "
+                    "Testler yalnizca ORIGINAL USER TASK "
+                    "ve mevcut WRITE STEP icinde acikca "
+                    "istenen davranislari dogrulamali. "
+                    "Kullanicinin istemedigi yeni davranis "
+                    "veya edge-case uydurma. "
+                    "Belirtilmeyen normalization, validation, "
+                    "whitespace collapsing, coercion, exception, "
+                    "default veya transformation davranislarini "
+                    "testlere ekleme. "
+                    "Ozellikle kullanici acikca istemediyse "
+                    "ic bosluklari degistirme veya teke indirme. "
                     "content alaninda patch degil, "
                     "dosyanin degisiklik sonrasi "
                     "TAM icerigini ver."
                 ),
                 user_prompt=(
+                    "ORIGINAL USER TASK:\n"
+                    f"{self.scope_prompt or instruction}\n\n"
                     "WRITE STEP:\n"
                     f"{instruction}\n\n"
                     f"{scope_contract}"
