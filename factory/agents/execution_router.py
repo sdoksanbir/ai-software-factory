@@ -28,6 +28,20 @@ class AgentRoute:
     provider: AgentProvider
 
 
+@dataclass(frozen=True)
+class AgentFallbackFailure:
+    agent_name: str
+    provider_name: str
+    error: str
+
+
+@dataclass(frozen=True)
+class AgentFallbackExecution:
+    route: AgentRoute
+    result: AgentResult
+    failures: tuple[AgentFallbackFailure, ...] = ()
+
+
 class AgentExecutionRouter:
     def __init__(
         self,
@@ -77,7 +91,7 @@ class AgentExecutionRouter:
         )
 
 
-    def complete_with_fallback(
+    def execute_with_fallback(
         self,
         request: AgentRequest,
         required: set[AgentCapability]
@@ -85,7 +99,7 @@ class AgentExecutionRouter:
         *,
         preferred_provider: str | None = None,
         policy: AgentFallbackPolicy | None = None,
-    ) -> AgentResult:
+    ) -> AgentFallbackExecution:
         policy = (
             policy
             or AgentFallbackPolicy()
@@ -117,8 +131,11 @@ class AgentExecutionRouter:
                 f"{required_names}"
             )
 
-        failures = []
-        failed_providers = set()
+        failures: list[
+            AgentFallbackFailure
+        ] = []
+
+        failed_providers: set[str] = set()
 
         for agent in candidates:
             provider_name = (
@@ -140,9 +157,20 @@ class AgentExecutionRouter:
                 )
             )
 
+            route = AgentRoute(
+                agent=agent,
+                provider=provider,
+            )
+
             try:
-                return provider.complete(
+                result = provider.complete(
                     request
+                )
+
+                return AgentFallbackExecution(
+                    route=route,
+                    result=result,
+                    failures=tuple(failures),
                 )
 
             except Exception as exc:
@@ -152,10 +180,12 @@ class AgentExecutionRouter:
                     raise
 
                 failures.append(
-                    (
-                        agent.name,
-                        agent.provider_name,
-                        str(exc),
+                    AgentFallbackFailure(
+                        agent_name=agent.name,
+                        provider_name=(
+                            agent.provider_name
+                        ),
+                        error=str(exc),
                     )
                 )
 
@@ -165,18 +195,36 @@ class AgentExecutionRouter:
 
         details = "; ".join(
             (
-                f"{agent_name}"
-                f"/{provider_name}: "
-                f"{error}"
+                f"{failure.agent_name}"
+                f"/{failure.provider_name}: "
+                f"{failure.error}"
             )
-            for (
-                agent_name,
-                provider_name,
-                error,
-            ) in failures
+            for failure in failures
         )
 
         raise RuntimeError(
             "All fallback agent attempts "
             f"failed: {details}"
         )
+
+    def complete_with_fallback(
+        self,
+        request: AgentRequest,
+        required: set[AgentCapability]
+        | frozenset[AgentCapability],
+        *,
+        preferred_provider: str | None = None,
+        policy: AgentFallbackPolicy | None = None,
+    ) -> AgentResult:
+        execution = (
+            self.execute_with_fallback(
+                request,
+                required,
+                preferred_provider=(
+                    preferred_provider
+                ),
+                policy=policy,
+            )
+        )
+
+        return execution.result

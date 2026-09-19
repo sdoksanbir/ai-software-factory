@@ -327,6 +327,7 @@ def test_read_delegates_to_read_runner(
         prompt,
         model_route,
         model_client,
+        execution_observer=None,
     ):
         captured["project_path"] = (
             project_path
@@ -489,3 +490,136 @@ def test_write_prompt_guards_against_invented_requirements():
 
     assert "whitespace collapsing" in source
     assert "ic bosluklari degistirme veya teke indirme" in source
+
+
+
+def test_write_uses_actual_fallback_agent_identity(
+    monkeypatch,
+    tmp_path,
+):
+    calls = []
+
+    initial_route = SimpleNamespace(
+        agent=SimpleNamespace(
+            name="primary-agent",
+        ),
+        provider=SimpleNamespace(
+            provider_name="primary",
+        ),
+    )
+
+    fallback_route = SimpleNamespace(
+        agent=SimpleNamespace(
+            name="fallback-agent",
+        ),
+        provider=SimpleNamespace(
+            provider_name="fallback",
+        ),
+    )
+
+    fallback_result = SimpleNamespace(
+        content=_patch(
+            "fallback.txt",
+            "FALLBACK_OK",
+        ),
+        model="fallback-model",
+    )
+
+    class FakeRuntime:
+        provider_registry = object()
+
+        def route(
+            self,
+            required,
+            *,
+            preferred_provider=None,
+        ):
+            calls.append(
+                (
+                    "route",
+                    required,
+                    preferred_provider,
+                )
+            )
+            return initial_route
+
+        def execute_with_fallback(
+            self,
+            request,
+            required,
+            *,
+            preferred_provider=None,
+            policy=None,
+        ):
+            calls.append(
+                (
+                    "fallback",
+                    required,
+                    preferred_provider,
+                    request.model_name,
+                )
+            )
+
+            return SimpleNamespace(
+                route=fallback_route,
+                result=fallback_result,
+                failures=(),
+            )
+
+    monkeypatch.setattr(
+        "factory.task_step_handlers."
+        "build_default_agent_execution_router",
+        lambda model_client: FakeRuntime(),
+    )
+
+    monkeypatch.setattr(
+        "factory.task_step_handlers."
+        "resolve_provider_for_role",
+        lambda *args, **kwargs: "primary",
+    )
+
+    handlers = TaskStepHandlers(
+        FakeOrchestrator(
+            model_client=FakeModelClient([])
+        ),
+        model_name="requested-model",
+    )
+
+    result = handlers.write(
+        {
+            "instruction": (
+                "fallback.txt dosyasi olustur"
+            )
+        },
+        str(tmp_path),
+    )
+
+    assert (
+        tmp_path
+        / "fallback.txt"
+    ).read_text(
+        encoding="utf-8"
+    ) == "FALLBACK_OK\n"
+
+    assert (
+        result.agent_name
+        == "fallback-agent"
+    )
+
+    assert (
+        result.provider_name
+        == "fallback"
+    )
+
+    assert (
+        result.checkpoint_payload["model"]
+        == "fallback-model"
+    )
+
+    fallback_calls = [
+        item
+        for item in calls
+        if item[0] == "fallback"
+    ]
+
+    assert len(fallback_calls) == 1

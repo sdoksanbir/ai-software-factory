@@ -39,6 +39,7 @@ def _complete_agent(
     temperature: float | None = None,
     timeout: int | None = None,
     model_name_override: str | None = None,
+    execution_observer=None,
 ):
     runtime = (
         build_default_agent_execution_router(
@@ -54,7 +55,7 @@ def _complete_agent(
         )
     )
 
-    return runtime.complete(
+    execution = runtime.execute_with_fallback(
         AgentRequest(
             model_role=model_role,
             system_prompt=system_prompt,
@@ -68,6 +69,11 @@ def _complete_agent(
         },
         preferred_provider=preferred_provider,
     )
+
+    if execution_observer is not None:
+        execution_observer(execution)
+
+    return execution.result
 
 
 TEXT_SUFFIXES = {
@@ -378,6 +384,7 @@ def _force_turkish(
     answer: str,
     model_route: ModelRoute,
     model_client: Any,
+    execution_observer=None,
 ) -> str:
     response = _complete_agent(
             model_client,
@@ -401,6 +408,7 @@ def _force_turkish(
         ),
         temperature=0.0,
         model_name_override=model_route.model,
+        execution_observer=execution_observer,
     )
 
     result = response.content.strip()
@@ -470,6 +478,7 @@ def run_read_task(
     prompt: str,
     model_route: ModelRoute,
     model_client: Any,
+    execution_observer=None,
 ) -> str:
     context = build_smart_read_context(
         project_path,
@@ -553,6 +562,7 @@ def run_read_task(
             ),
             temperature=0.0,
             model_name_override=model_route.model,
+            execution_observer=execution_observer,
         )
 
         evidence = evidence_response.content.strip()
@@ -592,6 +602,7 @@ def run_read_task(
             ),
             temperature=0.0,
             model_name_override=model_route.model,
+            execution_observer=execution_observer,
         )
 
         result = synthesis_response.content.strip()
@@ -630,6 +641,7 @@ def run_read_task(
             ),
             temperature=0.0,
             model_name_override=model_route.model,
+            execution_observer=execution_observer,
         )
 
         file_evidence = (
@@ -672,6 +684,7 @@ def run_read_task(
             ),
             temperature=0.0,
             model_name_override=model_route.model,
+            execution_observer=execution_observer,
         )
 
         result = (
@@ -703,6 +716,7 @@ def run_read_task(
             ),
             temperature=0.0,
             model_name_override=model_route.model,
+            execution_observer=execution_observer,
         )
 
         result = response.content.strip()
@@ -753,6 +767,7 @@ def run_read_task(
             result,
             model_route,
             model_client,
+            execution_observer=execution_observer,
         )
 
     return result

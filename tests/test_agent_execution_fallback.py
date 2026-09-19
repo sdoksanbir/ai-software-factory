@@ -249,3 +249,77 @@ def test_unexpected_provider_bug_does_not_fallback():
 
     assert gemini.calls == 1
     assert ollama.calls == 0
+
+
+
+def test_execute_with_fallback_returns_actual_route():
+    runtime, gemini, ollama = _runtime(
+        gemini_error="gemini failed"
+    )
+
+    execution = runtime.execute_with_fallback(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="write code",
+            model_role="fast_local",
+        ),
+        {
+            AgentCapability.WRITE_CODE,
+        },
+        preferred_provider="gemini_cli",
+    )
+
+    assert (
+        execution.route.agent.name
+        == "ollama-coder"
+    )
+
+    assert (
+        execution.route.provider.provider_name
+        == "ollama"
+    )
+
+    assert execution.result.content == "ollama-ok"
+    assert execution.result.provider == "ollama"
+
+    assert len(execution.failures) == 1
+
+    failure = execution.failures[0]
+
+    assert failure.agent_name == "gemini-coder"
+    assert failure.provider_name == "gemini_cli"
+    assert failure.error == "gemini failed"
+
+    assert gemini.calls == 1
+    assert ollama.calls == 1
+
+
+def test_execute_with_fallback_has_no_failures_when_first_succeeds():
+    runtime, gemini, ollama = _runtime()
+
+    execution = runtime.execute_with_fallback(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="write code",
+            model_role="fast_local",
+        ),
+        {
+            AgentCapability.WRITE_CODE,
+        },
+        preferred_provider="gemini_cli",
+    )
+
+    assert (
+        execution.route.agent.name
+        == "gemini-coder"
+    )
+
+    assert (
+        execution.route.provider.provider_name
+        == "gemini_cli"
+    )
+
+    assert execution.failures == ()
+
+    assert gemini.calls == 1
+    assert ollama.calls == 0

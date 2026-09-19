@@ -67,12 +67,18 @@ class TaskStepHandlers:
             )
         )
 
-        agent_route = runtime.route(
+        initial_route = runtime.route(
             {
                 AgentCapability.READ_REPOSITORY,
             },
             preferred_provider=preferred_provider,
         )
+
+        actual_execution = None
+
+        def observe_execution(execution):
+            nonlocal actual_execution
+            actual_execution = execution
 
         try:
             output = run_read_task(
@@ -82,16 +88,19 @@ class TaskStepHandlers:
                 model_client=(
                     self.orchestrator.model_client
                 ),
+                execution_observer=(
+                    observe_execution
+                ),
             )
 
         except Exception as exc:
             raise AgentStepExecutionError(
                 str(exc),
                 agent_name=(
-                    agent_route.agent.name
+                    initial_route.agent.name
                 ),
                 provider_name=(
-                    agent_route
+                    initial_route
                     .provider
                     .provider_name
                 ),
@@ -103,16 +112,35 @@ class TaskStepHandlers:
                 ],
             ) from exc
 
+        actual_route = (
+            actual_execution.route
+            if actual_execution is not None
+            else initial_route
+        )
+
+        actual_model = (
+            getattr(
+                getattr(
+                    actual_execution,
+                    "result",
+                    None,
+                ),
+                "model",
+                None,
+            )
+            or model_route.model
+        )
+
         return StepHandlerResult(
             output=output,
-            agent_name=agent_route.agent.name,
+            agent_name=actual_route.agent.name,
             provider_name=(
-                agent_route
+                actual_route
                 .provider
                 .provider_name
             ),
             checkpoint_payload={
-                "model": model_route.model,
+                "model": actual_model,
             },
         )
 
@@ -302,14 +330,15 @@ class TaskStepHandlers:
             AgentCapability.WRITE_CODE,
         }
 
-        agent_route = runtime.route(
+        initial_route = runtime.route(
             required_capabilities,
             preferred_provider=preferred_provider,
         )
 
         try:
-            response = agent_route.provider.complete(
-                AgentRequest(
+            fallback_execution = (
+                runtime.execute_with_fallback(
+                    AgentRequest(
                 model_role="fast_local",
                 system_prompt=(
                     "Sen otonom bir yazilim "
@@ -367,17 +396,27 @@ class TaskStepHandlers:
                 ),
                     temperature=0.0,
                     model_name=selected_model,
-                )
+                ),
+                required_capabilities,
+                preferred_provider=preferred_provider,
+            )
+            )
+
+            agent_route = (
+                fallback_execution.route
+            )
+            response = (
+                fallback_execution.result
             )
 
         except Exception as exc:
             raise AgentStepExecutionError(
                 str(exc),
                 agent_name=(
-                    agent_route.agent.name
+                    initial_route.agent.name
                 ),
                 provider_name=(
-                    agent_route
+                    initial_route
                     .provider
                     .provider_name
                 ),
@@ -673,4 +712,3 @@ class TaskStepHandlers:
             "Python dosyalari derlendi; "
             "scope icinde pytest dosyasi yok."
         )
-

@@ -13,6 +13,43 @@ class FakeRuntime:
         self.provider_registry = object()
         self.calls = []
 
+    def execute_with_fallback(
+        self,
+        request,
+        required,
+        *,
+        preferred_provider=None,
+        policy=None,
+    ):
+        self.calls.append(
+            {
+                "request": request,
+                "required": required,
+                "preferred_provider": (
+                    preferred_provider
+                ),
+            }
+        )
+
+        result = SimpleNamespace(
+            content="ok",
+            provider="fake",
+            model=request.model_name,
+        )
+
+        return SimpleNamespace(
+            route=SimpleNamespace(
+                agent=SimpleNamespace(
+                    name="fake-agent",
+                ),
+                provider=SimpleNamespace(
+                    provider_name="fake",
+                ),
+            ),
+            result=result,
+            failures=(),
+        )
+
     def complete(
         self,
         request,
