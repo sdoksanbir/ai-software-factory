@@ -139,6 +139,81 @@ export type TaskPlanResponse = {
   plan: TaskPlan | null
 }
 
+export type AgentExecution = {
+  execution_id: string
+  task_id: string
+  step_index: number | null
+  handoff_id: string | null
+  source_checkpoint_id: string | null
+  result_checkpoint_id: string | null
+  agent_name: string
+  provider_name: string
+  model_name: string | null
+  capabilities: string[]
+  status: "running" | "completed" | "failed"
+  duration_ms: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  cost: number
+  error: string | null
+  metadata: Record<string, unknown>
+  started_at: string
+  completed_at: string | null
+}
+
+export type AgentCheckpoint = {
+  checkpoint_id: string
+  task_id: string
+  step_index: number | null
+  agent_name: string
+  provider_name: string
+  status:
+    | "created"
+    | "completed"
+    | "failed"
+    | "handed_off"
+  summary: string | null
+  payload: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type AgentHandoff = {
+  handoff_id: string
+  task_id: string
+  step_index: number | null
+  source_checkpoint_id: string
+  source_agent: string
+  target_agent: string
+  reason: string
+  status:
+    | "pending"
+    | "accepted"
+    | "completed"
+    | "failed"
+    | "cancelled"
+  created_at: string
+  updated_at: string
+}
+
+export type AgentExecutionsResponse = {
+  task_id: string
+  state: string
+  executions: AgentExecution[]
+}
+
+export type AgentCheckpointsResponse = {
+  task_id: string
+  state: string
+  checkpoints: AgentCheckpoint[]
+}
+
+export type AgentHandoffsResponse = {
+  task_id: string
+  state: string
+  handoffs: AgentHandoff[]
+}
+
 const API_BASE = "/api"
 
 async function request<T>(
@@ -359,5 +434,30 @@ export function getTaskPlan(
 ) {
   return request<TaskPlanResponse>(
     `/tasks/${taskId}/plan`,
+  )
+}
+
+
+export function getTaskAgentExecutions(
+  taskId: string,
+) {
+  return request<AgentExecutionsResponse>(
+    `/tasks/${taskId}/agent-executions`,
+  )
+}
+
+export function getTaskCheckpoints(
+  taskId: string,
+) {
+  return request<AgentCheckpointsResponse>(
+    `/tasks/${taskId}/checkpoints`,
+  )
+}
+
+export function getTaskHandoffs(
+  taskId: string,
+) {
+  return request<AgentHandoffsResponse>(
+    `/tasks/${taskId}/handoffs`,
   )
 }

@@ -12,6 +12,9 @@ import {
   createTask,
   getControlCenterStatus,
   getTaskDiff,
+  getTaskAgentExecutions,
+  getTaskCheckpoints,
+  getTaskHandoffs,
   getTaskPipeline,
   getTaskPlan,
   listProjects,
@@ -22,6 +25,9 @@ import {
   retryTask,
   updateProject,
   testModel,
+  type AgentCheckpoint,
+  type AgentExecution,
+  type AgentHandoff,
   type ControlCenterStatus,
   type Project,
   type Task,
@@ -174,6 +180,15 @@ function App() {
 
   const [taskPlan, setTaskPlan] =
     useState<TaskPlanResponse | null>(null)
+
+  const [agentExecutions, setAgentExecutions] =
+    useState<AgentExecution[]>([])
+
+  const [agentCheckpoints, setAgentCheckpoints] =
+    useState<AgentCheckpoint[]>([])
+
+  const [agentHandoffs, setAgentHandoffs] =
+    useState<AgentHandoff[]>([])
 
   const [activeProjectTab, setActiveProjectTab] =
     useState<"overview" | "running" | "history" | "settings">(
@@ -515,9 +530,52 @@ function App() {
       }
     }, [selectedTaskId])
 
+  const loadAgentTelemetry =
+    useCallback(async () => {
+      if (!selectedTaskId) {
+        setAgentExecutions([])
+        setAgentCheckpoints([])
+        setAgentHandoffs([])
+        return
+      }
+
+      try {
+        const [
+          executionData,
+          checkpointData,
+          handoffData,
+        ] = await Promise.all([
+          getTaskAgentExecutions(
+            selectedTaskId,
+          ),
+          getTaskCheckpoints(
+            selectedTaskId,
+          ),
+          getTaskHandoffs(
+            selectedTaskId,
+          ),
+        ])
+
+        setAgentExecutions(
+          executionData.executions,
+        )
+        setAgentCheckpoints(
+          checkpointData.checkpoints,
+        )
+        setAgentHandoffs(
+          handoffData.handoffs,
+        )
+      } catch {
+        setAgentExecutions([])
+        setAgentCheckpoints([])
+        setAgentHandoffs([])
+      }
+    }, [selectedTaskId])
+
   useEffect(() => {
     void loadPipeline()
     void loadTaskPlan()
+    void loadAgentTelemetry()
 
     if (!selectedTaskId) {
       return
@@ -526,6 +584,7 @@ function App() {
     const timer = window.setInterval(() => {
       void loadPipeline()
       void loadTaskPlan()
+      void loadAgentTelemetry()
     }, 2000)
 
     return () =>
@@ -533,6 +592,7 @@ function App() {
   }, [
     loadPipeline,
     loadTaskPlan,
+    loadAgentTelemetry,
     selectedTaskId,
   ])
 
@@ -540,6 +600,9 @@ function App() {
     setDiff("")
     setTaskReadResult(null)
     setTaskPlan(null)
+    setAgentExecutions([])
+    setAgentCheckpoints([])
+    setAgentHandoffs([])
     setLiveLogs([])
     setLogQuery("")
 
@@ -1865,6 +1928,221 @@ function App() {
               </div>
             ))}
           </div>
+
+          <div className="agent-activity-panel">
+            <div className="agent-activity-head">
+              <div>
+                <span className="agent-activity-kicker">
+                  AGENT ORCHESTRATION
+                </span>
+
+                <h3>
+                  Ajan Aktivitesi
+                </h3>
+              </div>
+
+              <div className="agent-activity-counts">
+                <span>
+                  {agentExecutions.length} execution
+                </span>
+
+                <span>
+                  {agentCheckpoints.length} checkpoint
+                </span>
+
+                <span>
+                  {agentHandoffs.length} handoff
+                </span>
+              </div>
+            </div>
+
+            {agentExecutions.length === 0 &&
+            agentCheckpoints.length === 0 &&
+            agentHandoffs.length === 0 ? (
+              <div className="agent-activity-empty">
+                Bu gorev icin henuz ajan aktivitesi yok.
+              </div>
+            ) : (
+              <div className="agent-activity-grid">
+                <div className="agent-activity-column">
+                  <div className="agent-column-head">
+                    <strong>
+                      Executions
+                    </strong>
+
+                    <span>
+                      {agentExecutions.length}
+                    </span>
+                  </div>
+
+                  <div className="agent-execution-list">
+                    {agentExecutions
+                      .slice()
+                      .reverse()
+                      .slice(0, 6)
+                      .map((execution) => (
+                        <div
+                          className="agent-execution-card"
+                          key={execution.execution_id}
+                        >
+                          <div className="agent-execution-top">
+                            <div>
+                              <strong>
+                                {execution.agent_name}
+                              </strong>
+
+                              <small>
+                                {execution.provider_name}
+                                {execution.model_name
+                                  ? ` / ${execution.model_name}`
+                                  : ""}
+                              </small>
+                            </div>
+
+                            <span
+                              className={`agent-status agent-status-${execution.status}`}
+                            >
+                              {execution.status}
+                            </span>
+                          </div>
+
+                          <div className="agent-execution-meta">
+                            <span>
+                              Step{" "}
+                              {execution.step_index ??
+                                "-"}
+                            </span>
+
+                            <span>
+                              {execution.duration_ms != null
+                                ? `${execution.duration_ms} ms`
+                                : "-"}
+                            </span>
+
+                            {execution.result_checkpoint_id && (
+                              <span>
+                                Checkpoint
+                              </span>
+                            )}
+                          </div>
+
+                          {execution.error && (
+                            <div className="agent-error">
+                              {execution.error}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="agent-activity-column">
+                  <div className="agent-column-head">
+                    <strong>
+                      Checkpoints
+                    </strong>
+
+                    <span>
+                      {agentCheckpoints.length}
+                    </span>
+                  </div>
+
+                  <div className="agent-checkpoint-list">
+                    {agentCheckpoints.length === 0 ? (
+                      <div className="agent-mini-empty">
+                        Checkpoint yok.
+                      </div>
+                    ) : (
+                      agentCheckpoints
+                        .slice()
+                        .reverse()
+                        .slice(0, 5)
+                        .map((checkpoint) => (
+                          <div
+                            className="agent-checkpoint-row"
+                            key={checkpoint.checkpoint_id}
+                          >
+                            <div>
+                              <strong>
+                                {checkpoint.agent_name}
+                              </strong>
+
+                              <small>
+                                {checkpoint.provider_name}
+                              </small>
+                            </div>
+
+                            <span
+                              className={`agent-status agent-status-${checkpoint.status}`}
+                            >
+                              {checkpoint.status}
+                            </span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="agent-activity-column">
+                  <div className="agent-column-head">
+                    <strong>
+                      Handoffs
+                    </strong>
+
+                    <span>
+                      {agentHandoffs.length}
+                    </span>
+                  </div>
+
+                  <div className="agent-handoff-list">
+                    {agentHandoffs.length === 0 ? (
+                      <div className="agent-mini-empty">
+                        Handoff yok.
+                      </div>
+                    ) : (
+                      agentHandoffs
+                        .slice()
+                        .reverse()
+                        .slice(0, 5)
+                        .map((handoff) => (
+                          <div
+                            className="agent-handoff-card"
+                            key={handoff.handoff_id}
+                          >
+                            <div className="agent-handoff-route">
+                              <strong>
+                                {handoff.source_agent}
+                              </strong>
+
+                              <span>
+                                {"\u2192"}
+                              </span>
+
+                              <strong>
+                                {handoff.target_agent}
+                              </strong>
+                            </div>
+
+                            <div className="agent-handoff-meta">
+                              <span
+                                className={`agent-status agent-status-${handoff.status}`}
+                              >
+                                {handoff.status}
+                              </span>
+
+                              <small>
+                                {handoff.reason}
+                              </small>
+                            </div>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
         </section>
 
         <section

@@ -35,6 +35,15 @@ from factory.control_center import get_control_center_status
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.task_plan_store import get_task_plan
+from factory.agent_checkpoint_store import (
+    list_agent_checkpoints,
+)
+from factory.agent_execution_store import (
+    list_agent_executions,
+)
+from factory.agent_handoff_store import (
+    list_agent_handoffs,
+)
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
 from factory.task_route_store import (
@@ -1554,6 +1563,70 @@ def get_task_plan_endpoint(
         "state": task.state,
         "task_kind": task.task_kind,
         "plan": plan,
+    }
+
+
+
+@app.get("/tasks/{task_id}/agent-executions")
+def get_task_agent_executions_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "executions": list_agent_executions(
+            task_id
+        ),
+    }
+
+
+@app.get("/tasks/{task_id}/checkpoints")
+def get_task_checkpoints_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "checkpoints": list_agent_checkpoints(
+            task_id
+        ),
+    }
+
+
+@app.get("/tasks/{task_id}/handoffs")
+def get_task_handoffs_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "handoffs": list_agent_handoffs(
+            task_id
+        ),
     }
 
 
