@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from factory.agent_checkpoint_store import (
     create_agent_checkpoint,
+    list_agent_checkpoints,
 )
 from factory.agent_execution_store import (
     complete_agent_execution,
@@ -62,6 +63,55 @@ class AgentStepExecutionError(RuntimeError):
         )
 
         super().__init__(message)
+
+
+def _find_completed_step_checkpoint(
+    task_id: str,
+    step_index: int,
+    *,
+    attempt: int,
+    step_kind: str,
+    db_path: str | Path,
+) -> dict[str, Any] | None:
+    checkpoints = list_agent_checkpoints(
+        task_id,
+        step_index=step_index,
+        db_path=db_path,
+    )
+
+    for checkpoint in reversed(checkpoints):
+        if checkpoint.get("status") != "completed":
+            continue
+
+        payload = checkpoint.get("payload")
+
+        if not isinstance(payload, dict):
+            continue
+
+        try:
+            checkpoint_attempt = int(
+                payload.get("attempt", -1)
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        checkpoint_kind = str(
+            payload.get(
+                "step_kind",
+                "",
+            )
+        ).strip().lower()
+
+        if (
+            checkpoint_attempt == attempt
+            and checkpoint_kind == step_kind
+        ):
+            return checkpoint
+
+    return None
 
 
 class StepExecutionError(RuntimeError):
@@ -135,6 +185,93 @@ def execute_task_plan(
         previous_attempt = int(
             step["attempt"] or 0
         )
+
+        recovery_kind = str(
+            step["kind"]
+        ).strip().lower()
+
+        recovery_checkpoint = None
+
+        if (
+            previous_attempt > 0
+            and status in {
+                "running",
+                "failed",
+            }
+        ):
+            recovery_checkpoint = (
+                _find_completed_step_checkpoint(
+                    task_id,
+                    step_index,
+                    attempt=previous_attempt,
+                    step_kind=recovery_kind,
+                    db_path=db_path,
+                )
+            )
+
+        if recovery_checkpoint is not None:
+            recovered_result = (
+                recovery_checkpoint.get(
+                    "summary"
+                )
+            )
+
+            if recovered_result is None:
+                recovered_result = (
+                    step.get("result")
+                    or ""
+                )
+
+            update_task_step(
+                task_id,
+                step_index,
+                status="completed",
+                attempt=previous_attempt,
+                result=str(recovered_result),
+                error="",
+                db_path=db_path,
+            )
+
+            continue
+
+        # Bir process WRITE sirasinda kapandiysa ve
+        # completed checkpoint yoksa side-effect'in
+        # uygulanip uygulanmadigini kesin bilemeyiz.
+        #
+        # Otomatik tekrar calistirmak ayni WRITE'in
+        # iki kez uygulanmasina yol acabilir.
+        # Bu nedenle step failed durumuna alinir ve
+        # kullanicinin explicit retry vermesi beklenir.
+        if (
+            status == "running"
+            and previous_attempt > 0
+            and recovery_kind == "write"
+        ):
+            interruption_error = (
+                "Interrupted WRITE has no completed "
+                "checkpoint; explicit retry required"
+            )
+
+            update_task_step(
+                task_id,
+                step_index,
+                status="failed",
+                attempt=previous_attempt,
+                error=interruption_error,
+                db_path=db_path,
+            )
+
+            update_task_plan_status(
+                task_id,
+                "failed",
+                db_path=db_path,
+            )
+
+            raise StepExecutionError(
+                task_id,
+                step_index,
+                interruption_error,
+            )
 
         if (
             previous_attempt
