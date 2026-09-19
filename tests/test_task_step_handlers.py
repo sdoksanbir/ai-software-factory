@@ -360,7 +360,7 @@ def test_read_delegates_to_read_runner(
         str(tmp_path),
     )
 
-    assert result == "READ_OK"
+    assert result.output == "READ_OK"
 
     assert captured["project_path"] == (
         str(tmp_path)

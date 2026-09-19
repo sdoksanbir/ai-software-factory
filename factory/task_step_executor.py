@@ -1,6 +1,10 @@
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from factory.agent_checkpoint_store import (
+    create_agent_checkpoint,
+)
 from factory.database import DEFAULT_DB_PATH
 from factory.task_plan_store import (
     get_task_plan,
@@ -9,9 +13,19 @@ from factory.task_plan_store import (
 )
 
 
+@dataclass(frozen=True)
+class StepHandlerResult:
+    output: str | None
+    agent_name: str | None = None
+    provider_name: str | None = None
+    checkpoint_payload: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+
 StepHandler = Callable[
     [dict[str, Any], str],
-    str | None,
+    str | None | StepHandlerResult,
 ]
 
 
@@ -172,19 +186,101 @@ def execute_task_plan(
                 str(exc),
             ) from exc
 
-        update_task_step(
-            task_id,
-            step_index,
-            status="completed",
-            attempt=current_attempt,
-            result=(
-                ""
-                if result is None
-                else str(result)
-            ),
-            error="",
-            db_path=db_path,
+        checkpoint_result = (
+            result
+            if isinstance(
+                result,
+                StepHandlerResult,
+            )
+            else None
         )
+
+        output = (
+            checkpoint_result.output
+            if checkpoint_result is not None
+            else result
+        )
+
+        try:
+            agent_name = ""
+            provider_name = ""
+
+            if checkpoint_result is not None:
+                agent_name = str(
+                    checkpoint_result.agent_name
+                    or ""
+                ).strip()
+
+                provider_name = str(
+                    checkpoint_result.provider_name
+                    or ""
+                ).strip()
+
+                if bool(agent_name) != bool(
+                    provider_name
+                ):
+                    raise ValueError(
+                        "checkpoint agent_name and "
+                        "provider_name must be "
+                        "supplied together"
+                    )
+
+            update_task_step(
+                task_id,
+                step_index,
+                status="completed",
+                attempt=current_attempt,
+                result=(
+                    ""
+                    if output is None
+                    else str(output)
+                ),
+                error="",
+                db_path=db_path,
+            )
+
+            if agent_name and provider_name:
+                create_agent_checkpoint(
+                    task_id,
+                    step_index=step_index,
+                    agent_name=agent_name,
+                    provider_name=provider_name,
+                    status="completed",
+                    summary=(
+                        None
+                        if output is None
+                        else str(output)
+                    ),
+                    payload={
+                        "step_kind": kind,
+                        "attempt": current_attempt,
+                        **checkpoint_result
+                        .checkpoint_payload,
+                    },
+                    db_path=db_path,
+                )
+
+        except Exception as exc:
+            update_task_step(
+                task_id,
+                step_index,
+                status="failed",
+                attempt=current_attempt,
+                error=str(exc),
+                db_path=db_path,
+            )
+
+            update_task_plan_status(
+                task_id,
+                "failed",
+                db_path=db_path,
+            )
+
+            raise StepExecutionError(
+                task_id,
+                step_index,
+                str(exc),
+            ) from exc
 
     update_task_plan_status(
         task_id,

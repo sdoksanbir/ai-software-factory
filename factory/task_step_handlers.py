@@ -10,6 +10,7 @@ from factory.agents.runtime import (
 )
 from factory.model_router import route_model
 from factory.read_task_runner import run_read_task
+from factory.task_step_executor import StepHandlerResult
 from factory.tools.patch import PatchTool
 from factory.tools.repo import RepoTool
 
@@ -32,7 +33,7 @@ class TaskStepHandlers:
         self,
         step: dict[str, Any],
         worktree_path: str,
-    ) -> str:
+    ) -> StepHandlerResult:
         instruction = str(
             step["instruction"]
         ).strip()
@@ -49,7 +50,28 @@ class TaskStepHandlers:
                 code_score=model_route.code_score,
             )
 
-        return run_read_task(
+        runtime = (
+            build_default_agent_execution_router(
+                self.orchestrator.model_client
+            )
+        )
+
+        preferred_provider = (
+            resolve_provider_for_role(
+                self.orchestrator.model_client,
+                "fast_local",
+                runtime.provider_registry,
+            )
+        )
+
+        agent_route = runtime.route(
+            {
+                AgentCapability.READ_REPOSITORY,
+            },
+            preferred_provider=preferred_provider,
+        )
+
+        output = run_read_task(
             project_path=worktree_path,
             prompt=instruction,
             model_route=model_route,
@@ -58,11 +80,24 @@ class TaskStepHandlers:
             ),
         )
 
+        return StepHandlerResult(
+            output=output,
+            agent_name=agent_route.agent.name,
+            provider_name=(
+                agent_route
+                .provider
+                .provider_name
+            ),
+            checkpoint_payload={
+                "model": model_route.model,
+            },
+        )
+
     def write(
         self,
         step: dict[str, Any],
         worktree_path: str,
-    ) -> str:
+    ) -> StepHandlerResult:
         instruction = str(
             step["instruction"]
         ).strip()
@@ -239,7 +274,17 @@ class TaskStepHandlers:
             )
         )
 
-        response = runtime.complete(
+        required_capabilities = {
+            AgentCapability.READ_REPOSITORY,
+            AgentCapability.WRITE_CODE,
+        }
+
+        agent_route = runtime.route(
+            required_capabilities,
+            preferred_provider=preferred_provider,
+        )
+
+        response = agent_route.provider.complete(
             AgentRequest(
                 model_role="fast_local",
                 system_prompt=(
@@ -298,12 +343,7 @@ class TaskStepHandlers:
                 ),
                 temperature=0.0,
                 model_name=selected_model,
-            ),
-            {
-                AgentCapability.READ_REPOSITORY,
-                AgentCapability.WRITE_CODE,
-            },
-            preferred_provider=preferred_provider,
+            )
         )
 
         patch = (
@@ -337,12 +377,36 @@ class TaskStepHandlers:
                 "WRITE step produced no files"
             )
 
-        return (
+        output = (
             "Degistirilen dosyalar: "
             + ", ".join(
                 str(item)
                 for item in written_files
             )
+        )
+
+        return StepHandlerResult(
+            output=output,
+            agent_name=agent_route.agent.name,
+            provider_name=(
+                agent_route
+                .provider
+                .provider_name
+            ),
+            checkpoint_payload={
+                "model": (
+                    getattr(
+                        response,
+                        "model",
+                        None,
+                    )
+                    or selected_model
+                ),
+                "files": [
+                    str(item)
+                    for item in written_files
+                ],
+            },
         )
 
 
