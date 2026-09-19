@@ -7,6 +7,10 @@ from factory.agents.contracts import (
     AgentRequest,
     AgentResult,
 )
+from factory.agents.provider_errors import (
+    AgentModelUnavailableError,
+    AgentProviderUnavailableError,
+)
 
 
 class OllamaProvider:
@@ -143,7 +147,7 @@ class OllamaProvider:
                 or "refused" in error_text
                 or "nodename" in error_text
             ):
-                raise ConnectionError(
+                raise AgentProviderUnavailableError(
                     "Ollama server could not be "
                     f"reached at {api_base}."
                 ) from last_exception
@@ -153,7 +157,7 @@ class OllamaProvider:
                 or "pull" in error_text
                 or "does not exist" in error_text
             ):
-                raise ValueError(
+                raise AgentModelUnavailableError(
                     "Ollama model was not found: "
                     f"{model_name}. "
                     "Install it with: "
