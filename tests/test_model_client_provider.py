@@ -69,6 +69,8 @@ def test_model_client_provider_routes_ollama(
     captured = {}
 
     class FakeOllamaProvider:
+        provider_name = "ollama"
+
         def __init__(self, config):
             captured["config"] = config
 
@@ -139,3 +141,59 @@ def test_model_client_provider_keeps_legacy_fallback():
 
     assert result.content == "provider-ok"
     assert len(client.calls) == 1
+
+
+def test_model_client_provider_uses_custom_registry():
+    from factory.agents.provider_registry import (
+        AgentProviderRegistry,
+    )
+
+    client = FakeModelClient()
+
+    client.config = {
+        "models": {
+            "fast_local": {
+                "provider": "custom",
+                "model": "custom-model",
+            }
+        }
+    }
+
+    class CustomProvider:
+        provider_name = "custom"
+
+        def complete(self, request):
+            return SimpleNamespace(
+                content="custom-result",
+                provider="custom",
+                model=request.model_name,
+                metadata={
+                    "routed": True,
+                },
+            )
+
+    registry = AgentProviderRegistry()
+
+    registry.register(
+        CustomProvider()
+    )
+
+    provider = ModelClientProvider(
+        client,
+        registry=registry,
+    )
+
+    result = provider.complete(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="user",
+            model_role="fast_local",
+        )
+    )
+
+    assert result.content == "custom-result"
+    assert result.provider == "custom"
+
+    # A registered provider must bypass the
+    # legacy ModelClient compatibility path.
+    assert client.calls == []

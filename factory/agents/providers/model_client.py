@@ -1,9 +1,11 @@
 from typing import Any
 
 from factory.agents.contracts import (
-    AgentProvider,
     AgentRequest,
     AgentResult,
+)
+from factory.agents.provider_registry import (
+    AgentProviderRegistry,
 )
 from factory.agents.providers.ollama import (
     OllamaProvider,
@@ -16,8 +18,26 @@ class ModelClientProvider:
     def __init__(
         self,
         model_client: Any,
+        registry: AgentProviderRegistry | None = None,
     ) -> None:
         self.model_client = model_client
+
+        if registry is not None:
+            self.registry = registry
+            return
+
+        self.registry = AgentProviderRegistry()
+
+        config = getattr(
+            model_client,
+            "config",
+            None,
+        )
+
+        if isinstance(config, dict):
+            self.registry.register(
+                OllamaProvider(config)
+            )
 
     def _configured_provider(
         self,
@@ -57,7 +77,7 @@ class ModelClientProvider:
         if provider is None:
             return None
 
-        return str(provider)
+        return str(provider).strip().lower()
 
     def complete(
         self,
@@ -69,9 +89,14 @@ class ModelClientProvider:
             )
         )
 
-        if configured_provider == "ollama":
-            provider = OllamaProvider(
-                self.model_client.config
+        if (
+            configured_provider
+            and self.registry.has(
+                configured_provider
+            )
+        ):
+            provider = self.registry.get(
+                configured_provider
             )
 
             return provider.complete(
@@ -97,9 +122,3 @@ class ModelClientProvider:
                 "model_role": request.model_role,
             },
         )
-
-
-assert isinstance(
-    ModelClientProvider,
-    type,
-)
