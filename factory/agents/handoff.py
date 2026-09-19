@@ -1,10 +1,16 @@
 import json
 from dataclasses import dataclass
+from time import perf_counter_ns
 from typing import Any
 
 from factory.agent_checkpoint_store import (
     create_agent_checkpoint,
     get_agent_checkpoint,
+)
+from factory.agent_execution_store import (
+    complete_agent_execution,
+    create_agent_execution,
+    fail_agent_execution,
 )
 from factory.agent_handoff_store import (
     create_agent_handoff,
@@ -39,6 +45,9 @@ class PreparedAgentHandoff:
     source_checkpoint: dict[str, Any]
     target_agent: AgentDescriptor
     target_provider: AgentProvider
+    required_capabilities: frozenset[
+        AgentCapability
+    ]
     context: dict[str, Any]
 
 
@@ -164,6 +173,9 @@ def prepare_agent_handoff(
         source_checkpoint=checkpoint,
         target_agent=target_agent,
         target_provider=target_provider,
+        required_capabilities=frozenset(
+            required_capabilities
+        ),
         context=_build_handoff_context(
             checkpoint
         ),
@@ -249,7 +261,45 @@ def execute_prepared_handoff(
         },
     )
 
+    execution = None
+    started_ns = perf_counter_ns()
+
     try:
+        execution = create_agent_execution(
+            prepared.source_checkpoint[
+                "task_id"
+            ],
+            step_index=(
+                prepared.source_checkpoint[
+                    "step_index"
+                ]
+            ),
+            handoff_id=handoff_id,
+            source_checkpoint_id=(
+                prepared.source_checkpoint[
+                    "checkpoint_id"
+                ]
+            ),
+            agent_name=(
+                prepared.target_agent.name
+            ),
+            provider_name=(
+                prepared
+                .target_provider
+                .provider_name
+            ),
+            model_name=model_name,
+            capabilities=[
+                capability.value
+                for capability
+                in prepared.required_capabilities
+            ],
+            metadata={
+                "execution_type": "handoff",
+            },
+            **store_kwargs,
+        )
+
         result = (
             prepared
             .target_provider
@@ -295,13 +345,98 @@ def execute_prepared_handoff(
             )
         )
 
+        duration_ms = max(
+            0,
+            (
+                perf_counter_ns()
+                - started_ns
+            )
+            // 1_000_000,
+        )
+
+        result_metadata = dict(
+            result.metadata
+        )
+
+        usage = result_metadata.get(
+            "usage"
+        )
+
+        if not isinstance(
+            usage,
+            dict,
+        ):
+            usage = {}
+
+        complete_agent_execution(
+            execution["execution_id"],
+            result_checkpoint_id=(
+                target_checkpoint[
+                    "checkpoint_id"
+                ]
+            ),
+            model_name=(
+                result.model
+                or model_name
+            ),
+            duration_ms=duration_ms,
+            prompt_tokens=usage.get(
+                "prompt_tokens"
+            ),
+            completion_tokens=usage.get(
+                "completion_tokens"
+            ),
+            cost=float(
+                usage.get(
+                    "cost",
+                    0.0,
+                )
+                or 0.0
+            ),
+            metadata={
+                "execution_type": "handoff",
+                "handoff_id": handoff_id,
+            },
+            **store_kwargs,
+        )
+
         update_agent_handoff(
             handoff_id,
             status="completed",
             **store_kwargs,
         )
 
-    except Exception:
+    except Exception as exc:
+        duration_ms = max(
+            0,
+            (
+                perf_counter_ns()
+                - started_ns
+            )
+            // 1_000_000,
+        )
+
+        if execution is not None:
+            try:
+                fail_agent_execution(
+                    execution[
+                        "execution_id"
+                    ],
+                    error=str(exc),
+                    duration_ms=duration_ms,
+                    metadata={
+                        "execution_type": (
+                            "handoff"
+                        ),
+                        "handoff_id": (
+                            handoff_id
+                        ),
+                    },
+                    **store_kwargs,
+                )
+            except Exception:
+                pass
+
         update_agent_handoff(
             handoff_id,
             status="failed",

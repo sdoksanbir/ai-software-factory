@@ -1,9 +1,18 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from time import perf_counter_ns
 from typing import Any, Callable
 
 from factory.agent_checkpoint_store import (
     create_agent_checkpoint,
+)
+from factory.agent_execution_store import (
+    complete_agent_execution,
+    create_agent_execution,
+    fail_agent_execution,
+)
+from factory.agents.step_capabilities import (
+    capabilities_for_step,
 )
 from factory.database import DEFAULT_DB_PATH
 from factory.task_plan_store import (
@@ -27,6 +36,26 @@ StepHandler = Callable[
     [dict[str, Any], str],
     str | None | StepHandlerResult,
 ]
+
+
+class AgentStepExecutionError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        agent_name: str,
+        provider_name: str,
+        model_name: str | None = None,
+        capabilities: list[str] | None = None,
+    ) -> None:
+        self.agent_name = agent_name
+        self.provider_name = provider_name
+        self.model_name = model_name
+        self.capabilities = list(
+            capabilities or []
+        )
+
+        super().__init__(message)
 
 
 class StepExecutionError(RuntimeError):
@@ -158,6 +187,8 @@ def execute_task_plan(
             current_attempt
         )
 
+        started_ns = perf_counter_ns()
+
         try:
             result = handler(
                 step_payload,
@@ -165,6 +196,66 @@ def execute_task_plan(
             )
 
         except Exception as exc:
+            duration_ms = max(
+                0,
+                (
+                    perf_counter_ns()
+                    - started_ns
+                )
+                // 1_000_000,
+            )
+
+            if isinstance(
+                exc,
+                AgentStepExecutionError,
+            ):
+                try:
+                    execution = (
+                        create_agent_execution(
+                            task_id,
+                            step_index=step_index,
+                            agent_name=(
+                                exc.agent_name
+                            ),
+                            provider_name=(
+                                exc.provider_name
+                            ),
+                            model_name=(
+                                exc.model_name
+                            ),
+                            capabilities=(
+                                exc.capabilities
+                            ),
+                            metadata={
+                                "attempt": (
+                                    current_attempt
+                                ),
+                                "step_kind": kind,
+                            },
+                            db_path=db_path,
+                        )
+                    )
+
+                    fail_agent_execution(
+                        execution[
+                            "execution_id"
+                        ],
+                        error=str(exc),
+                        duration_ms=duration_ms,
+                        metadata={
+                            "attempt": (
+                                current_attempt
+                            ),
+                            "step_kind": kind,
+                        },
+                        db_path=db_path,
+                    )
+
+                except Exception:
+                    # Telemetry must not hide the
+                    # original agent failure.
+                    pass
+
             update_task_step(
                 task_id,
                 step_index,
@@ -225,6 +316,109 @@ def execute_task_plan(
                         "supplied together"
                     )
 
+            execution = None
+
+            duration_ms = max(
+                0,
+                (
+                    perf_counter_ns()
+                    - started_ns
+                )
+                // 1_000_000,
+            )
+
+            if agent_name and provider_name:
+                checkpoint_payload = {
+                    "step_kind": kind,
+                    "attempt": current_attempt,
+                    **checkpoint_result
+                    .checkpoint_payload,
+                }
+
+                capabilities = [
+                    capability.value
+                    for capability
+                    in capabilities_for_step(
+                        kind
+                    )
+                    if capability.value
+                    != "run_tests"
+                ]
+
+                execution = create_agent_execution(
+                    task_id,
+                    step_index=step_index,
+                    agent_name=agent_name,
+                    provider_name=provider_name,
+                    model_name=(
+                        checkpoint_payload.get(
+                            "model"
+                        )
+                    ),
+                    capabilities=capabilities,
+                    metadata={
+                        "attempt": current_attempt,
+                        "step_kind": kind,
+                    },
+                    db_path=db_path,
+                )
+
+                try:
+                    checkpoint = (
+                        create_agent_checkpoint(
+                            task_id,
+                            step_index=step_index,
+                            agent_name=agent_name,
+                            provider_name=provider_name,
+                            status="completed",
+                            summary=(
+                                None
+                                if output is None
+                                else str(output)
+                            ),
+                            payload=(
+                                checkpoint_payload
+                            ),
+                            db_path=db_path,
+                        )
+                    )
+
+                    complete_agent_execution(
+                        execution[
+                            "execution_id"
+                        ],
+                        result_checkpoint_id=(
+                            checkpoint[
+                                "checkpoint_id"
+                            ]
+                        ),
+                        duration_ms=duration_ms,
+                        metadata={
+                            "attempt": (
+                                current_attempt
+                            ),
+                            "step_kind": kind,
+                        },
+                        db_path=db_path,
+                    )
+
+                except Exception as exc:
+                    fail_agent_execution(
+                        execution[
+                            "execution_id"
+                        ],
+                        error=str(exc),
+                        duration_ms=duration_ms,
+                        metadata={
+                            "attempt": (
+                                current_attempt
+                            ),
+                            "step_kind": kind,
+                        },
+                        db_path=db_path,
+                    )
+                    raise
+
             update_task_step(
                 task_id,
                 step_index,
@@ -238,27 +432,6 @@ def execute_task_plan(
                 error="",
                 db_path=db_path,
             )
-
-            if agent_name and provider_name:
-                create_agent_checkpoint(
-                    task_id,
-                    step_index=step_index,
-                    agent_name=agent_name,
-                    provider_name=provider_name,
-                    status="completed",
-                    summary=(
-                        None
-                        if output is None
-                        else str(output)
-                    ),
-                    payload={
-                        "step_kind": kind,
-                        "attempt": current_attempt,
-                        **checkpoint_result
-                        .checkpoint_payload,
-                    },
-                    db_path=db_path,
-                )
 
         except Exception as exc:
             update_task_step(

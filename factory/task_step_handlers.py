@@ -10,7 +10,10 @@ from factory.agents.runtime import (
 )
 from factory.model_router import route_model
 from factory.read_task_runner import run_read_task
-from factory.task_step_executor import StepHandlerResult
+from factory.task_step_executor import (
+    AgentStepExecutionError,
+    StepHandlerResult,
+)
 from factory.tools.patch import PatchTool
 from factory.tools.repo import RepoTool
 
@@ -71,14 +74,34 @@ class TaskStepHandlers:
             preferred_provider=preferred_provider,
         )
 
-        output = run_read_task(
-            project_path=worktree_path,
-            prompt=instruction,
-            model_route=model_route,
-            model_client=(
-                self.orchestrator.model_client
-            ),
-        )
+        try:
+            output = run_read_task(
+                project_path=worktree_path,
+                prompt=instruction,
+                model_route=model_route,
+                model_client=(
+                    self.orchestrator.model_client
+                ),
+            )
+
+        except Exception as exc:
+            raise AgentStepExecutionError(
+                str(exc),
+                agent_name=(
+                    agent_route.agent.name
+                ),
+                provider_name=(
+                    agent_route
+                    .provider
+                    .provider_name
+                ),
+                model_name=model_route.model,
+                capabilities=[
+                    AgentCapability
+                    .READ_REPOSITORY
+                    .value,
+                ],
+            ) from exc
 
         return StepHandlerResult(
             output=output,
@@ -284,8 +307,9 @@ class TaskStepHandlers:
             preferred_provider=preferred_provider,
         )
 
-        response = agent_route.provider.complete(
-            AgentRequest(
+        try:
+            response = agent_route.provider.complete(
+                AgentRequest(
                 model_role="fast_local",
                 system_prompt=(
                     "Sen otonom bir yazilim "
@@ -341,10 +365,32 @@ class TaskStepHandlers:
                     "JSON disinda hicbir sey "
                     "dondurme."
                 ),
-                temperature=0.0,
-                model_name=selected_model,
+                    temperature=0.0,
+                    model_name=selected_model,
+                )
             )
-        )
+
+        except Exception as exc:
+            raise AgentStepExecutionError(
+                str(exc),
+                agent_name=(
+                    agent_route.agent.name
+                ),
+                provider_name=(
+                    agent_route
+                    .provider
+                    .provider_name
+                ),
+                model_name=selected_model,
+                capabilities=[
+                    AgentCapability
+                    .READ_REPOSITORY
+                    .value,
+                    AgentCapability
+                    .WRITE_CODE
+                    .value,
+                ],
+            ) from exc
 
         patch = (
             PatchTool

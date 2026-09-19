@@ -4,6 +4,9 @@ from factory.agent_checkpoint_store import (
     create_agent_checkpoint,
     list_agent_checkpoints,
 )
+from factory.agent_execution_store import (
+    list_agent_executions,
+)
 from factory.agent_handoff_store import (
     get_agent_handoff,
 )
@@ -217,6 +220,52 @@ def test_execute_handoff_creates_target_checkpoint(
 
     assert len(checkpoints) == 2
 
+    executions = list_agent_executions(
+        "TASK-HX-1",
+        db_path=db_path,
+    )
+
+    assert len(executions) == 1
+
+    execution = executions[0]
+
+    assert execution["status"] == "completed"
+
+    assert (
+        execution["agent_name"]
+        == "gemini-agent"
+    )
+
+    assert (
+        execution["provider_name"]
+        == "gemini_cli"
+    )
+
+    assert (
+        execution["handoff_id"]
+        == prepared.handoff["handoff_id"]
+    )
+
+    assert (
+        execution["source_checkpoint_id"]
+        == "CHK-HX-1"
+    )
+
+    assert (
+        execution["result_checkpoint_id"]
+        == executed.target_checkpoint[
+            "checkpoint_id"
+        ]
+    )
+
+    assert execution["model_name"] == (
+        "review-model"
+    )
+
+    assert execution["capabilities"] == [
+        "review_code"
+    ]
+
 
 def test_failed_target_marks_handoff_failed(
     tmp_path,
@@ -274,3 +323,24 @@ def test_failed_target_marks_handoff_failed(
     )
 
     assert len(checkpoints) == 1
+
+    executions = list_agent_executions(
+        "TASK-HX-2",
+        db_path=db_path,
+    )
+
+    assert len(executions) == 1
+
+    execution = executions[0]
+
+    assert execution["status"] == "failed"
+
+    assert (
+        "target agent failed"
+        in execution["error"]
+    )
+
+    assert (
+        execution["handoff_id"]
+        == prepared.handoff["handoff_id"]
+    )
