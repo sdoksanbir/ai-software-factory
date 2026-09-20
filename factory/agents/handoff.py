@@ -29,6 +29,9 @@ from factory.agents.contracts import (
 from factory.agents.execution_router import (
     AgentExecutionRouter,
 )
+from factory.agents.handoff_decision import (
+    decide_handoff_target,
+)
 
 
 @dataclass(frozen=True)
@@ -105,44 +108,21 @@ def prepare_agent_handoff(
             f"{source_checkpoint_id}"
         )
 
-    source_agent = str(
-        checkpoint["agent_name"]
-    ).strip()
-
-    matches = (
-        runtime
-        .agent_router
-        .matching_agents(
-            required_capabilities,
-            preferred_provider=(
-                preferred_provider
-            ),
-        )
-    )
-
-    target_agent = next(
-        (
-            agent
-            for agent in matches
-            if agent.name != source_agent
+    decision = decide_handoff_target(
+        source_agent=(
+            checkpoint["agent_name"]
         ),
-        None,
+        required_capabilities=(
+            required_capabilities
+        ),
+        reason=reason,
+        router=runtime.agent_router,
+        preferred_provider=(
+            preferred_provider
+        ),
     )
 
-    if target_agent is None:
-        required_names = ", ".join(
-            sorted(
-                capability.value
-                for capability
-                in required_capabilities
-            )
-        )
-
-        raise LookupError(
-            "No alternate agent supports "
-            "required capabilities: "
-            f"{required_names}"
-        )
+    target_agent = decision.target_agent
 
     target_provider = (
         runtime
