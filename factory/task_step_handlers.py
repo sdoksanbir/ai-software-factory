@@ -13,6 +13,7 @@ from factory.read_task_runner import run_read_task
 from factory.task_step_executor import (
     AgentStepExecutionError,
     StepHandlerResult,
+    StepHandoffRequest,
 )
 from factory.tools.patch import PatchTool
 from factory.tools.repo import RepoTool
@@ -516,6 +517,27 @@ class TaskStepHandlers:
                     for item in written_files
                 ],
             },
+            handoff_request=StepHandoffRequest(
+                required_capabilities=frozenset(
+                    {
+                        AgentCapability.REVIEW_CODE,
+                    }
+                ),
+                reason=(
+                    "Independent review after "
+                    "WRITE step"
+                ),
+                instruction=(
+                    "Review the completed WRITE "
+                    "step using the supplied "
+                    "checkpoint context. "
+                    "Identify correctness, "
+                    "regression, security, and "
+                    "scope problems. Do not "
+                    "modify files."
+                ),
+                required=False,
+            ),
             fallback_attempts=tuple(
                 {
                     "agent_name": failure.agent_name,
@@ -532,6 +554,49 @@ class TaskStepHandlers:
                 in fallback_execution.failures
             ),
         )
+
+
+    def handoff(
+        self,
+        source_checkpoint: dict[str, Any],
+        request: StepHandoffRequest,
+        db_path,
+    ) -> dict[str, Any]:
+        from factory.agents.handoff import (
+            execute_prepared_handoff,
+            prepare_agent_handoff,
+        )
+
+        runtime = (
+            build_default_agent_execution_router(
+                self.orchestrator.model_client
+            )
+        )
+
+        prepared = prepare_agent_handoff(
+            source_checkpoint[
+                "checkpoint_id"
+            ],
+            required_capabilities=(
+                request.required_capabilities
+            ),
+            reason=request.reason,
+            runtime=runtime,
+            preferred_provider=(
+                request.preferred_provider
+            ),
+            db_path=db_path,
+        )
+
+        executed = execute_prepared_handoff(
+            prepared,
+            instruction=request.instruction,
+            model_role="fast_local",
+            temperature=0.0,
+            db_path=db_path,
+        )
+
+        return executed.target_checkpoint
 
 
     def verify(

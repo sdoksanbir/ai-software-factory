@@ -12,6 +12,9 @@ from factory.agent_execution_store import (
     create_agent_execution,
     fail_agent_execution,
 )
+from factory.agents.capabilities import (
+    AgentCapability,
+)
 from factory.agents.step_capabilities import (
     capabilities_for_step,
 )
@@ -21,6 +24,39 @@ from factory.task_plan_store import (
     update_task_plan_status,
     update_task_step,
 )
+
+
+@dataclass(frozen=True)
+class StepHandoffRequest:
+    required_capabilities: frozenset[
+        AgentCapability
+    ]
+    reason: str
+    instruction: str
+    preferred_provider: str | None = None
+    required: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.required_capabilities:
+            raise ValueError(
+                "handoff required_capabilities "
+                "must not be empty"
+            )
+
+        if not str(
+            self.reason or ""
+        ).strip():
+            raise ValueError(
+                "handoff reason must not be blank"
+            )
+
+        if not str(
+            self.instruction or ""
+        ).strip():
+            raise ValueError(
+                "handoff instruction must not "
+                "be blank"
+            )
 
 
 @dataclass(frozen=True)
@@ -37,11 +73,23 @@ class StepHandlerResult:
     ] = field(
         default_factory=tuple
     )
+    handoff_request: (
+        StepHandoffRequest | None
+    ) = None
 
 
 StepHandler = Callable[
     [dict[str, Any], str],
     str | None | StepHandlerResult,
+]
+
+HandoffExecutor = Callable[
+    [
+        dict[str, Any],
+        StepHandoffRequest,
+        str | Path,
+    ],
+    dict[str, Any] | None,
 ]
 
 
@@ -137,6 +185,7 @@ def execute_task_plan(
     read_handler: StepHandler,
     write_handler: StepHandler,
     verify_handler: StepHandler,
+    handoff_executor: HandoffExecutor | None = None,
     max_step_attempts: int = 2,
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> dict[str, Any]:
@@ -460,6 +509,7 @@ def execute_task_plan(
                     )
 
             execution = None
+            checkpoint = None
 
             duration_ms = max(
                 0,
@@ -477,6 +527,39 @@ def execute_task_plan(
                     **checkpoint_result
                     .checkpoint_payload,
                 }
+
+                handoff_request = (
+                    checkpoint_result
+                    .handoff_request
+                )
+
+                if handoff_request is not None:
+                    checkpoint_payload[
+                        "handoff_request"
+                    ] = {
+                        "reason": (
+                            handoff_request.reason
+                        ),
+                        "instruction": (
+                            handoff_request
+                            .instruction
+                        ),
+                        "required_capabilities": (
+                            sorted(
+                                capability.value
+                                for capability
+                                in handoff_request
+                                .required_capabilities
+                            )
+                        ),
+                        "preferred_provider": (
+                            handoff_request
+                            .preferred_provider
+                        ),
+                        "required": (
+                            handoff_request.required
+                        ),
+                    }
 
                 capabilities = [
                     capability.value
@@ -660,6 +743,36 @@ def execute_task_plan(
                         db_path=db_path,
                     )
                     raise
+
+                if handoff_request is not None:
+                    if checkpoint is None:
+                        raise RuntimeError(
+                            "handoff source checkpoint "
+                            "was not created"
+                        )
+
+                    if handoff_executor is None:
+                        if handoff_request.required:
+                            raise RuntimeError(
+                                "required handoff has no "
+                                "handoff executor"
+                            )
+                    else:
+                        try:
+                            handoff_executor(
+                                checkpoint,
+                                handoff_request,
+                                db_path,
+                            )
+
+                        except LookupError:
+                            # No alternate capable agent
+                            # is a normal condition for an
+                            # optional handoff. Existing
+                            # single-agent tasks must keep
+                            # working unchanged.
+                            if handoff_request.required:
+                                raise
 
             update_task_step(
                 task_id,

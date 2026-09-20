@@ -120,6 +120,7 @@ def run_multi_step_task(
             read_handler=handlers.read,
             write_handler=handlers.write,
             verify_handler=handlers.verify,
+            handoff_executor=handlers.handoff,
             max_step_attempts=max_attempts,
         )
 
