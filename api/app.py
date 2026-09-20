@@ -59,6 +59,20 @@ from factory.task_route_store import (
 )
 from factory.read_task_runner import run_read_task
 from factory.task_execution_dispatcher import execute_write_task
+from factory.task_graph_execution import (
+    evaluate_task_execution_gate,
+    list_newly_runnable_dependents,
+)
+from factory.task_graph_store import (
+    add_task_dependency as db_add_task_dependency,
+    add_task_graph_node as db_add_task_graph_node,
+    create_task_graph as db_create_task_graph,
+    get_task_graph as db_get_task_graph,
+    list_runnable_tasks as db_list_runnable_tasks,
+    list_task_graphs as db_list_task_graphs,
+    topological_task_layers as db_topological_task_layers,
+    topological_task_order as db_topological_task_order,
+)
 from factory.task_read_results import (
     get_task_read_result,
     save_task_read_result,
@@ -180,6 +194,109 @@ class TaskCreateResponse(BaseModel):
     started_at: str | None = None
     task_kind: str | None = None
 
+
+
+class TaskGraphCreateRequest(BaseModel):
+    project_id: str | None = None
+    root_task_id: str | None = None
+
+
+class TaskGraphNodeCreateRequest(BaseModel):
+    task_id: str = Field(min_length=1)
+    parent_task_id: str | None = None
+
+
+class TaskGraphDependencyCreateRequest(BaseModel):
+    task_id: str = Field(min_length=1)
+    depends_on_task_id: str = Field(min_length=1)
+
+
+class TaskGraphNodeResponse(BaseModel):
+    graph_id: str
+    task_id: str
+    parent_task_id: str | None = None
+    created_at: str | None = None
+    depends_on: list[str] = Field(
+        default_factory=list
+    )
+
+
+class TaskGraphResponse(BaseModel):
+    graph_id: str
+    project_id: str | None = None
+    root_task_id: str | None = None
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+    nodes: list[
+        TaskGraphNodeResponse
+    ] = Field(
+        default_factory=list
+    )
+
+
+def task_graph_row_to_response(
+    row: dict,
+) -> TaskGraphResponse:
+    nodes = [
+        TaskGraphNodeResponse(
+            graph_id=node["graph_id"],
+            task_id=node["task_id"],
+            parent_task_id=(
+                node.get(
+                    "parent_task_id"
+                )
+            ),
+            created_at=node.get(
+                "created_at"
+            ),
+            depends_on=list(
+                node.get(
+                    "depends_on",
+                    [],
+                )
+            ),
+        )
+        for node in row.get(
+            "nodes",
+            [],
+        )
+    ]
+
+    return TaskGraphResponse(
+        graph_id=row["graph_id"],
+        project_id=row.get(
+            "project_id"
+        ),
+        root_task_id=row.get(
+            "root_task_id"
+        ),
+        status=row["status"],
+        created_at=row.get(
+            "created_at"
+        ),
+        updated_at=row.get(
+            "updated_at"
+        ),
+        nodes=nodes,
+    )
+
+
+class TaskGraphOrderResponse(BaseModel):
+    graph_id: str
+    order: list[str] = Field(
+        default_factory=list
+    )
+    layers: list[list[str]] = Field(
+        default_factory=list
+    )
+
+
+class TaskGraphRunnableResponse(BaseModel):
+    graph_id: str
+    runnable: list[str] = Field(
+        default_factory=list
+    )
 
 
 class ProjectCreateRequest(BaseModel):
@@ -575,11 +692,185 @@ def api_progress_handler(
             message,
         )
 
+def release_runnable_graph_dependents(
+    completed_task_id: str,
+) -> list[str]:
+    task_states = {}
+
+    for (
+        known_task_id,
+        known_task,
+    ) in TASKS.items():
+        known_state = (
+            getattr(
+                known_task,
+                "state",
+                None,
+            )
+            or getattr(
+                known_task,
+                "status",
+                None,
+            )
+            or ""
+        )
+
+        task_states[
+            known_task_id
+        ] = str(known_state)
+
+    runnable = (
+        list_newly_runnable_dependents(
+            completed_task_id,
+            task_states,
+        )
+    )
+
+    released: list[str] = []
+
+    for dependent_task_id in runnable:
+        dependent_task = TASKS.get(
+            dependent_task_id
+        )
+
+        if dependent_task is None:
+            continue
+
+        if (
+            getattr(
+                dependent_task,
+                "state",
+                None,
+            )
+            != "blocked"
+        ):
+            continue
+
+        update_task_runtime(
+            dependent_task_id,
+            status="queued",
+            state="queued",
+        )
+
+        append_task_log(
+            dependent_task_id,
+            (
+                "Task Graph: dependencies "
+                "tamamlandi. Gorev yeniden "
+                "siraya alindi."
+            ),
+        )
+
+        released.append(
+            dependent_task_id
+        )
+
+    return released
+
+
 def run_task_for_api(task_id: str):
     task = TASKS.get(task_id)
 
     if task is None:
         raise KeyError(f"Unknown task: {task_id}")
+
+    # Task Graph: dependency kontrolu
+    # planner/model/worktree baslamadan once
+    # yapilir.
+    task_states = {}
+
+    for (
+        known_task_id,
+        known_task,
+    ) in TASKS.items():
+        known_state = (
+            getattr(
+                known_task,
+                "state",
+                None,
+            )
+            or getattr(
+                known_task,
+                "status",
+                None,
+            )
+            or ""
+        )
+
+        task_states[
+            known_task_id
+        ] = str(known_state)
+
+    graph_gate = (
+        evaluate_task_execution_gate(
+            task_id,
+            task_states,
+        )
+    )
+
+    if graph_gate["state"] == "blocked":
+        pending = (
+            graph_gate[
+                "pending_dependencies"
+            ]
+        )
+
+        dependency_text = (
+            ", ".join(pending)
+            if pending
+            else "unknown"
+        )
+
+        update_task_runtime(
+            task_id,
+            status="queued",
+            state="blocked",
+        )
+
+        append_task_log(
+            task_id,
+            (
+                "Task Graph: gorev bekletildi. "
+                "Beklenen dependency: "
+                f"{dependency_text}"
+            ),
+        )
+
+        return None
+
+    if graph_gate["state"] == "failed":
+        failed_dependencies = (
+            graph_gate[
+                "failed_dependencies"
+            ]
+        )
+
+        dependency_text = (
+            ", ".join(
+                failed_dependencies
+            )
+            if failed_dependencies
+            else "unknown"
+        )
+
+        update_task_runtime(
+            task_id,
+            status="failed",
+            state="failed",
+        )
+
+        append_task_log(
+            task_id,
+            (
+                "Task Graph: dependency "
+                "basarisizligi nedeniyle "
+                "gorev calistirilmadi. "
+                "Basarisiz dependency: "
+                f"{dependency_text}"
+            ),
+        )
+
+        return None
 
     task_route = route_task(
         task.prompt,
@@ -697,6 +988,19 @@ def run_task_for_api(task_id: str):
                 task_id,
                 "READ gorevi tamamlandi.",
             )
+
+            released_dependents = (
+                release_runnable_graph_dependents(
+                    task_id
+                )
+            )
+
+            for dependent_task_id in (
+                released_dependents
+            ):
+                run_task_for_api(
+                    dependent_task_id
+                )
 
             return
 
@@ -1098,7 +1402,10 @@ def get_task(task_id: str):
     "/tasks/{task_id}/approve",
     response_model=TaskCreateResponse,
 )
-def approve_task(task_id: str):
+def approve_task(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+):
     task = TASKS.get(task_id)
 
     if task is None:
@@ -1171,6 +1478,20 @@ def approve_task(task_id: str):
         task_id,
         "Görev onaylandı ve ana dala birleştirildi.",
     )
+
+    released_dependents = (
+        release_runnable_graph_dependents(
+            task_id
+        )
+    )
+
+    for dependent_task_id in (
+        released_dependents
+    ):
+        background_tasks.add_task(
+            run_task_for_api,
+            dependent_task_id,
+        )
 
     return TASKS[task_id]
 
@@ -1744,3 +2065,269 @@ def get_task_result_endpoint(
         "state": task.state,
         "result": result,
     }
+
+
+
+@app.post(
+    "/task-graphs",
+    response_model=TaskGraphResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_task_graph_api(
+    request: TaskGraphCreateRequest,
+):
+    existing_ids = {
+        row["graph_id"]
+        for row in db_list_task_graphs()
+    }
+
+    while True:
+        graph_id = (
+            f"GRAPH-{random.randint(1000, 9999)}"
+        )
+
+        if graph_id not in existing_ids:
+            break
+
+    created = db_create_task_graph(
+        graph_id,
+        project_id=request.project_id,
+        root_task_id=request.root_task_id,
+    )
+
+    return task_graph_row_to_response(
+        created
+    )
+
+
+@app.get(
+    "/task-graphs",
+    response_model=list[TaskGraphResponse],
+)
+def list_task_graphs_api():
+    rows = db_list_task_graphs()
+
+    return [
+        task_graph_row_to_response(
+            row
+        )
+        for row in rows
+    ]
+
+
+@app.get(
+    "/task-graphs/{graph_id}",
+    response_model=TaskGraphResponse,
+)
+def get_task_graph_api(
+    graph_id: str,
+):
+    graph = db_get_task_graph(
+        graph_id
+    )
+
+    if graph is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    return task_graph_row_to_response(
+        graph
+    )
+
+
+
+@app.post(
+    "/task-graphs/{graph_id}/nodes",
+    response_model=TaskGraphResponse,
+)
+def add_task_graph_node_api(
+    graph_id: str,
+    request: TaskGraphNodeCreateRequest,
+):
+    graph = db_get_task_graph(
+        graph_id
+    )
+
+    if graph is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    try:
+        db_add_task_graph_node(
+            graph_id,
+            request.task_id,
+            parent_task_id=(
+                request.parent_task_id
+            ),
+        )
+
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    updated = db_get_task_graph(
+        graph_id
+    )
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    return task_graph_row_to_response(
+        updated
+    )
+
+
+@app.post(
+    "/task-graphs/{graph_id}/dependencies",
+    response_model=TaskGraphResponse,
+)
+def add_task_graph_dependency_api(
+    graph_id: str,
+    request: TaskGraphDependencyCreateRequest,
+):
+    graph = db_get_task_graph(
+        graph_id
+    )
+
+    if graph is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    try:
+        db_add_task_dependency(
+            graph_id,
+            request.task_id,
+            request.depends_on_task_id,
+        )
+
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    updated = db_get_task_graph(
+        graph_id
+    )
+
+    if updated is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    return task_graph_row_to_response(
+        updated
+    )
+
+
+
+@app.get(
+    "/task-graphs/{graph_id}/order",
+    response_model=TaskGraphOrderResponse,
+)
+def get_task_graph_order_api(
+    graph_id: str,
+):
+    graph = db_get_task_graph(
+        graph_id
+    )
+
+    if graph is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    try:
+        order = db_topological_task_order(
+            graph_id
+        )
+
+        layers = db_topological_task_layers(
+            graph_id
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    return TaskGraphOrderResponse(
+        graph_id=graph_id,
+        order=order,
+        layers=layers,
+    )
+
+
+@app.get(
+    "/task-graphs/{graph_id}/runnable",
+    response_model=TaskGraphRunnableResponse,
+)
+def get_task_graph_runnable_api(
+    graph_id: str,
+):
+    graph = db_get_task_graph(
+        graph_id
+    )
+
+    if graph is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task graph not found",
+        )
+
+    task_states: dict[str, str] = {}
+
+    for task_id, task in TASKS.items():
+        current_state = (
+            getattr(
+                task,
+                "state",
+                None,
+            )
+            or getattr(
+                task,
+                "status",
+                None,
+            )
+            or ""
+        )
+
+        task_states[
+            task_id
+        ] = str(current_state)
+
+    runnable = db_list_runnable_tasks(
+        graph_id,
+        task_states,
+    )
+
+    return TaskGraphRunnableResponse(
+        graph_id=graph_id,
+        runnable=runnable,
+    )
