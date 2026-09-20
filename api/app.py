@@ -32,6 +32,15 @@ from factory.database import (
     update_project as db_update_project,
 )
 from factory.control_center import get_control_center_status
+from factory.project_memory_capture import (
+    capture_approved_task_memory,
+)
+from factory.project_memory_store import (
+    get_project_memory as db_get_project_memory,
+    list_project_memories as db_list_project_memories,
+    supersede_project_memory as db_supersede_project_memory,
+    update_project_memory as db_update_project_memory,
+)
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.models import ModelClient
@@ -197,6 +206,67 @@ class TaskCreateResponse(BaseModel):
     started_at: str | None = None
     task_kind: str | None = None
 
+
+
+class ProjectMemorySupersedeRequest(BaseModel):
+    replacement_memory_id: str = Field(
+        min_length=1
+    )
+
+
+class ProjectMemoryResponse(BaseModel):
+    memory_id: str
+    project_id: str
+    kind: str
+    title: str
+    content: str
+    source_task_id: str | None = None
+    status: str
+    importance: int
+    tags: list[str] = Field(
+        default_factory=list
+    )
+    dedup_key: str | None = None
+    superseded_by_memory_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+def project_memory_row_to_response(
+    row: dict,
+) -> ProjectMemoryResponse:
+    return ProjectMemoryResponse(
+        memory_id=row["memory_id"],
+        project_id=row["project_id"],
+        kind=row["kind"],
+        title=row["title"],
+        content=row["content"],
+        source_task_id=row.get(
+            "source_task_id"
+        ),
+        status=row["status"],
+        importance=int(
+            row["importance"]
+        ),
+        tags=list(
+            row.get(
+                "tags",
+                []
+            )
+        ),
+        dedup_key=row.get(
+            "dedup_key"
+        ),
+        superseded_by_memory_id=row.get(
+            "superseded_by_memory_id"
+        ),
+        created_at=row.get(
+            "created_at"
+        ),
+        updated_at=row.get(
+            "updated_at"
+        ),
+    )
 
 
 class TaskGraphCreateRequest(BaseModel):
@@ -1150,6 +1220,237 @@ def get_project_endpoint(
     return project_row_to_response(row)
 
 
+@app.get(
+    "/projects/{project_id}/memories",
+    response_model=list[ProjectMemoryResponse],
+)
+def list_project_memories_endpoint(
+    project_id: str,
+    status: str | None = "active",
+    kind: str | None = None,
+    limit: int | None = 100,
+):
+    project = db_get_project(
+        project_id
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    if (
+        limit is not None
+        and not 1 <= limit <= 500
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Memory limit must be "
+                "between 1 and 500"
+            ),
+        )
+
+    try:
+        memories = db_list_project_memories(
+            project_id,
+            status=status,
+            kind=kind,
+            limit=limit,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    return [
+        project_memory_row_to_response(
+            memory
+        )
+        for memory in memories
+    ]
+
+
+@app.get(
+    "/projects/{project_id}/memories/{memory_id}",
+    response_model=ProjectMemoryResponse,
+)
+def get_project_memory_endpoint(
+    project_id: str,
+    memory_id: str,
+):
+    project = db_get_project(
+        project_id
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    memory = db_get_project_memory(
+        memory_id
+    )
+
+    # Deliberately return the same 404 for a missing
+    # memory and for a memory belonging to another
+    # project. Do not expose cross-project existence.
+    if (
+        memory is None
+        or memory.get("project_id")
+        != project_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Project memory not found",
+        )
+
+    return project_memory_row_to_response(
+        memory
+    )
+
+
+@app.post(
+    "/projects/{project_id}/memories/{memory_id}/archive",
+    response_model=ProjectMemoryResponse,
+)
+def archive_project_memory_endpoint(
+    project_id: str,
+    memory_id: str,
+):
+    project = db_get_project(
+        project_id
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    memory = db_get_project_memory(
+        memory_id
+    )
+
+    if (
+        memory is None
+        or memory.get("project_id")
+        != project_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Project memory not found",
+        )
+
+    if memory.get("status") == "superseded":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Superseded project memory "
+                "cannot be archived"
+            ),
+        )
+
+    try:
+        updated = db_update_project_memory(
+            memory_id,
+            status="archived",
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Project memory not found",
+        ) from exc
+
+    return project_memory_row_to_response(
+        updated
+    )
+
+
+@app.post(
+    "/projects/{project_id}/memories/{memory_id}/supersede",
+)
+def supersede_project_memory_endpoint(
+    project_id: str,
+    memory_id: str,
+    request: ProjectMemorySupersedeRequest,
+):
+    project = db_get_project(
+        project_id
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    old_memory = db_get_project_memory(
+        memory_id
+    )
+
+    replacement = db_get_project_memory(
+        request.replacement_memory_id
+    )
+
+    # Same 404 response prevents cross-project
+    # memory existence disclosure.
+    if (
+        old_memory is None
+        or old_memory.get("project_id")
+        != project_id
+        or replacement is None
+        or replacement.get("project_id")
+        != project_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Project memory not found",
+        )
+
+    try:
+        result = db_supersede_project_memory(
+            memory_id,
+            request.replacement_memory_id,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Project memory not found",
+        ) from exc
+
+    return {
+        "superseded": (
+            project_memory_row_to_response(
+                result["superseded"]
+            )
+        ),
+        "replacement": (
+            project_memory_row_to_response(
+                result["replacement"]
+            )
+        ),
+    }
+
+
 @app.put(
     "/projects/{project_id}",
     response_model=ProjectResponse,
@@ -1474,6 +1775,19 @@ def approve_task(
         status="approved",
         state="approved",
     )
+
+    try:
+        capture_approved_task_memory(
+            task_id
+        )
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Project memory capture failed "
+                f"after approval: {exc}"
+            ),
+        )
 
     TASK_CONTEXTS.pop(task_id, None)
 

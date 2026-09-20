@@ -623,3 +623,72 @@ def test_write_uses_actual_fallback_agent_identity(
     ]
 
     assert len(fallback_calls) == 1
+
+
+def test_read_passes_project_memory_context_when_available(
+    tmp_path,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_run_read_task(
+        project_path,
+        prompt,
+        model_route,
+        model_client,
+        execution_observer=None,
+        project_memory_context=None,
+    ):
+        captured["project_path"] = project_path
+        captured["prompt"] = prompt
+        captured["memory_context"] = (
+            project_memory_context
+        )
+
+        return "READ_WITH_MEMORY_OK"
+
+    monkeypatch.setattr(
+        "factory.task_step_handlers."
+        "run_read_task",
+        fake_run_read_task,
+    )
+
+    handlers = TaskStepHandlers(
+        FakeOrchestrator(
+            model_client=object()
+        ),
+        scope_prompt=(
+            "SQLite persistence kullan."
+        ),
+        model_name="fake-model",
+        project_id="PROJECT-MEMORY-1",
+    )
+
+    monkeypatch.setattr(
+        handlers,
+        "_project_memory_context",
+        lambda instruction: (
+            "PROJECT_MEMORY_REFERENCE:\n"
+            "Use SQLite for persistent state."
+        ),
+    )
+
+    result = handlers.read(
+        {
+            "instruction": (
+                "Repository yapisini incele"
+            )
+        },
+        str(tmp_path),
+    )
+
+    assert result.output == (
+        "READ_WITH_MEMORY_OK"
+    )
+
+    assert captured[
+        "memory_context"
+    ] == (
+        "PROJECT_MEMORY_REFERENCE:\n"
+        "Use SQLite for persistent state."
+    )

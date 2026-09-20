@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Any, Callable
 
+from factory.database import get_task
 from factory.schemas import (
     TaskSpec,
     TaskStatus,
@@ -92,10 +93,25 @@ def run_multi_step_task(
             TaskStatus.CONTEXT_READY
         )
 
+        persisted_task = get_task(
+            task_id
+        )
+
+        project_id = None
+
+        if persisted_task is not None:
+            project_id = str(
+                persisted_task.get(
+                    "project_id"
+                )
+                or ""
+            ).strip() or None
+
         handlers = TaskStepHandlers(
             orchestrator,
             scope_prompt=prompt,
             model_name=model_name,
+            project_id=project_id,
         )
 
         state_machine.transition(

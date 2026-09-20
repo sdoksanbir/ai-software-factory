@@ -9,6 +9,9 @@ from factory.agents.runtime import (
     resolve_provider_for_role,
 )
 from factory.model_router import route_model
+from factory.project_memory_retrieval import (
+    build_project_memory_context,
+)
 from factory.read_task_runner import run_read_task
 from factory.task_step_executor import (
     AgentStepExecutionError,
@@ -26,12 +29,50 @@ class TaskStepHandlers:
         *,
         scope_prompt: str | None = None,
         model_name: str | None = None,
+        project_id: str | None = None,
     ):
         self.orchestrator = orchestrator
         self.scope_prompt = (
             str(scope_prompt or "").strip()
         )
         self.model_name = model_name
+        self.project_id = (
+            str(project_id).strip()
+            if project_id is not None
+            else None
+        )
+
+        if self.project_id == "":
+            self.project_id = None
+
+    def _project_memory_context(
+        self,
+        instruction: str,
+    ) -> str:
+        if not self.project_id:
+            return ""
+
+        query = "\n".join(
+            item
+            for item in (
+                self.scope_prompt,
+                str(instruction or "").strip(),
+            )
+            if item
+        )
+
+        if not query:
+            return ""
+
+        try:
+            return build_project_memory_context(
+                self.project_id,
+                query,
+            )
+        except Exception:
+            # Project memory is auxiliary context.
+            # Retrieval failure must not break a task.
+            return ""
 
     def read(
         self,
@@ -91,16 +132,31 @@ class TaskStepHandlers:
             )
 
         try:
-            output = run_read_task(
-                project_path=worktree_path,
-                prompt=instruction,
-                model_route=model_route,
-                model_client=(
+            memory_context = (
+                self._project_memory_context(
+                    instruction
+                )
+            )
+
+            read_kwargs = {
+                "project_path": worktree_path,
+                "prompt": instruction,
+                "model_route": model_route,
+                "model_client": (
                     self.orchestrator.model_client
                 ),
-                execution_observer=(
+                "execution_observer": (
                     observe_execution
                 ),
+            }
+
+            if memory_context:
+                read_kwargs[
+                    "project_memory_context"
+                ] = memory_context
+
+            output = run_read_task(
+                **read_kwargs
             )
 
         except Exception as exc:
@@ -267,6 +323,12 @@ class TaskStepHandlers:
                 )
             )
 
+        memory_context = (
+            self._project_memory_context(
+                instruction
+            )
+        )
+
         selected_model = (
             self.model_name
             or route_model(
@@ -408,6 +470,9 @@ class TaskStepHandlers:
                     f"{self.scope_prompt or instruction}\n\n"
                     "WRITE STEP:\n"
                     f"{instruction}\n\n"
+                    "PROJECT MEMORY "
+                    "- sadece gecmis referans:\n"
+                    f"{memory_context or '(none)'}\n\n"
                     f"{scope_contract}"
                     "HEDEF DOSYA BAGLAMI "
                     "- sadece referans:\n"
