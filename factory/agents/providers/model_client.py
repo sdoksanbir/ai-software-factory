@@ -10,6 +10,9 @@ from factory.agents.provider_registry import (
 from factory.agents.providers.antigravity import (
     AntigravityCliProvider,
 )
+from factory.agents.providers.codex import (
+    CodexCliProvider,
+)
 from factory.agents.providers.ollama import (
     OllamaProvider,
 )
@@ -71,6 +74,46 @@ class ModelClientProvider:
                             settings.get(
                                 "mode",
                                 "plan",
+                            )
+                        ),
+                    )
+                )
+
+            if self._provider_is_enabled(
+                config,
+                "codex_cli",
+            ):
+                settings = (
+                    self._provider_settings(
+                        config,
+                        "codex_cli",
+                    )
+                )
+
+                self.registry.register(
+                    CodexCliProvider(
+                        executable=str(
+                            settings.get(
+                                "executable",
+                                "codex",
+                            )
+                        ),
+                        default_timeout=int(
+                            settings.get(
+                                "default_timeout",
+                                120,
+                            )
+                        ),
+                        sandbox=str(
+                            settings.get(
+                                "sandbox",
+                                "read-only",
+                            )
+                        ),
+                        ephemeral=bool(
+                            settings.get(
+                                "ephemeral",
+                                True,
                             )
                         ),
                     )

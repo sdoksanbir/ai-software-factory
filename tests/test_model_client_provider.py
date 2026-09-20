@@ -381,3 +381,172 @@ def test_antigravity_can_be_explicitly_disabled(
     )
 
     assert created == []
+
+
+def test_model_client_provider_routes_codex(
+    monkeypatch,
+):
+    client = FakeModelClient()
+
+    client.config = {
+        "models": {
+            "cloud_senior": {
+                "provider": (
+                    "codex_cli"
+                ),
+            }
+        },
+        "providers": {
+            "codex_cli": {
+                "executable": (
+                    "codex-test"
+                ),
+                "default_timeout": 75,
+                "sandbox": "read-only",
+                "ephemeral": True,
+            }
+        },
+    }
+
+    captured = {}
+
+    class FakeCodexProvider:
+        provider_name = "codex_cli"
+
+        def __init__(
+            self,
+            *,
+            executable,
+            default_timeout,
+            sandbox,
+            ephemeral,
+        ):
+            captured[
+                "configuration"
+            ] = {
+                "executable": executable,
+                "default_timeout": (
+                    default_timeout
+                ),
+                "sandbox": sandbox,
+                "ephemeral": ephemeral,
+            }
+
+        def complete(
+            self,
+            request,
+        ):
+            captured["request"] = (
+                request
+            )
+
+            return SimpleNamespace(
+                content="codex-result",
+                provider="codex_cli",
+                model=request.model_name,
+                metadata={
+                    "routed": True,
+                },
+            )
+
+    monkeypatch.setattr(
+        "factory.agents.providers."
+        "model_client."
+        "CodexCliProvider",
+        FakeCodexProvider,
+    )
+
+    provider = ModelClientProvider(
+        client
+    )
+
+    result = provider.complete(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="user",
+            model_role="cloud_senior",
+        )
+    )
+
+    assert (
+        result.content
+        == "codex-result"
+    )
+
+    assert (
+        result.provider
+        == "codex_cli"
+    )
+
+    assert (
+        captured[
+            "configuration"
+        ]
+        == {
+            "executable": "codex-test",
+            "default_timeout": 75,
+            "sandbox": "read-only",
+            "ephemeral": True,
+        }
+    )
+
+    assert (
+        captured["request"]
+        .model_role
+        == "cloud_senior"
+    )
+
+    # Migrated provider bypasses the
+    # legacy ModelClient compatibility path.
+    assert client.calls == []
+
+
+def test_codex_can_be_explicitly_disabled(
+    monkeypatch,
+):
+    client = FakeModelClient()
+
+    client.config = {
+        "models": {
+            "cloud_senior": {
+                "provider": (
+                    "codex_cli"
+                ),
+            }
+        },
+        "providers": {
+            "codex_cli": {
+                "enabled": False,
+            }
+        },
+    }
+
+    created = []
+
+    class FakeCodexProvider:
+        provider_name = "codex_cli"
+
+        def __init__(
+            self,
+            **kwargs,
+        ):
+            created.append(
+                kwargs
+            )
+
+    monkeypatch.setattr(
+        "factory.agents.providers."
+        "model_client."
+        "CodexCliProvider",
+        FakeCodexProvider,
+    )
+
+    provider = ModelClientProvider(
+        client
+    )
+
+    assert not provider.registry.has(
+        "codex_cli"
+    )
+
+    assert created == []

@@ -333,3 +333,183 @@ def test_runtime_can_enable_antigravity_explicitly():
         descriptor.executable
         == "custom-agy"
     )
+
+
+def test_runtime_registers_codex_when_configured():
+    client = FakeModelClient(
+        {
+            "models": {
+                "cloud_senior": {
+                    "provider": (
+                        "codex_cli"
+                    ),
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    registry = (
+        runtime.provider_registry
+    )
+
+    assert registry.has(
+        "codex_cli"
+    )
+
+    descriptor = registry.descriptor(
+        "codex_cli"
+    )
+
+    assert (
+        descriptor.transport.value
+        == "cli"
+    )
+
+    assert (
+        descriptor.executable
+        == "codex"
+    )
+
+    assert (
+        descriptor.metadata[
+            "sandbox"
+        ]
+        == "read-only"
+    )
+
+
+def test_runtime_routes_configured_role_to_codex():
+    client = FakeModelClient(
+        {
+            "models": {
+                "cloud_senior": {
+                    "provider": (
+                        "codex_cli"
+                    ),
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    provider_name = (
+        resolve_provider_for_role(
+            client,
+            "cloud_senior",
+            runtime.provider_registry,
+        )
+    )
+
+    assert (
+        provider_name
+        == "codex_cli"
+    )
+
+    route = runtime.route(
+        {
+            AgentCapability.REVIEW_CODE,
+        },
+        preferred_provider=(
+            provider_name
+        ),
+    )
+
+    assert (
+        route.agent.provider_name
+        == "codex_cli"
+    )
+
+    assert (
+        route.provider.provider_name
+        == "codex_cli"
+    )
+
+
+def test_runtime_does_not_register_codex_by_default():
+    client = FakeModelClient(
+        {
+            "models": {
+                "fast_local": {
+                    "provider": "ollama",
+                    "model": "llama3.1:8b",
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    assert not (
+        runtime.provider_registry.has(
+            "codex_cli"
+        )
+    )
+
+
+def test_runtime_can_configure_codex_provider():
+    client = FakeModelClient(
+        {
+            "models": {},
+            "providers": {
+                "codex_cli": {
+                    "enabled": True,
+                    "executable": (
+                        "custom-codex"
+                    ),
+                    "default_timeout": 90,
+                    "sandbox": (
+                        "workspace-write"
+                    ),
+                    "ephemeral": False,
+                }
+            },
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    descriptor = (
+        runtime
+        .provider_registry
+        .descriptor(
+            "codex_cli"
+        )
+    )
+
+    assert (
+        descriptor.executable
+        == "custom-codex"
+    )
+
+    assert (
+        descriptor.metadata[
+            "sandbox"
+        ]
+        == "workspace-write"
+    )
+
+    assert (
+        descriptor.metadata[
+            "ephemeral"
+        ]
+        is False
+    )
