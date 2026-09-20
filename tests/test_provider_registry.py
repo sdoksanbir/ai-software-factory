@@ -93,3 +93,109 @@ def test_registry_reports_unknown_provider():
         match="gemini_cli",
     ):
         registry.get("gemini_cli")
+
+
+def test_registry_exposes_provider_health(
+    monkeypatch,
+):
+    from factory.agents.provider_adapter import (
+        ProviderDescriptor,
+        ProviderTransport,
+    )
+
+    registry = AgentProviderRegistry()
+
+    provider = FakeProvider(
+        "codex_cli"
+    )
+
+    registry.register(
+        provider,
+        descriptor=(
+            ProviderDescriptor(
+                name="codex_cli",
+                transport=(
+                    ProviderTransport.CLI
+                ),
+                executable="codex",
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        "factory.agents.provider_health."
+        "shutil.which",
+        lambda executable: (
+            r"C:\tools\codex.exe"
+        ),
+    )
+
+    health = registry.health(
+        "codex_cli"
+    )
+
+    assert health.available is True
+
+    assert (
+        health.provider_name
+        == "codex_cli"
+    )
+
+
+def test_registry_discover_all_is_sorted(
+    monkeypatch,
+):
+    from factory.agents.provider_adapter import (
+        ProviderDescriptor,
+        ProviderTransport,
+    )
+
+    registry = AgentProviderRegistry()
+
+    registry.register(
+        FakeProvider(
+            "zeta"
+        ),
+        descriptor=(
+            ProviderDescriptor(
+                name="zeta",
+                transport=(
+                    ProviderTransport
+                    .IN_PROCESS
+                ),
+            )
+        ),
+    )
+
+    registry.register(
+        FakeProvider(
+            "alpha"
+        ),
+        descriptor=(
+            ProviderDescriptor(
+                name="alpha",
+                transport=(
+                    ProviderTransport
+                    .IN_PROCESS
+                ),
+            )
+        ),
+    )
+
+    discoveries = (
+        registry.discover_all()
+    )
+
+    assert [
+        item["name"]
+        for item
+        in discoveries
+    ] == [
+        "alpha",
+        "zeta",
+    ]
+
+    assert all(
+        "health" in item
+        for item in discoveries
+    )

@@ -5,6 +5,11 @@ from factory.agents.provider_adapter import (
     ProviderDescriptor,
     resolve_provider_descriptor,
 )
+from factory.agents.provider_health import (
+    ProviderHealth,
+    discover_provider,
+    probe_provider_descriptor,
+)
 
 
 class AgentProviderRegistry:
@@ -134,6 +139,43 @@ class AgentProviderRegistry:
     ]:
         return tuple(
             self._descriptors[name]
+            for name
+            in sorted(
+                self._descriptors
+            )
+        )
+
+    def health(
+        self,
+        provider_name: str,
+    ) -> ProviderHealth:
+        descriptor = self.descriptor(
+            provider_name
+        )
+
+        return probe_provider_descriptor(
+            descriptor
+        )
+
+    def discovery(
+        self,
+        provider_name: str,
+    ) -> dict:
+        descriptor = self.descriptor(
+            provider_name
+        )
+
+        return discover_provider(
+            descriptor
+        )
+
+    def discover_all(
+        self,
+    ) -> tuple[dict, ...]:
+        return tuple(
+            discover_provider(
+                self._descriptors[name]
+            )
             for name
             in sorted(
                 self._descriptors
