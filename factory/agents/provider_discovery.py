@@ -285,20 +285,10 @@ def probe_runtime_provider(
     )
 
 
-def discover_runtime_provider(
+def build_runtime_discovery(
     descriptor: ProviderDescriptor,
-    *,
-    timeout_seconds: float = (
-        DEFAULT_PROBE_TIMEOUT_SECONDS
-    ),
+    health: ProviderHealth,
 ) -> dict[str, Any]:
-    health = probe_runtime_provider(
-        descriptor,
-        timeout_seconds=(
-            timeout_seconds
-        ),
-    )
-
     return {
         "name": descriptor.name,
         "transport": (
@@ -318,3 +308,23 @@ def discover_runtime_provider(
         ),
         "health": health.as_dict(),
     }
+
+
+def discover_runtime_provider(
+    descriptor: ProviderDescriptor,
+    *,
+    timeout_seconds: float = (
+        DEFAULT_PROBE_TIMEOUT_SECONDS
+    ),
+) -> dict[str, Any]:
+    health = probe_runtime_provider(
+        descriptor,
+        timeout_seconds=(
+            timeout_seconds
+        ),
+    )
+
+    return build_runtime_discovery(
+        descriptor,
+        health,
+    )

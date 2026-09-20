@@ -11,6 +11,9 @@ from factory.agents.contracts import AgentRequest
 from factory.agents.providers.model_client import (
     ModelClientProvider,
 )
+from factory.agents.provider_registry import (
+    AgentProviderRegistry,
+)
 from factory.model_router import ModelRoute, route_model
 from factory.tools.git_ops import GitWorktreeManager
 from factory.tools.repo import RepoTool
@@ -20,8 +23,17 @@ from factory.tools.sandbox import DockerSandbox
 
 
 class Orchestrator:
-    def __init__(self, project_path: str = ".", worktree_root: Optional[str] = None):
-        self.project_path = os.path.abspath(project_path)
+    def __init__(
+        self,
+        project_path: str = ".",
+        worktree_root: Optional[str] = None,
+        provider_registry: Optional[
+            AgentProviderRegistry
+        ] = None,
+    ):
+        self.project_path = os.path.abspath(
+            project_path
+        )
         
         if worktree_root is None:
             self.worktree_root = r"C:\AI-Worktrees"
@@ -29,7 +41,22 @@ class Orchestrator:
             self.worktree_root = os.path.abspath(worktree_root)
 
         self.model_client = ModelClient()
-        self.git_manager = GitWorktreeManager(self.project_path, self.worktree_root)
+
+        self.model_provider = (
+            ModelClientProvider(
+                self.model_client,
+                registry=provider_registry,
+            )
+        )
+
+        self.provider_registry = (
+            self.model_provider.registry
+        )
+
+        self.git_manager = GitWorktreeManager(
+            self.project_path,
+            self.worktree_root,
+        )
         
         # Docker olmasa bile çökmemesi için güvenli başlatma
         try:
@@ -381,9 +408,7 @@ class Orchestrator:
                         task_id,
                         message="Model kod üretiyor.",
                     )
-                provider = ModelClientProvider(
-                    self.model_client
-                )
+                provider = self.model_provider
 
                 response = provider.complete(
                     AgentRequest(

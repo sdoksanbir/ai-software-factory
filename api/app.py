@@ -34,6 +34,10 @@ from factory.database import (
 from factory.control_center import get_control_center_status
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
+from factory.models import ModelClient
+from factory.agents.providers.model_client import (
+    ModelClientProvider,
+)
 from factory.task_plan_store import get_task_plan
 from factory.agent_checkpoint_store import (
     list_agent_checkpoints,
@@ -141,6 +145,13 @@ def open_local_project_terminal(
 app = FastAPI(
     title="AI Software Factory API",
     version="1.0",
+)
+
+
+API_PROVIDER_REGISTRY = (
+    ModelClientProvider(
+        ModelClient()
+    ).registry
 )
 
 
@@ -279,7 +290,9 @@ def build_orchestrator_for_task(
 ) -> Orchestrator:
     if task.project_id is None:
         # Eski, FAZ 13 ?ncesi g?revler i?in uyumluluk.
-        return Orchestrator()
+        return Orchestrator(
+            provider_registry=API_PROVIDER_REGISTRY
+        )
 
     project = db_get_project(
         task.project_id
@@ -291,7 +304,8 @@ def build_orchestrator_for_task(
         )
 
     return Orchestrator(
-        project_path=project["path"]
+        project_path=project["path"],
+        provider_registry=API_PROVIDER_REGISTRY,
     )
 
 def hydrate_runtime_from_database() -> None:
@@ -910,13 +924,65 @@ def health_check():
 
 @app.get("/factory/status")
 def factory_status():
-    orchestrator = Orchestrator()
+    orchestrator = Orchestrator(
+        provider_registry=API_PROVIDER_REGISTRY
+    )
 
     return {
         "status": "ready",
         "project_path": orchestrator.project_path,
         "worktree_root": orchestrator.worktree_root,
     }
+
+@app.get("/providers/health")
+def provider_health_endpoint(
+    refresh: bool = False,
+):
+    registry = API_PROVIDER_REGISTRY
+
+    health_results = (
+        registry.runtime_health_all(
+            force_refresh=refresh
+        )
+    )
+
+    return {
+        "count": len(health_results),
+        "refresh": refresh,
+        "providers": [
+            health.as_dict()
+            for health in health_results
+        ],
+    }
+
+
+@app.get(
+    "/providers/{provider_name}/health"
+)
+def provider_health_detail_endpoint(
+    provider_name: str,
+    refresh: bool = False,
+):
+    registry = API_PROVIDER_REGISTRY
+
+    if not registry.has(
+        provider_name
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Provider not found: "
+                f"{provider_name}"
+            ),
+        )
+
+    health = registry.runtime_health(
+        provider_name,
+        force_refresh=refresh,
+    )
+
+    return health.as_dict()
+
 
 @app.post(
     "/tasks",
