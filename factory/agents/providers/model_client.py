@@ -7,6 +7,9 @@ from factory.agents.contracts import (
 from factory.agents.provider_registry import (
     AgentProviderRegistry,
 )
+from factory.agents.providers.antigravity import (
+    AntigravityCliProvider,
+)
 from factory.agents.providers.ollama import (
     OllamaProvider,
 )
@@ -38,6 +41,143 @@ class ModelClientProvider:
             self.registry.register(
                 OllamaProvider(config)
             )
+
+            if self._provider_is_enabled(
+                config,
+                "antigravity_cli",
+            ):
+                settings = (
+                    self._provider_settings(
+                        config,
+                        "antigravity_cli",
+                    )
+                )
+
+                self.registry.register(
+                    AntigravityCliProvider(
+                        executable=str(
+                            settings.get(
+                                "executable",
+                                "agy",
+                            )
+                        ),
+                        default_timeout=int(
+                            settings.get(
+                                "default_timeout",
+                                120,
+                            )
+                        ),
+                        mode=str(
+                            settings.get(
+                                "mode",
+                                "plan",
+                            )
+                        ),
+                    )
+                )
+
+    @staticmethod
+    def _provider_settings(
+        config: dict[str, Any],
+        provider_name: str,
+    ) -> dict[str, Any]:
+        providers = config.get(
+            "providers",
+            {},
+        )
+
+        if not isinstance(
+            providers,
+            dict,
+        ):
+            return {}
+
+        settings = providers.get(
+            provider_name,
+            {},
+        )
+
+        if not isinstance(
+            settings,
+            dict,
+        ):
+            return {}
+
+        return settings
+
+    @classmethod
+    def _provider_is_enabled(
+        cls,
+        config: dict[str, Any],
+        provider_name: str,
+    ) -> bool:
+        normalized_provider = (
+            provider_name
+            .strip()
+            .lower()
+        )
+
+        settings = cls._provider_settings(
+            config,
+            normalized_provider,
+        )
+
+        explicitly_enabled = (
+            settings.get(
+                "enabled"
+            )
+        )
+
+        if explicitly_enabled is True:
+            return True
+
+        if explicitly_enabled is False:
+            return False
+
+        models = config.get(
+            "models",
+            {},
+        )
+
+        if not isinstance(
+            models,
+            dict,
+        ):
+            return False
+
+        for role_config in (
+            models.values()
+        ):
+            if not isinstance(
+                role_config,
+                dict,
+            ):
+                continue
+
+            configured_provider = (
+                role_config.get(
+                    "provider"
+                )
+            )
+
+            if configured_provider is None:
+                continue
+
+            normalized = (
+                str(
+                    configured_provider
+                )
+                .strip()
+                .lower()
+            )
+
+            if (
+                normalized
+                == normalized_provider
+            ):
+                return True
+
+        return False
 
     def _configured_provider(
         self,
@@ -77,7 +217,9 @@ class ModelClientProvider:
         if provider is None:
             return None
 
-        return str(provider).strip().lower()
+        return str(
+            provider
+        ).strip().lower()
 
     def complete(
         self,

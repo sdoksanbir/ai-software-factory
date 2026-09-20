@@ -171,3 +171,165 @@ def test_only_verifier_agents_claim_run_tests():
                 AgentCapability.RUN_TESTS
                 not in agent.capabilities
             )
+
+
+def test_runtime_registers_antigravity_when_configured():
+    client = FakeModelClient(
+        {
+            "models": {
+                "cloud_senior": {
+                    "provider": (
+                        "antigravity_cli"
+                    ),
+                    "model": (
+                        "gemini-2.5-pro"
+                    ),
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    registry = (
+        runtime.provider_registry
+    )
+
+    assert registry.has(
+        "antigravity_cli"
+    )
+
+    descriptor = registry.descriptor(
+        "antigravity_cli"
+    )
+
+    assert (
+        descriptor.transport.value
+        == "cli"
+    )
+
+    assert (
+        descriptor.executable
+        == "agy"
+    )
+
+
+def test_runtime_routes_configured_role_to_antigravity():
+    client = FakeModelClient(
+        {
+            "models": {
+                "cloud_senior": {
+                    "provider": (
+                        "antigravity_cli"
+                    ),
+                    "model": (
+                        "gemini-2.5-pro"
+                    ),
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    provider_name = (
+        resolve_provider_for_role(
+            client,
+            "cloud_senior",
+            runtime.provider_registry,
+        )
+    )
+
+    assert (
+        provider_name
+        == "antigravity_cli"
+    )
+
+    route = runtime.route(
+        {
+            AgentCapability.REVIEW_CODE,
+        },
+        preferred_provider=(
+            provider_name
+        ),
+    )
+
+    assert (
+        route.agent.provider_name
+        == "antigravity_cli"
+    )
+
+    assert (
+        route.provider.provider_name
+        == "antigravity_cli"
+    )
+
+
+def test_runtime_does_not_register_antigravity_by_default():
+    client = FakeModelClient(
+        {
+            "models": {
+                "fast_local": {
+                    "provider": "ollama",
+                    "model": "llama3.1:8b",
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    assert not (
+        runtime.provider_registry.has(
+            "antigravity_cli"
+        )
+    )
+
+
+def test_runtime_can_enable_antigravity_explicitly():
+    client = FakeModelClient(
+        {
+            "models": {},
+            "providers": {
+                "antigravity_cli": {
+                    "enabled": True,
+                    "executable": (
+                        "custom-agy"
+                    ),
+                    "default_timeout": 90,
+                    "mode": "plan",
+                }
+            },
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    descriptor = (
+        runtime
+        .provider_registry
+        .descriptor(
+            "antigravity_cli"
+        )
+    )
+
+    assert (
+        descriptor.executable
+        == "custom-agy"
+    )
