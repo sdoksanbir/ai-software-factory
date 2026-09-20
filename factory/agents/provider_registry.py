@@ -1,6 +1,10 @@
 from factory.agents.contracts import (
     AgentProvider,
 )
+from factory.agents.provider_adapter import (
+    ProviderDescriptor,
+    resolve_provider_descriptor,
+)
 
 
 class AgentProviderRegistry:
@@ -10,11 +14,20 @@ class AgentProviderRegistry:
             AgentProvider,
         ] = {}
 
+        self._descriptors: dict[
+            str,
+            ProviderDescriptor,
+        ] = {}
+
     @staticmethod
     def _normalize_name(
         name: str,
     ) -> str:
-        normalized = name.strip().lower()
+        normalized = (
+            str(name or "")
+            .strip()
+            .lower()
+        )
 
         if not normalized:
             raise ValueError(
@@ -28,6 +41,10 @@ class AgentProviderRegistry:
         provider: AgentProvider,
         *,
         replace: bool = False,
+        descriptor: (
+            ProviderDescriptor
+            | None
+        ) = None,
     ) -> None:
         name = self._normalize_name(
             provider.provider_name
@@ -42,7 +59,17 @@ class AgentProviderRegistry:
                 f"{name}"
             )
 
+        resolved_descriptor = (
+            resolve_provider_descriptor(
+                provider,
+                explicit=descriptor,
+            )
+        )
+
         self._providers[name] = provider
+        self._descriptors[
+            name
+        ] = resolved_descriptor
 
     def has(
         self,
@@ -78,6 +105,40 @@ class AgentProviderRegistry:
             )
 
         return self._providers[name]
+
+    def descriptor(
+        self,
+        provider_name: str,
+    ) -> ProviderDescriptor:
+        name = self._normalize_name(
+            provider_name
+        )
+
+        if name not in self._descriptors:
+            # Keep unknown-provider behavior
+            # aligned with get().
+            self.get(name)
+
+            raise RuntimeError(
+                "Provider descriptor missing: "
+                f"{name}"
+            )
+
+        return self._descriptors[name]
+
+    def descriptors(
+        self,
+    ) -> tuple[
+        ProviderDescriptor,
+        ...,
+    ]:
+        return tuple(
+            self._descriptors[name]
+            for name
+            in sorted(
+                self._descriptors
+            )
+        )
 
     def names(self) -> tuple[str, ...]:
         return tuple(
