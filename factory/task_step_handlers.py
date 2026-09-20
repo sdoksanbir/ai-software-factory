@@ -534,9 +534,31 @@ class TaskStepHandlers:
                     "Identify correctness, "
                     "regression, security, and "
                     "scope problems. Do not "
-                    "modify files."
+                    "modify files. Return ONLY "
+                    "valid JSON with this shape: "
+                    "{"
+                    "\"verdict\": "
+                    "\"pass|warn|block\", "
+                    "\"summary\": "
+                    "\"short summary\", "
+                    "\"findings\": ["
+                    "{"
+                    "\"severity\": "
+                    "\"info|warning|error|critical\", "
+                    "\"category\": "
+                    "\"correctness|regression|"
+                    "security|scope|other\", "
+                    "\"message\": "
+                    "\"finding text\", "
+                    "\"blocking\": true"
+                    "}"
+                    "]"
+                    "}. "
+                    "Use block when a finding "
+                    "must prevent progression."
                 ),
                 required=False,
+                quality_gate=True,
             ),
             fallback_attempts=tuple(
                 {

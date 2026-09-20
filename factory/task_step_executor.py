@@ -19,6 +19,9 @@ from factory.agents.step_capabilities import (
     capabilities_for_step,
 )
 from factory.database import DEFAULT_DB_PATH
+from factory.review_quality import (
+    evaluate_review_checkpoint_quality_gate,
+)
 from factory.task_plan_store import (
     get_task_plan,
     update_task_plan_status,
@@ -35,6 +38,7 @@ class StepHandoffRequest:
     instruction: str
     preferred_provider: str | None = None
     required: bool = False
+    quality_gate: bool = False
 
     def __post_init__(self) -> None:
         if not self.required_capabilities:
@@ -689,6 +693,9 @@ def execute_task_plan(
                         "required": (
                             handoff_request.required
                         ),
+                        "quality_gate": (
+                            handoff_request.quality_gate
+                        ),
                     }
 
                 capabilities = [
@@ -887,11 +894,35 @@ def execute_task_plan(
                             )
                     else:
                         try:
-                            handoff_executor(
-                                checkpoint,
-                                handoff_request,
-                                db_path,
+                            target_checkpoint = (
+                                handoff_executor(
+                                    checkpoint,
+                                    handoff_request,
+                                    db_path,
+                                )
                             )
+
+                            if handoff_request.quality_gate:
+                                if target_checkpoint is None:
+                                    raise RuntimeError(
+                                        "Quality gate handoff "
+                                        "returned no checkpoint"
+                                    )
+
+                                gate_decision = (
+                                    evaluate_review_checkpoint_quality_gate(
+                                        target_checkpoint
+                                    )
+                                )
+
+                                if gate_decision.blocked:
+                                    raise RuntimeError(
+                                        "Quality gate blocked "
+                                        "the WRITE step: "
+                                        + gate_decision
+                                        .review_verdict
+                                        .summary
+                                    )
 
                         except LookupError:
                             # No alternate capable agent

@@ -51,6 +51,9 @@ from factory.agent_handoff_store import (
 from factory.agent_telemetry import (
     build_agent_chain_telemetry,
 )
+from factory.review_quality import (
+    build_review_quality_report,
+)
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
 from factory.task_route_store import (
@@ -1995,6 +1998,31 @@ def get_task_checkpoints_endpoint(
         "state": task.state,
         "checkpoints": list_agent_checkpoints(
             task_id
+        ),
+    }
+
+
+@app.get("/tasks/{task_id}/quality-reviews")
+def get_task_quality_reviews_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    checkpoints = list_agent_checkpoints(
+        task_id
+    )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        **build_review_quality_report(
+            checkpoints
         ),
     }
 
