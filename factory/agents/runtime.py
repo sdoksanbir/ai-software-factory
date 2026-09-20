@@ -49,16 +49,79 @@ def build_default_agent_execution_router(
     agents = []
 
     for provider_name in registry.names():
-        agents.append(
-            AgentDescriptor(
-                name=(
-                    f"{provider_name}-agent"
+        # Role-specific agents are registered
+        # before the legacy generic agent.
+        # AgentRouter therefore prefers the
+        # specialist for normal step routing.
+        agents.extend(
+            [
+                AgentDescriptor(
+                    name=(
+                        f"{provider_name}-analyst"
+                    ),
+                    provider_name=provider_name,
+                    capabilities=frozenset(
+                        {
+                            AgentCapability
+                            .READ_REPOSITORY,
+                            AgentCapability
+                            .PLAN_TASK,
+                        }
+                    ),
                 ),
-                provider_name=provider_name,
-                capabilities=(
-                    MODEL_AGENT_CAPABILITIES
+                AgentDescriptor(
+                    name=(
+                        f"{provider_name}-coder"
+                    ),
+                    provider_name=provider_name,
+                    capabilities=frozenset(
+                        {
+                            AgentCapability
+                            .READ_REPOSITORY,
+                            AgentCapability
+                            .WRITE_CODE,
+                        }
+                    ),
                 ),
-            )
+                AgentDescriptor(
+                    name=(
+                        f"{provider_name}-reviewer"
+                    ),
+                    provider_name=provider_name,
+                    capabilities=frozenset(
+                        {
+                            AgentCapability
+                            .REVIEW_CODE,
+                        }
+                    ),
+                ),
+                AgentDescriptor(
+                    name=(
+                        f"{provider_name}-verifier"
+                    ),
+                    provider_name=provider_name,
+                    capabilities=frozenset(
+                        {
+                            AgentCapability
+                            .READ_REPOSITORY,
+                            AgentCapability
+                            .RUN_TESTS,
+                        }
+                    ),
+                ),
+                # Backward-compatible catch-all.
+                # Kept last so ordinary routing
+                # prefers a role-specific agent.
+                AgentDescriptor(
+                    name=(
+                        f"{provider_name}-agent"
+                    ),
+                    provider_name=provider_name,
+                    capabilities=(
+                        MODEL_AGENT_CAPABILITIES
+                    ),
+                ),
+            ]
         )
 
     return AgentExecutionRouter(

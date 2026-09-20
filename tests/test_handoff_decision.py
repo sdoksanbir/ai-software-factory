@@ -109,7 +109,7 @@ def test_handoff_selection_is_deterministic():
 
     assert (
         first.selection_policy
-        == "capability_then_agent_name"
+        == "capability_specificity_then_agent_name"
     )
 
 

@@ -162,6 +162,114 @@ def _find_completed_step_checkpoint(
     return None
 
 
+def _find_previous_step_leaf_checkpoint(
+    task_id: str,
+    step_index: int,
+    *,
+    db_path: str | Path,
+) -> dict[str, Any] | None:
+    checkpoints = list_agent_checkpoints(
+        task_id,
+        db_path=db_path,
+    )
+
+    previous = [
+        checkpoint
+        for checkpoint in checkpoints
+        if (
+            checkpoint.get("status")
+            == "completed"
+            and int(
+                checkpoint.get(
+                    "step_index",
+                    -1,
+                )
+            )
+            < step_index
+        )
+    ]
+
+    if not previous:
+        return None
+
+    previous_step_index = max(
+        int(
+            checkpoint["step_index"]
+        )
+        for checkpoint in previous
+    )
+
+    candidates = [
+        checkpoint
+        for checkpoint in previous
+        if int(
+            checkpoint["step_index"]
+        )
+        == previous_step_index
+    ]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    candidate_ids = {
+        str(
+            checkpoint.get(
+                "checkpoint_id",
+                "",
+            )
+        )
+        for checkpoint in candidates
+    }
+
+    referenced_ids: set[str] = set()
+
+    for checkpoint in candidates:
+        payload = checkpoint.get(
+            "payload"
+        )
+
+        if not isinstance(
+            payload,
+            dict,
+        ):
+            continue
+
+        source_id = str(
+            payload.get(
+                "source_checkpoint_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if source_id in candidate_ids:
+            referenced_ids.add(
+                source_id
+            )
+
+    leaf_candidates = [
+        checkpoint
+        for checkpoint in candidates
+        if str(
+            checkpoint.get(
+                "checkpoint_id",
+                "",
+            )
+        )
+        not in referenced_ids
+    ]
+
+    if len(leaf_candidates) == 1:
+        return leaf_candidates[0]
+
+    raise RuntimeError(
+        "Ambiguous previous checkpoint "
+        "lineage for task "
+        f"{task_id} before step "
+        f"{step_index}"
+    )
+
+
 class StepExecutionError(RuntimeError):
     def __init__(
         self,
@@ -528,6 +636,28 @@ def execute_task_plan(
                     .checkpoint_payload,
                 }
 
+                previous_checkpoint = (
+                    _find_previous_step_leaf_checkpoint(
+                        task_id,
+                        step_index,
+                        db_path=db_path,
+                    )
+                )
+
+                if (
+                    previous_checkpoint is not None
+                    and not checkpoint_payload.get(
+                        "source_checkpoint_id"
+                    )
+                ):
+                    checkpoint_payload[
+                        "source_checkpoint_id"
+                    ] = (
+                        previous_checkpoint[
+                            "checkpoint_id"
+                        ]
+                    )
+
                 handoff_request = (
                     checkpoint_result
                     .handoff_request
@@ -567,8 +697,6 @@ def execute_task_plan(
                     in capabilities_for_step(
                         kind
                     )
-                    if capability.value
-                    != "run_tests"
                 ]
 
                 fallback_attempts = tuple(

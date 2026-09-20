@@ -131,7 +131,7 @@ def test_runtime_uses_compatibility_for_unmigrated_provider():
     )
 
 
-def test_model_agents_do_not_claim_run_tests():
+def test_only_verifier_agents_claim_run_tests():
     client = FakeModelClient(
         {
             "models": {}
@@ -144,10 +144,30 @@ def test_model_agents_do_not_claim_run_tests():
         )
     )
 
-    for agent in (
+    agents = (
         runtime.agent_router.agents()
-    ):
-        assert (
-            AgentCapability.RUN_TESTS
-            not in agent.capabilities
+    )
+
+    verifier_agents = [
+        agent
+        for agent in agents
+        if agent.name.endswith(
+            "-verifier"
         )
+    ]
+
+    assert verifier_agents
+
+    for agent in agents:
+        if agent.name.endswith(
+            "-verifier"
+        ):
+            assert (
+                AgentCapability.RUN_TESTS
+                in agent.capabilities
+            )
+        else:
+            assert (
+                AgentCapability.RUN_TESTS
+                not in agent.capabilities
+            )

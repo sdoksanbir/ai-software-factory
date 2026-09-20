@@ -603,7 +603,7 @@ class TaskStepHandlers:
         self,
         step: dict[str, Any],
         worktree_path: str,
-    ) -> str:
+    ) -> str | StepHandlerResult:
         instruction = str(
             step.get("instruction", "")
         ).strip()
@@ -613,6 +613,39 @@ class TaskStepHandlers:
         if sandbox is None:
             raise RuntimeError(
                 "Docker sandbox kullanilamiyor."
+            )
+
+        model_client = getattr(
+            self.orchestrator,
+            "model_client",
+            None,
+        )
+
+        verifier_route = None
+
+        if model_client is not None:
+            runtime = (
+                build_default_agent_execution_router(
+                    model_client
+                )
+            )
+
+            preferred_provider = (
+                resolve_provider_for_role(
+                    model_client,
+                    "fast_local",
+                    runtime.provider_registry,
+                )
+            )
+
+            verifier_route = runtime.route(
+                {
+                    AgentCapability.READ_REPOSITORY,
+                    AgentCapability.RUN_TESTS,
+                },
+                preferred_provider=(
+                    preferred_provider
+                ),
             )
 
         import shlex
@@ -718,6 +751,41 @@ class TaskStepHandlers:
                 "python -m compileall -q ."
             )
 
+        def verification_success(
+            message: str,
+            *,
+            test_command: str | None = None,
+        ) -> str | StepHandlerResult:
+            # Backward compatibility:
+            # older/minimal orchestrator callers
+            # may not expose model_client.
+            if verifier_route is None:
+                return message
+
+            return StepHandlerResult(
+                output=message,
+                agent_name=(
+                    verifier_route.agent.name
+                ),
+                provider_name=(
+                    verifier_route
+                    .provider
+                    .provider_name
+                ),
+                checkpoint_payload={
+                    "execution_mode": "tool",
+                    "verification": {
+                        "passed": True,
+                        "compile_command": (
+                            compile_command
+                        ),
+                        "test_command": (
+                            test_command
+                        ),
+                    },
+                },
+            )
+
         compile_result = (
             sandbox.run_command(
                 worktree_path,
@@ -768,10 +836,13 @@ class TaskStepHandlers:
                     )
                 )
 
-            return (
-                "Scoped dogrulama tamamlandi. "
-                "Python dosyalari derlendi ve "
-                "ilgili pytest testleri basarili."
+            return verification_success(
+                (
+                    "Scoped dogrulama tamamlandi. "
+                    "Python dosyalari derlendi ve "
+                    "ilgili pytest testleri basarili."
+                ),
+                test_command=test_command,
             )
 
         # Scope verilmediyse eski full-suite
@@ -803,16 +874,21 @@ class TaskStepHandlers:
                     )
                 )
 
-            return (
-                "Dogrulama tamamlandi. "
-                "Python compile ve pytest basarili."
+            return verification_success(
+                (
+                    "Dogrulama tamamlandi. "
+                    "Python compile ve pytest basarili."
+                ),
+                test_command=test_command,
             )
 
         # Explicit scope var fakat o scope'ta
         # pytest dosyasi yoksa scoped compile
         # yeterli kabul edilir.
-        return (
-            "Scoped dogrulama tamamlandi. "
-            "Python dosyalari derlendi; "
-            "scope icinde pytest dosyasi yok."
+        return verification_success(
+            (
+                "Scoped dogrulama tamamlandi. "
+                "Python dosyalari derlendi; "
+                "scope icinde pytest dosyasi yok."
+            )
         )

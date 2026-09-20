@@ -18,7 +18,7 @@ class HandoffDecision:
     preferred_provider: str | None
     eligible_agents: tuple[str, ...]
     selection_policy: str = (
-        "capability_then_agent_name"
+        "capability_specificity_then_agent_name"
     )
 
 
@@ -35,20 +35,20 @@ def decide_handoff_target(
     router: AgentRouter,
     preferred_provider: str | None = None,
 ) -> HandoffDecision:
-    source_agent = str(
+    source = str(
         source_agent or ""
     ).strip()
 
-    if not source_agent:
+    if not source:
         raise ValueError(
             "source_agent must not be blank"
         )
 
-    reason = str(
+    normalized_reason = str(
         reason or ""
     ).strip()
 
-    if not reason:
+    if not normalized_reason:
         raise ValueError(
             "handoff reason must not be blank"
         )
@@ -57,15 +57,14 @@ def decide_handoff_target(
         required_capabilities
     )
 
-    normalized_provider = None
-
-    if preferred_provider:
-        normalized_provider = str(
-            preferred_provider
-        ).strip()
-
-        if not normalized_provider:
-            normalized_provider = None
+    normalized_provider = (
+        str(
+            preferred_provider or ""
+        )
+        .strip()
+        .lower()
+        or None
+    )
 
     matches = router.matching_agents(
         required,
@@ -74,60 +73,68 @@ def decide_handoff_target(
         ),
     )
 
-    source_key = source_agent.casefold()
+    source_key = source.casefold()
 
     eligible = [
         agent
         for agent in matches
-        if agent.name.strip().casefold()
-        != source_key
+        if (
+            agent.name
+            .strip()
+            .casefold()
+            != source_key
+        )
     ]
 
-    # Handoff routing must not depend on
-    # registration/config insertion order.
+    # Prefer the most specialized capable
+    # agent. A REVIEW-only reviewer therefore
+    # wins over a generic catch-all agent.
+    # Agent name/provider make ties stable
+    # regardless of registration order.
     eligible.sort(
         key=lambda agent: (
-            agent.name.strip().casefold(),
-            agent.provider_name
-            .strip()
-            .casefold(),
+            len(
+                agent.capabilities
+                - required
+            ),
+            agent.name.casefold(),
+            agent.provider_name.casefold(),
         )
     )
 
     if not eligible:
-        required_names = ", ".join(
-            sorted(
-                capability.value
-                for capability
-                in required
+        required_names = (
+            ", ".join(
+                sorted(
+                    capability.value
+                    for capability
+                    in required
+                )
+            )
+            or "<none>"
+        )
+
+        provider_text = (
+            ""
+            if normalized_provider is None
+            else (
+                " for provider "
+                f"{normalized_provider}"
             )
         )
 
-        if not required_names:
-            required_names = "<none>"
-
-        provider_text = ""
-
-        if normalized_provider:
-            provider_text = (
-                " for provider "
-                f"'{normalized_provider}'"
-            )
-
         raise LookupError(
             "No alternate agent supports "
-            "required capabilities: "
+            "required capabilities "
             f"{required_names}"
             f"{provider_text}"
         )
 
-    target = eligible[0]
-
     return HandoffDecision(
-        source_agent=source_agent,
-        target_agent=target,
+        source_agent=source,
+        target_agent=eligible[0],
         required_capabilities=required,
-        reason=reason,
+        reason=normalized_reason,
         preferred_provider=(
             normalized_provider
         ),
