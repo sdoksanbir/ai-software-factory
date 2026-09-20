@@ -44,6 +44,9 @@ from factory.agent_execution_store import (
 from factory.agent_handoff_store import (
     list_agent_handoffs,
 )
+from factory.agent_telemetry import (
+    build_agent_chain_telemetry,
+)
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
 from factory.task_route_store import (
@@ -1626,6 +1629,30 @@ def get_task_handoffs_endpoint(
         "state": task.state,
         "handoffs": list_agent_handoffs(
             task_id
+        ),
+    }
+
+
+
+@app.get("/tasks/{task_id}/agent-chain")
+def get_task_agent_chain_endpoint(
+    task_id: str,
+):
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "telemetry": (
+            build_agent_chain_telemetry(
+                task_id
+            )
         ),
     }
 
