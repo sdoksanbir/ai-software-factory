@@ -32,6 +32,9 @@ from factory.agents.execution_router import (
 from factory.agents.handoff_decision import (
     decide_handoff_target,
 )
+from factory.agents.handoff_context import (
+    build_handoff_context,
+)
 
 
 @dataclass(frozen=True)
@@ -56,24 +59,31 @@ class PreparedAgentHandoff:
 
 def _build_handoff_context(
     checkpoint: dict[str, Any],
+    *,
+    reason: str,
+    required_capabilities: set[
+        AgentCapability
+    ]
+    | frozenset[
+        AgentCapability
+    ],
+    target_agent: AgentDescriptor,
+    db_path=None,
 ) -> dict[str, Any]:
-    return {
-        "task_id": checkpoint["task_id"],
-        "step_index": checkpoint["step_index"],
-        "source_checkpoint_id": (
-            checkpoint["checkpoint_id"]
+    context_kwargs = {}
+
+    if db_path is not None:
+        context_kwargs["db_path"] = db_path
+
+    return build_handoff_context(
+        checkpoint,
+        reason=reason,
+        required_capabilities=(
+            required_capabilities
         ),
-        "source_agent": checkpoint["agent_name"],
-        "source_provider": (
-            checkpoint["provider_name"]
-        ),
-        "summary": checkpoint.get(
-            "summary"
-        ),
-        "payload": checkpoint.get(
-            "payload"
-        ) or {},
-    }
+        target_agent=target_agent,
+        **context_kwargs,
+    )
 
 
 def prepare_agent_handoff(
@@ -157,7 +167,14 @@ def prepare_agent_handoff(
             required_capabilities
         ),
         context=_build_handoff_context(
-            checkpoint
+            checkpoint,
+            reason=decision.reason,
+            required_capabilities=(
+                decision
+                .required_capabilities
+            ),
+            target_agent=target_agent,
+            db_path=db_path,
         ),
     )
 
@@ -315,6 +332,29 @@ def execute_prepared_handoff(
                         .source_checkpoint[
                             "checkpoint_id"
                         ]
+                    ),
+                    "source_agent": (
+                        prepared
+                        .source_checkpoint[
+                            "agent_name"
+                        ]
+                    ),
+                    "source_provider": (
+                        prepared
+                        .source_checkpoint[
+                            "provider_name"
+                        ]
+                    ),
+                    "handoff_context_schema": (
+                        prepared.context.get(
+                            "schema"
+                        )
+                    ),
+                    "required_capabilities": sorted(
+                        capability.value
+                        for capability
+                        in prepared
+                        .required_capabilities
                     ),
                     "model": result.model,
                     "result_metadata": dict(
