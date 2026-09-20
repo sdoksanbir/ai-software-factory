@@ -26,6 +26,20 @@ MODEL_AGENT_CAPABILITIES = frozenset(
 )
 
 
+def build_default_agent_descriptors(
+    registry: AgentProviderRegistry,
+) -> tuple[AgentDescriptor, ...]:
+    agents = list(
+        build_default_agent_descriptors(
+            registry
+        )
+    )
+
+    return tuple(
+        agents
+    )
+
+
 def build_default_agent_execution_router(
     model_client: Any,
 ) -> AgentExecutionRouter:

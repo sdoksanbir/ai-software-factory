@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 
 from factory.database import (
+    DEFAULT_DB_PATH,
     append_task_log as db_append_task_log,
     clear_task_logs as db_clear_task_logs,
     delete_task_diff as db_delete_task_diff,
@@ -2034,6 +2035,7 @@ async def task_events(task_id: str):
 @app.get("/control-center/status")
 def control_center_status(
     project_id: str | None = None,
+    refresh: bool = False,
 ):
     project_path = Orchestrator().project_path
     selected_tasks = list(
@@ -2063,7 +2065,26 @@ def control_center_status(
     return get_control_center_status(
         project_path=project_path,
         tasks=selected_tasks,
+        provider_registry=(
+            API_PROVIDER_REGISTRY
+        ),
+        project_id=project_id,
+        db_path=DEFAULT_DB_PATH,
+        use_cache=not refresh,
     )
+
+@app.get(
+    "/projects/{project_id}/control-center/status"
+)
+def project_control_center_status(
+    project_id: str,
+    refresh: bool = False,
+):
+    return control_center_status(
+        project_id=project_id,
+        refresh=refresh,
+    )
+
 
 @app.get("/tasks/{task_id}/pipeline")
 def task_pipeline(task_id: str):
