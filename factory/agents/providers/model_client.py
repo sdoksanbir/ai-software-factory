@@ -13,6 +13,9 @@ from factory.agents.providers.antigravity import (
 from factory.agents.providers.codex import (
     CodexCliProvider,
 )
+from factory.agents.providers.gemini import (
+    GeminiCliProvider,
+)
 from factory.agents.providers.ollama import (
     OllamaProvider,
 )
@@ -73,6 +76,40 @@ class ModelClientProvider:
                         mode=str(
                             settings.get(
                                 "mode",
+                                "plan",
+                            )
+                        ),
+                    )
+                )
+
+            if self._provider_is_enabled(
+                config,
+                "gemini_cli",
+            ):
+                settings = (
+                    self._provider_settings(
+                        config,
+                        "gemini_cli",
+                    )
+                )
+
+                self.registry.register(
+                    GeminiCliProvider(
+                        executable=str(
+                            settings.get(
+                                "executable",
+                                "gemini",
+                            )
+                        ),
+                        default_timeout=int(
+                            settings.get(
+                                "default_timeout",
+                                120,
+                            )
+                        ),
+                        approval_mode=str(
+                            settings.get(
+                                "approval_mode",
                                 "plan",
                             )
                         ),

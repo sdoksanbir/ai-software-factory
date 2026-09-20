@@ -95,6 +95,33 @@ class ProviderHealth:
 def _known_cli_install_candidates(
     descriptor: ProviderDescriptor,
 ) -> tuple[Path, ...]:
+    cli_family = str(
+        descriptor.metadata.get(
+            "cli_family",
+            "",
+        )
+        or ""
+    ).strip().lower()
+
+    if (
+        descriptor.name
+        == "gemini_cli"
+        or cli_family
+        == "google_gemini"
+    ):
+        app_data = os.environ.get(
+            "APPDATA"
+        )
+
+        if not app_data:
+            return ()
+
+        return (
+            Path(app_data)
+            / "npm"
+            / "gemini.cmd",
+        )
+
     local_app_data = (
         os.environ.get(
             "LOCALAPPDATA"
@@ -107,14 +134,6 @@ def _known_cli_install_candidates(
     root = Path(
         local_app_data
     )
-
-    cli_family = str(
-        descriptor.metadata.get(
-            "cli_family",
-            "",
-        )
-        or ""
-    ).strip().lower()
 
     if (
         descriptor.name
