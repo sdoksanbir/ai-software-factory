@@ -37,6 +37,11 @@ class ProviderHealth:
         default_factory=dict
     )
 
+    authenticated: bool | None = None
+    version: str | None = None
+    latency_ms: float | None = None
+    error_code: str | None = None
+
     @property
     def available(
         self,
@@ -73,6 +78,16 @@ class ProviderHealth:
             ),
             "metadata": dict(
                 self.metadata
+            ),
+            "authenticated": (
+                self.authenticated
+            ),
+            "version": self.version,
+            "latency_ms": (
+                self.latency_ms
+            ),
+            "error_code": (
+                self.error_code
             ),
         }
 

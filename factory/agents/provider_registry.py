@@ -7,8 +7,13 @@ from factory.agents.provider_adapter import (
 )
 from factory.agents.provider_health import (
     ProviderHealth,
+    ProviderHealthStatus,
     discover_provider,
     probe_provider_descriptor,
+)
+from factory.agents.provider_discovery import (
+    discover_runtime_provider,
+    probe_runtime_provider,
 )
 
 
@@ -175,6 +180,136 @@ class AgentProviderRegistry:
         return tuple(
             discover_provider(
                 self._descriptors[name]
+            )
+            for name
+            in sorted(
+                self._descriptors
+            )
+        )
+
+    def runtime_health(
+        self,
+        provider_name: str,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> ProviderHealth:
+        descriptor = self.descriptor(
+            provider_name
+        )
+
+        return probe_runtime_provider(
+            descriptor,
+            timeout_seconds=(
+                timeout_seconds
+            ),
+        )
+
+    def runtime_discovery(
+        self,
+        provider_name: str,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> dict:
+        descriptor = self.descriptor(
+            provider_name
+        )
+
+        return discover_runtime_provider(
+            descriptor,
+            timeout_seconds=(
+                timeout_seconds
+            ),
+        )
+
+    def runtime_health_all(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> tuple[ProviderHealth, ...]:
+        results: list[
+            ProviderHealth
+        ] = []
+
+        for name in sorted(
+            self._descriptors
+        ):
+            descriptor = (
+                self._descriptors[name]
+            )
+
+            try:
+                health = (
+                    probe_runtime_provider(
+                        descriptor,
+                        timeout_seconds=(
+                            timeout_seconds
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+                passive = (
+                    probe_provider_descriptor(
+                        descriptor
+                    )
+                )
+
+                health = ProviderHealth(
+                    provider_name=(
+                        descriptor.name
+                    ),
+                    status=(
+                        ProviderHealthStatus
+                        .UNAVAILABLE
+                    ),
+                    transport=(
+                        descriptor.transport
+                    ),
+                    reason=(
+                        "Runtime health probe "
+                        f"failed unexpectedly: {exc}"
+                    ),
+                    checked_via=(
+                        "runtime_registry"
+                    ),
+                    executable=(
+                        descriptor.executable
+                    ),
+                    resolved_executable=(
+                        passive
+                        .resolved_executable
+                    ),
+                    features=(
+                        passive.features
+                    ),
+                    metadata=dict(
+                        descriptor.metadata
+                    ),
+                    authenticated=None,
+                    version=None,
+                    latency_ms=None,
+                    error_code=(
+                        "PROBE_EXCEPTION"
+                    ),
+                )
+
+            results.append(
+                health
+            )
+
+        return tuple(results)
+
+    def runtime_discover_all(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> tuple[dict, ...]:
+        return tuple(
+            discover_runtime_provider(
+                self._descriptors[name],
+                timeout_seconds=(
+                    timeout_seconds
+                ),
             )
             for name
             in sorted(
