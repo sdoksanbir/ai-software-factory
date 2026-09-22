@@ -1873,9 +1873,21 @@ def approve_task(
         state_machine.transition(TaskStatus.APPROVED)
 
     except Exception as exc:
+        # APPROVAL_MERGE_ABORT_V1
+        # Merge conflict veya merge sirasindaki baska bir Git hatasi,
+        # ana repository'yi yarim merge durumunda birakmamalidir.
+        try:
+            orchestrator.git_manager.abort_merge()
+        except Exception:
+            # Hata merge baslamadan once olustuysa aktif merge olmayabilir.
+            pass
+
         raise HTTPException(
-            status_code=500,
-            detail=f"Approval failed: {exc}",
+            status_code=409,
+            detail=(
+                "Approval merge failed and the merge was rolled back: "
+                f"{exc}"
+            ),
         ) from exc
 
     update_task_runtime(

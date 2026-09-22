@@ -257,6 +257,13 @@ class GitWorktreeManager:
         )
 
 
+    def abort_merge(self) -> None:
+        # Ana repository'de devam eden merge islemini guvenli sekilde geri alir.
+        self._run_git_command(
+            ["merge", "--abort"],
+            cwd=self.repo_root,
+        )
+
     def remove_worktree(self, worktree_path: str, force: bool = False) -> None:
         """Git worktree kaydını ve klasörünü kaldırır."""
         abs_path = os.path.abspath(worktree_path)
