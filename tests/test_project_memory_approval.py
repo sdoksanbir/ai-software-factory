@@ -1,4 +1,4 @@
-﻿from types import SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -240,7 +240,7 @@ def test_failed_merge_does_not_capture_memory(
 
     assert (
         exc_info.value.status_code
-        == 500
+        == 409
     )
 
     assert captured == []

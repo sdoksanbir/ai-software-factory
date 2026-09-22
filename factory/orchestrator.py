@@ -620,7 +620,7 @@ class Orchestrator:
                         test_command = (
                             "python -c \"import pathlib; "
                             "[compile(p.read_text("
-                            "encoding='utf-8'), "
+                            "encoding='utf-8-sig'), "  # PYTHON_BOM_VALIDATION_FIX_V1
                             "str(p), 'exec') "
                             "for p in pathlib.Path('.')"
                             ".rglob('*.py')]\" "
@@ -665,14 +665,36 @@ class Orchestrator:
                 else:
                     state_machine.transition(TaskStatus.TEST_FAILED)
 
+                    # TEST_FAILURE_DIAGNOSTICS_V1
+                    normalized_test_output = str(test_output or "").strip()
+                    if not normalized_test_output:
+                        normalized_test_output = "(test çıktısı boş)"
+
+                    max_log_chars = 4000
+                    if len(normalized_test_output) > max_log_chars:
+                        log_test_output = (
+                            "...[test çıktısının başı kısaltıldı]...\n"
+                            + normalized_test_output[-max_log_chars:]
+                        )
+                    else:
+                        log_test_output = normalized_test_output
+
                     if progress_handler is not None:
                         progress_handler(
                             task_id,
                             test_result="failed",
-                            message="Testler başarısız. Yeni deneme hazırlanıyor.",
+                            message=(
+                                "Testler başarısız. Gerçek test çıktısı:\n"
+                                f"{log_test_output}"
+                            ),
                         )
-                    print(f"[-] Test hatası: {test_output}")
-                    user_prompt += f"\n\nÖnceki deneme başarısız oldu. Hata:\n{test_output}\nLütfen düzelt."
+
+                    print(f"[-] Test hatası: {normalized_test_output}")
+                    user_prompt += (
+                        "\n\nÖnceki deneme başarısız oldu. Hata:\n"
+                        f"{normalized_test_output}\n"
+                        "Lütfen düzelt."
+                    )
 
             except PatchToolError as e:
                 print(f"[-] Patch/JSON hatası: {str(e)}")

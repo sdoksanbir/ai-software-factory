@@ -37,6 +37,11 @@ class DockerSandbox:
         docker_args = [
             "docker", "run", "--rm",
             "--network", "none",
+            # SQLITE_TEST_TMPFS_V1
+            # Testlerin Windows bind mount uzerindeki gercek data/factory.db
+            # dosyasina WAL acmasini engelle. /app/data container icinde
+            # gecici bir Linux dosya sistemi olsun.
+            "--tmpfs", "/app/data:rw,size=64m",
             "-v", f"{abs_worktree}:/app",
             "-w", "/app",
             self.image_name,

@@ -4,3 +4,5 @@ PyYAML
 docker
 rich
 pytest
+fastapi
+httpx
