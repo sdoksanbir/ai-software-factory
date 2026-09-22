@@ -184,3 +184,49 @@ Current stable base:
 
 ```text
 FAZ 17
+
+### Agent system test
+
+This section outlines the steps and considerations for testing the agent system within the AI Software Factory project. It includes guidelines for setting up test environments, running tests, and verifying the behavior of the agent system.
+
+#### Setup
+
+1. **Environment Preparation**
+   - Ensure all prerequisites are met.
+   - Clone the repository and set up the backend and frontend as described in the Setup section.
+
+2. **Test Environment Configuration**
+   - Use isolated worktrees for testing to avoid affecting the main branch.
+   - Configure the Ollama server for testing purposes.
+
+#### Running Tests
+
+1. **Unit Tests**
+   - Run individual unit tests using the `pytest` command as shown in the Testing section.
+
+2. **Integration Tests**
+   - Execute multi-step infrastructure tests to ensure the system behaves as expected across different components.
+
+#### Verification
+
+1. **Check Task States**
+   - Verify that tasks transition through expected states correctly.
+
+2. **Human Approval Workflow**
+   - Ensure that successful WRITE tasks require human approval before merging.
+
+3. **Dynamic UI Testing**
+   - Test the dynamic retrieval of task plans from the backend.
+
+#### Troubleshooting
+
+- **Common Issues**
+  - Ensure all dependencies are correctly installed.
+  - Verify that the Ollama server is running and accessible.
+  - Check for any errors in the logs during test execution.
+
+- **Resolution Steps**
+  - Review the error messages and logs for clues.
+  - Consult the documentation or seek assistance from the development team.
+
+By following these guidelines, you can effectively test the agent system within the AI Software Factory project and ensure its reliability and functionality.
