@@ -454,6 +454,13 @@ class Orchestrator:
                     changed_paths,
                 )
 
+                # DESTRUCTIVE_PATCH_GUARD_V2
+                PatchTool.validate_non_destructive_edit(
+                    wt_result.path,
+                    multi_file_patch,
+                    prompt=prompt,
+                )
+
                 written_files = PatchTool.apply_multi_file_patch(
                     wt_result.path,
                     multi_file_patch
