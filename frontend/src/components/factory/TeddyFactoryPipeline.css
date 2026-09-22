@@ -1,0 +1,1688 @@
+/* Ayıcık pipeline — yalnızca UI katmanı */
+
+.teddy-factory-pipeline {
+  position: relative;
+  min-width: 0;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(75, 137, 205, 0.28);
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(52, 111, 220, 0.18),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      #0b1e39,
+      #071523
+    );
+  box-shadow:
+    inset 0 1px 0
+      rgba(255, 255, 255, 0.035),
+    0 18px 38px
+      rgba(0, 0, 0, 0.18);
+  scroll-margin-top: 16px;
+}
+
+.teddy-pipeline-head {
+  position: relative;
+  z-index: 20;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 14px 8px;
+  border-bottom:
+    1px solid
+    rgba(76, 128, 184, 0.18);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18, 48, 84, 0.78),
+      rgba(8, 27, 49, 0.62)
+    );
+}
+
+.teddy-pipeline-head div {
+  min-width: 0;
+}
+
+.teddy-pipeline-head span {
+  display: block;
+  color: #65c2ff;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+}
+
+.teddy-pipeline-head strong {
+  display: block;
+  margin-top: 2px;
+  color: #eef7ff;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.teddy-pipeline-head small {
+  min-width: 0;
+  overflow: hidden;
+  color: #7fa4c5;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teddy-pipeline-head small b {
+  margin: 0 5px;
+  color: #45baff;
+  font-weight: 800;
+}
+
+.teddy-factory-pipeline
+.teddy-factory-stage {
+  min-height: 350px !important;
+  height: 350px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background:
+    radial-gradient(
+      ellipse at 16% 0%,
+      rgba(255, 188, 89, 0.14),
+      transparent 17%
+    ),
+    radial-gradient(
+      ellipse at 50% 0%,
+      rgba(119, 97, 255, 0.13),
+      transparent 20%
+    ),
+    radial-gradient(
+      ellipse at 84% 0%,
+      rgba(65, 210, 186, 0.12),
+      transparent 17%
+    ),
+    linear-gradient(
+      180deg,
+      #102849 0%,
+      #0c203b 58%,
+      #071522 100%
+    ) !important;
+  box-shadow: none !important;
+}
+
+.teddy-factory-pipeline
+.teddy-factory-stage::after {
+  height: 82px !important;
+}
+
+.teddy-factory-pipeline
+.ref-conveyor-rail {
+  bottom: 20px !important;
+  height: 59px !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine-row {
+  left: 0.8% !important;
+  right: 0.8% !important;
+  bottom: 28px !important;
+  gap: 5px !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine {
+  height: 255px !important;
+  overflow: visible !important;
+  transform: none !important;
+  transition:
+    filter 160ms ease,
+    opacity 160ms ease !important;
+}
+
+/* Hover sırasında konum değişmez. */
+.teddy-factory-pipeline
+.ref-machine:hover {
+  transform: none !important;
+  filter:
+    brightness(1.06)
+    saturate(1.04);
+}
+
+.teddy-factory-pipeline
+.factory-machine-svg {
+  height: 150px !important;
+  transform: none !important;
+}
+
+.teddy-factory-pipeline
+.ref-worker {
+  top: -6px !important;
+  width: 112px !important;
+  height: 128px !important;
+  transform:
+    translateX(-50%) !important;
+  animation: none !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 50px !important;
+  height: 122px !important;
+  min-height: 122px !important;
+  max-height: 122px !important;
+  padding: 10px 10px 9px !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine-icon {
+  width: 24px !important;
+  height: 24px !important;
+  margin-bottom: 2px !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine-icon svg {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.teddy-factory-pipeline
+.ref-machine-face strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #f7fbff !important;
+  font-size: 12.5px !important;
+  font-weight: 900 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teddy-factory-pipeline
+.ref-machine-face > span {
+  width: 100%;
+  max-width: none !important;
+  height: auto !important;
+  max-height: 34px !important;
+  margin-top: 4px !important;
+  overflow: hidden;
+  color: #e2edf8 !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+  text-align: center;
+}
+
+.teddy-factory-pipeline
+.ref-machine-state {
+  min-width: 66px;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto !important;
+  padding: 2px 6px !important;
+  border: 1px solid
+    rgba(111, 149, 187, 0.25);
+  border-radius: 999px;
+  background: rgba(36, 63, 91, 0.72);
+  color: #91aac1;
+  font-size: 6.5px !important;
+  font-style: normal;
+  font-weight: 900 !important;
+  letter-spacing: 0.02em;
+}
+
+.teddy-factory-pipeline
+.ref-machine-state.state-completed {
+  border-color:
+    rgba(62, 225, 163, 0.35);
+  background:
+    rgba(40, 160, 116, 0.22);
+  color: #63e7b2;
+}
+
+.teddy-factory-pipeline
+.ref-machine-state.state-active {
+  border-color:
+    rgba(70, 190, 255, 0.48);
+  background:
+    rgba(37, 130, 198, 0.25);
+  color: #6bd0ff;
+  box-shadow:
+    0 0 9px
+    rgba(70, 190, 255, 0.24);
+}
+
+.teddy-factory-pipeline
+.ref-machine-state.state-waiting {
+  border-color:
+    rgba(255, 188, 76, 0.46);
+  background:
+    rgba(184, 121, 33, 0.24);
+  color: #ffd071;
+}
+
+.teddy-factory-pipeline
+.ref-machine-state.state-failed {
+  border-color:
+    rgba(255, 96, 112, 0.45);
+  background:
+    rgba(172, 55, 67, 0.23);
+  color: #ff8a96;
+}
+
+.teddy-factory-pipeline
+.ref-machine.state-pending {
+  opacity: 0.78;
+}
+
+.teddy-factory-pipeline
+.ref-machine.state-active
+.factory-machine-svg {
+  filter:
+    brightness(1.16)
+    saturate(1.14)
+    drop-shadow(
+      0 0 9px
+      rgba(64, 181, 255, 0.22)
+    );
+}
+
+.teddy-factory-pipeline
+.ref-machine.state-active
+.factory-bear-body {
+  animation:
+    factoryBearWorking
+    1.15s ease-in-out
+    infinite !important;
+}
+
+.teddy-working-signal {
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  z-index: 12;
+  display: flex;
+  gap: 3px;
+  transform: translateX(35px);
+  pointer-events: none;
+}
+
+.teddy-working-signal i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #5cd4ff;
+  box-shadow:
+    0 0 7px
+    rgba(92, 212, 255, 0.8);
+  animation:
+    teddyWorkingDot
+    1s ease-in-out
+    infinite;
+}
+
+.teddy-working-signal i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.teddy-working-signal i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes teddyWorkingDot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.teddy-flow-light {
+  position: absolute;
+  bottom: 46px;
+  z-index: 6;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #57c8ff;
+  box-shadow:
+    0 0 9px
+    rgba(87, 200, 255, 0.9);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.teddy-flow-light-0 { left: 8%; }
+.teddy-flow-light-1 { left: 25%; }
+.teddy-flow-light-2 { left: 42%; }
+.teddy-flow-light-3 { left: 59%; }
+.teddy-flow-light-4 { left: 76%; }
+.teddy-flow-light-5 { left: 92%; }
+
+@media (max-width: 1450px) {
+  .teddy-factory-pipeline
+  .teddy-factory-stage {
+    height: 320px !important;
+    min-height: 320px !important;
+  }
+
+  .teddy-factory-pipeline
+  .ref-machine {
+    height: 232px !important;
+  }
+
+  .teddy-factory-pipeline
+  .ref-worker {
+    width: 96px !important;
+    height: 112px !important;
+    top: 1px !important;
+  }
+
+  .teddy-factory-pipeline
+  .factory-machine-svg {
+    height: 138px !important;
+  }
+
+  .teddy-factory-pipeline
+  .ref-machine-face {
+    height: 90px !important;
+  }
+}
+
+@media (max-width: 1120px) {
+  .teddy-factory-pipeline {
+    overflow-x: auto;
+  }
+
+  .teddy-factory-stage {
+    min-width: 980px;
+  }
+
+  .teddy-pipeline-head {
+    min-width: 980px;
+  }
+}
+
+@media (
+  prefers-reduced-motion:
+  reduce
+) {
+  .teddy-factory-pipeline
+  .factory-bear-body,
+  .teddy-factory-pipeline
+  .factory-bear-arms,
+  .teddy-working-signal i {
+    animation:
+      none !important;
+  }
+}
+
+/* TEDDY_READABILITY_V2 — kontrol paneliyle aynı siyah ekran oturumu */
+
+.teddy-factory-pipeline .ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 50px !important;
+  height: 122px !important;
+  min-height: 122px !important;
+  max-height: 122px !important;
+  padding: 10px 10px 9px !important;
+  z-index: 12 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 2px !important;
+  overflow: hidden !important;
+  border-radius: 11px !important;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 18, 32, 0.96),
+    rgba(4, 14, 26, 0.98)
+  ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(117, 171, 219, 0.12),
+    inset 0 0 16px rgba(65, 145, 221, 0.08) !important;
+}
+
+.teddy-factory-pipeline .ref-machine-icon {
+  width: 24px !important;
+  height: 24px !important;
+  margin-bottom: 2px !important;
+  flex: 0 0 auto !important;
+}
+
+.teddy-factory-pipeline .ref-machine-icon svg {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.teddy-factory-pipeline .ref-machine-face strong {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: #f7fbff !important;
+  font-size: 12.5px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.15 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.teddy-factory-pipeline .ref-machine-face > span {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: 34px !important;
+  display: -webkit-box !important;
+  margin-top: 4px !important;
+  overflow: hidden !important;
+  color: #e2edf8 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  text-align: center !important;
+  text-overflow: initial !important;
+  white-space: normal !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state {
+  position: relative !important;
+  z-index: 30 !important;
+  min-width: 96px !important;
+  min-height: 24px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-top: 6px !important;
+  padding: 3px 9px !important;
+  border: 1px solid rgba(121, 158, 193, 0.34) !important;
+  border-radius: 999px !important;
+  background: #173652 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.26) !important;
+  color: #c5d7e7 !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.035em !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state.state-completed {
+  border-color: rgba(75, 231, 177, 0.52) !important;
+  background: #0d604b !important;
+  color: #8dffd2 !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state.state-active {
+  border-color: rgba(82, 201, 255, 0.58) !important;
+  background: #12537b !important;
+  color: #b7e9ff !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state.state-waiting {
+  border-color: rgba(255, 198, 80, 0.58) !important;
+  background: #674b13 !important;
+  color: #ffe397 !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state.state-failed {
+  border-color: rgba(255, 103, 119, 0.58) !important;
+  background: #642b37 !important;
+  color: #ffb0ba !important;
+}
+
+.teddy-factory-pipeline .ref-machine-state.state-pending {
+  border-color: rgba(121, 158, 193, 0.34) !important;
+  background: #173650 !important;
+  color: #bfd0df !important;
+}
+
+/* Görevler sayfasında konveyör rayı kontrol paneli gibi gizlensin */
+.teddy-factory-pipeline .ref-conveyor-rail,
+.teddy-factory-pipeline .teddy-flow-light {
+  display: none !important;
+}
+
+.teddy-factory-pipeline .ref-machine-row {
+  z-index: 8 !important;
+}
+
+.teddy-factory-pipeline .ref-worker:not(.desk-worker) {
+  top: -12px !important;
+}
+
+.teddy-factory-pipeline .teddy-factory-stage {
+  height: 372px !important;
+  min-height: 372px !important;
+}
+
+.reference-dashboard-root[data-active-view="tasks"] .teddy-factory-pipeline .ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 36px !important;
+  height: 78px !important;
+  min-height: 78px !important;
+  max-height: 78px !important;
+}
+
+.reference-dashboard-root[data-active-view="tasks"] .teddy-factory-pipeline .ref-machine-face > span {
+  font-size: 8.5px !important;
+}
+
+@media (max-width: 1450px) {
+  .teddy-factory-pipeline .teddy-factory-stage {
+    height: 350px !important;
+    min-height: 350px !important;
+  }
+
+  .teddy-factory-pipeline .ref-machine-face {
+    left: 13.5% !important;
+    right: 13.5% !important;
+    bottom: 32px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+
+  .teddy-factory-pipeline .ref-machine-face > span {
+    font-size: 8px !important;
+    max-height: 20px !important;
+  }
+
+  .teddy-factory-pipeline .ref-machine-state {
+    font-size: 8px !important;
+  }
+}
+
+/* ——— Altta yürüyen ziyaretçi ayıcık ——— */
+
+.teddy-factory-stage.has-runner {
+  padding-bottom: 0;
+}
+
+.teddy-runner {
+  position: absolute;
+  bottom: 2px;
+  z-index: 40;
+  width: 88px;
+  height: 96px;
+  margin: 0;
+  transform: translateX(-50%);
+  transition: left 0.85s cubic-bezier(0.4, 0.05, 0.2, 1);
+  pointer-events: none;
+}
+
+.teddy-runner .factory-svg-bear {
+  width: 100%;
+  height: 100%;
+}
+
+.teddy-runner.is-walking .factory-bear-body {
+  animation: teddyRunnerWalk 0.32s ease-in-out infinite !important;
+}
+
+.teddy-runner.is-walking .factory-bear-arms {
+  animation: teddyRunnerArms 0.32s ease-in-out infinite !important;
+}
+
+.teddy-runner.mood-happy .factory-bear-body {
+  animation: teddyRunnerCelebrate 0.7s ease-in-out infinite !important;
+}
+
+.teddy-runner.mood-happy .bear-papers {
+  animation: teddyPaperWave 0.7s ease-in-out infinite;
+  transform-origin: 100px 150px;
+}
+
+.teddy-runner.mood-sad .factory-bear-body {
+  animation: teddyRunnerSad 1.4s ease-in-out infinite !important;
+}
+
+.teddy-runner.mood-thinking .factory-bear-body {
+  animation: teddyRunnerSigh 2.2s ease-in-out infinite !important;
+}
+
+.teddy-runner.mood-angry .factory-bear-body {
+  animation: teddyRunnerAngry 0.55s ease-in-out infinite !important;
+}
+
+.teddy-growl {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  z-index: 6;
+  min-width: 52px;
+  padding: 4px 10px;
+  border: 1.5px solid rgba(255, 110, 90, 0.55);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(90, 28, 28, 0.96),
+    rgba(52, 16, 20, 0.98)
+  );
+  box-shadow:
+    0 0 14px rgba(255, 90, 70, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+  color: #ffb4a8;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-align: center;
+  transform: translateX(-50%);
+  animation: teddyGrowlPulse 0.9s ease-in-out infinite;
+}
+
+.teddy-growl strong {
+  font-weight: 900;
+}
+
+@keyframes teddyRunnerAngry {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-3px) rotate(3deg);
+  }
+}
+
+@keyframes teddyGrowlPulse {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.08);
+    opacity: 1;
+  }
+}
+
+.teddy-think-bubble {
+  position: absolute;
+  top: -18px;
+  right: -6px;
+  z-index: 5;
+  min-width: 34px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(140, 190, 230, 0.55);
+  border-radius: 14px;
+  background: rgba(18, 42, 68, 0.95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  color: #d7ebff;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.teddy-think-bubble i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(18, 42, 68, 0.95);
+  border: 1px solid rgba(140, 190, 230, 0.45);
+}
+
+.teddy-think-bubble i:nth-child(2) {
+  left: 4px;
+  bottom: -7px;
+}
+
+.teddy-think-bubble i:nth-child(3) {
+  left: -2px;
+  bottom: -14px;
+  width: 5px;
+  height: 5px;
+}
+
+.teddy-think-bubble i:nth-child(4) {
+  display: none;
+}
+
+.teddy-sigh {
+  position: absolute;
+  top: 8px;
+  left: -28px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #8eb4d4;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 650;
+  opacity: 0.85;
+  animation: teddySighText 2.4s ease-in-out infinite;
+}
+
+.teddy-sigh em {
+  font-style: italic;
+}
+
+.teddy-sigh em:last-child {
+  margin-left: 8px;
+  animation-delay: 0.4s;
+}
+
+@keyframes teddyRunnerWalk {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+
+@keyframes teddyRunnerArms {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+@keyframes teddyRunnerCelebrate {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+@keyframes teddyPaperWave {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes teddyRunnerSad {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+@keyframes teddyRunnerSigh {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-2px) scale(1.02);
+  }
+  70% {
+    transform: translateY(1px) scale(0.99);
+  }
+}
+
+@keyframes teddySighText {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+/* ——— Ortak: masa çalışanı + evraklar (Kontrol Paneli & Görevler) ——— */
+
+.teddy-factory-pipeline .teddy-factory-stage.has-runner {
+  height: 360px !important;
+  min-height: 360px !important;
+  overflow: hidden !important;
+}
+
+.teddy-factory-pipeline .has-runner .ref-machine-row {
+  bottom: 88px !important;
+  top: 0 !important;
+  left: 1% !important;
+  right: 1% !important;
+  gap: 14px !important;
+  z-index: 8 !important;
+}
+
+.teddy-factory-pipeline .ref-worker.desk-worker {
+  position: absolute !important;
+  top: auto !important;
+  left: 50% !important;
+  bottom: 198px !important;
+  width: 110px !important;
+  height: 124px !important;
+  z-index: 20 !important;
+  overflow: visible !important;
+  transform: translateX(-50%) !important;
+  animation: none !important;
+  pointer-events: none;
+}
+
+.teddy-factory-pipeline .ref-worker.desk-worker .factory-svg-bear {
+  width: 100%;
+  height: 100%;
+  transform: translateY(16px) !important;
+}
+
+.teddy-factory-pipeline .ref-machine:not(.state-active) .desk-worker .factory-bear-body,
+.teddy-factory-pipeline .ref-machine:not(.state-active) .desk-worker .factory-bear-arms {
+  animation: none !important;
+}
+
+.teddy-factory-pipeline .ref-machine.state-active .desk-worker.is-busy .factory-bear-body {
+  transform-origin: 95px 182px !important;
+  animation: teddyDeskWorking 0.75s ease-in-out infinite !important;
+}
+
+.teddy-factory-pipeline .ref-machine.state-active .desk-worker.is-busy .factory-bear-arms {
+  transform-origin: 95px 150px !important;
+  animation: teddyDeskWorkingArms 0.55s ease-in-out infinite !important;
+}
+
+.teddy-factory-pipeline .ref-machine.state-active .desk-worker.is-busy .bear-paper-left {
+  animation: deskPaperLeft 0.85s ease-in-out infinite;
+  transform-origin: 26px 141px;
+}
+
+.teddy-factory-pipeline .ref-machine.state-active .desk-worker.is-busy .bear-paper-right {
+  animation: deskPaperRight 0.85s ease-in-out infinite;
+  transform-origin: 165px 140px;
+}
+
+.teddy-factory-pipeline .desk-paper {
+  position: absolute;
+  width: 18px;
+  height: 24px;
+  border: 1px solid rgba(170, 198, 222, 0.7);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffffff, #e8f0f8);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.teddy-factory-pipeline .desk-paper::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 5px;
+  height: 2px;
+  background: rgba(110, 140, 168, 0.55);
+  box-shadow:
+    0 5px 0 rgba(110, 140, 168, 0.45),
+    0 10px 0 rgba(110, 140, 168, 0.35);
+}
+
+.teddy-factory-pipeline .desk-paper-left {
+  left: -14px;
+  top: 42px;
+  transform: rotate(-18deg);
+  animation: deskFloatLeft 1s ease-in-out infinite;
+}
+
+.teddy-factory-pipeline .desk-paper-left.mid {
+  left: -22px;
+  top: 58px;
+  width: 15px;
+  height: 20px;
+  animation-delay: 0.2s;
+  transform: rotate(-28deg);
+}
+
+.teddy-factory-pipeline .desk-paper-right {
+  right: -14px;
+  top: 40px;
+  transform: rotate(16deg);
+  animation: deskFloatRight 1s ease-in-out infinite;
+}
+
+.teddy-factory-pipeline .desk-paper-right.mid {
+  right: -20px;
+  top: 56px;
+  width: 15px;
+  height: 20px;
+  animation-delay: 0.25s;
+  transform: rotate(26deg);
+}
+
+.teddy-factory-pipeline .teddy-runner {
+  bottom: 4px !important;
+  width: 92px !important;
+  height: 100px !important;
+  z-index: 45 !important;
+}
+
+.teddy-factory-pipeline .teddy-runner .factory-svg-bear {
+  transform: none !important;
+}
+
+.teddy-factory-pipeline .has-runner .factory-machine-svg {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 250px !important;
+  transform: none !important;
+}
+
+.teddy-factory-pipeline .has-runner .ref-machine {
+  height: auto !important;
+  min-height: 300px !important;
+  overflow: visible !important;
+}
+
+@keyframes teddyDeskWorking {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-0.6deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(0.6deg);
+  }
+}
+
+@keyframes teddyDeskWorkingArms {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes deskPaperLeft {
+  0%,
+  100% {
+    transform: rotate(-12deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-24deg) translateY(-4px);
+  }
+}
+
+@keyframes deskPaperRight {
+  0%,
+  100% {
+    transform: rotate(12deg) translateY(0);
+  }
+  50% {
+    transform: rotate(24deg) translateY(-4px);
+  }
+}
+
+@keyframes deskFloatLeft {
+  0%,
+  100% {
+    transform: rotate(-18deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-28deg) translateY(-6px);
+  }
+}
+
+@keyframes deskFloatRight {
+  0%,
+  100% {
+    transform: rotate(16deg) translateY(0);
+  }
+  50% {
+    transform: rotate(28deg) translateY(-6px);
+  }
+}
+
+@media (max-width: 1500px) {
+  .teddy-factory-pipeline .teddy-factory-stage.has-runner {
+    height: 390px !important;
+    min-height: 390px !important;
+  }
+
+  .teddy-factory-pipeline .has-runner .ref-machine-row {
+    bottom: 80px !important;
+    gap: 10px !important;
+  }
+
+  .teddy-factory-pipeline .ref-worker.desk-worker {
+    bottom: 182px !important;
+    width: 100px !important;
+    height: 114px !important;
+  }
+
+  .teddy-factory-pipeline .teddy-runner {
+    width: 82px !important;
+    height: 90px !important;
+  }
+
+  .teddy-factory-pipeline .has-runner .factory-machine-svg {
+    height: 230px !important;
+  }
+}
+
+
+
+/* TASK_STATUS_SKIPPED_SAFE_V1 */
+.control-production-pipeline
+.ref-machine-state.state-skipped {
+  border-color: rgba(157,171,184,.42) !important;
+  background: #293946 !important;
+  color: #d3dbe2 !important;
+}
+
+.control-production-pipeline
+.ref-machine.state-skipped {
+  opacity: .78;
+}
+
+/* BACKEND_DRIVEN_TEDDY_PIPELINE_LAYOUT_V1 */
+
+/*
+  FactoryVisuals.css 6 kolonu !important ile sabitliyordu.
+  Gerçek istasyon sayısını burada yeniden belirliyoruz.
+*/
+.teddy-factory-pipeline.station-count-4
+.ref-machine-row {
+  left: 6% !important;
+  right: 6% !important;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr)) !important;
+  gap: 22px !important;
+}
+
+.teddy-factory-pipeline.station-count-6
+.ref-machine-row {
+  grid-template-columns:
+    repeat(6, minmax(0, 1fr)) !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.teddy-flow-light-0 {
+  left: 13% !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.teddy-flow-light-1 {
+  left: 38% !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.teddy-flow-light-2 {
+  left: 63% !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.teddy-flow-light-3 {
+  left: 88% !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.ref-machine-face > span {
+  max-width: none !important;
+}
+
+.teddy-factory-pipeline.station-count-4
+.ref-machine-face {
+  left: 12% !important;
+  right: 12% !important;
+}
+
+@media (max-width: 1120px) {
+  .teddy-factory-pipeline.station-count-4
+  .teddy-factory-stage,
+  .teddy-factory-pipeline.station-count-4
+  .teddy-pipeline-head {
+    min-width: 760px !important;
+  }
+}
+
+/* TASK_PIPELINE_MATCH_CONTROL_DESKS_V3
+   Görevler = Kontrol Paneli kompakt ölçek; 6 masa tek satır */
+
+.reference-view-tasks .teddy-pipeline-head {
+  min-height: 54px !important;
+  padding: 9px 14px 8px !important;
+}
+
+.reference-view-tasks .teddy-pipeline-head span {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks .teddy-pipeline-head strong {
+  font-size: 17px !important;
+}
+
+.reference-view-tasks .teddy-pipeline-head small {
+  font-size: 10px !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .teddy-factory-stage,
+.reference-view-tasks .teddy-factory-pipeline .teddy-factory-stage.has-runner {
+  height: 360px !important;
+  min-height: 360px !important;
+  overflow: hidden !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-row,
+.reference-view-tasks .teddy-factory-pipeline .has-runner .ref-machine-row,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-4
+.ref-machine-row {
+  left: 0.5% !important;
+  right: 0.5% !important;
+  top: 0 !important;
+  bottom: 70px !important;
+  width: auto !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  grid-template-columns: repeat(4, minmax(0, 185px)) !important;
+}
+
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.ref-machine-row,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.has-runner
+.ref-machine-row {
+  left: 0.4% !important;
+  right: 0.4% !important;
+  bottom: 70px !important;
+  gap: 5px !important;
+  justify-content: center !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine,
+.reference-view-tasks .teddy-factory-pipeline .has-runner .ref-machine,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-4
+.ref-machine,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.ref-machine,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.has-runner
+.ref-machine {
+  width: 100% !important;
+  max-width: 185px !important;
+  height: auto !important;
+  min-height: 250px !important;
+  justify-self: center !important;
+  overflow: visible !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .factory-machine-svg,
+.reference-view-tasks .teddy-factory-pipeline .has-runner .factory-machine-svg,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-4
+.factory-machine-svg {
+  position: absolute !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 0 !important;
+  width: 185px !important;
+  max-width: 100% !important;
+  height: 175px !important;
+  margin: 0 !important;
+  transform: translateX(-50%) !important;
+  opacity: 1 !important;
+}
+
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.factory-machine-svg,
+.reference-view-tasks
+.teddy-factory-pipeline.station-count-6
+.has-runner
+.factory-machine-svg {
+  width: 100% !important;
+  max-width: 185px !important;
+  height: 175px !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-worker.desk-worker {
+  position: absolute !important;
+  top: auto !important;
+  left: 50% !important;
+  bottom: 142px !important;
+  width: 74px !important;
+  height: 86px !important;
+  z-index: 20 !important;
+  overflow: visible !important;
+  transform: translateX(-50%) !important;
+  animation: none !important;
+}
+
+.reference-view-tasks
+.teddy-factory-pipeline
+.ref-worker.desk-worker
+.factory-svg-bear {
+  width: 100% !important;
+  height: 100% !important;
+  transform: translateY(10px) !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 36px !important;
+  height: 78px !important;
+  min-height: 78px !important;
+  max-height: 78px !important;
+  padding: 5px 5px 4px !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border-radius: 9px !important;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 18, 32, 0.96),
+    rgba(4, 14, 26, 0.98)
+  ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(117, 171, 219, 0.12),
+    inset 0 0 16px rgba(65, 145, 221, 0.08) !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin-bottom: 0 !important;
+  flex: 0 0 auto;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-icon svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-face strong {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: #f7fbff !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.1 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-face > span {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: 22px !important;
+  display: -webkit-box !important;
+  margin-top: 1px !important;
+  overflow: hidden !important;
+  color: #e2edf8 !important;
+  font-size: 8.5px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  white-space: normal !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.reference-view-tasks .teddy-factory-pipeline .ref-machine-state {
+  position: relative !important;
+  z-index: 40 !important;
+  min-width: 58px !important;
+  min-height: 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-top: 2px !important;
+  padding: 1px 5px !important;
+  border-radius: 999px !important;
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.reference-view-tasks .teddy-ai-response-beacon {
+  min-width: 130px !important;
+  min-height: 40px !important;
+  height: auto !important;
+}
+
+.reference-view-tasks .teddy-ai-response-copy strong {
+  font-size: 8px !important;
+}
+
+.reference-view-tasks .teddy-ai-response-copy small {
+  font-size: 7px !important;
+}
+
+@media (max-width: 1450px) {
+  .reference-view-tasks .teddy-factory-pipeline .teddy-factory-stage,
+  .reference-view-tasks .teddy-factory-pipeline .teddy-factory-stage.has-runner {
+    height: 340px !important;
+    min-height: 340px !important;
+  }
+
+  .reference-view-tasks .teddy-factory-pipeline .ref-machine-row,
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-4
+  .ref-machine-row {
+    grid-template-columns: repeat(4, minmax(0, 170px)) !important;
+    gap: 5px !important;
+    bottom: 64px !important;
+  }
+
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-6
+  .ref-machine-row,
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-6
+  .has-runner
+  .ref-machine-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+
+  .reference-view-tasks .teddy-factory-pipeline .ref-machine,
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-4
+  .ref-machine,
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-6
+  .ref-machine {
+    max-width: 170px !important;
+    min-height: 230px !important;
+  }
+
+  .reference-view-tasks .teddy-factory-pipeline .factory-machine-svg,
+  .reference-view-tasks .teddy-factory-pipeline .has-runner .factory-machine-svg,
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-4
+  .factory-machine-svg {
+    width: 170px !important;
+    height: 160px !important;
+  }
+
+  .reference-view-tasks
+  .teddy-factory-pipeline.station-count-6
+  .factory-machine-svg {
+    width: 100% !important;
+    max-width: 170px !important;
+    height: 160px !important;
+  }
+
+  .reference-view-tasks .teddy-factory-pipeline .ref-worker.desk-worker {
+    width: 66px !important;
+    height: 76px !important;
+    bottom: 128px !important;
+  }
+
+  .reference-view-tasks .teddy-factory-pipeline .ref-machine-face {
+    left: 13.5% !important;
+    right: 13.5% !important;
+    bottom: 32px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+}
+
+/* TEDDY_AI_RESPONSE_BEACON_STYLE_V1 */
+
+.teddy-factory-pipeline {
+  position: relative;
+}
+
+.teddy-ai-response-beacon {
+  z-index: 60;
+  min-width: 158px;
+  height: auto;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 7px 12px 7px 7px;
+  overflow: visible;
+  border: 1px solid rgba(72, 232, 180, 0.5);
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(8, 54, 62, 0.97),
+    rgba(6, 34, 54, 0.98)
+  );
+  box-shadow:
+    0 0 0 1px rgba(75, 231, 185, 0.08),
+    0 0 20px rgba(54, 224, 177, 0.22),
+    0 10px 22px rgba(0, 0, 0, 0.24);
+  color: inherit;
+  text-decoration: none;
+  animation:
+    teddyAiBeaconFloat 2.4s ease-in-out infinite,
+    teddyAiBeaconGlow 1.7s ease-in-out infinite;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    filter 160ms ease;
+}
+
+/* Ayıcığın sağında konuşma balonu — son masa çalışanı */
+.teddy-ai-response-beacon.is-speech {
+  position: absolute;
+  left: calc(100% - 4px);
+  top: 2px;
+  right: auto;
+  z-index: 70;
+  transform-origin: left center;
+  pointer-events: auto;
+}
+
+.teddy-ai-response-beacon.is-speech::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 16px;
+  width: 14px;
+  height: 14px;
+  border-left: 1px solid rgba(72, 232, 180, 0.5);
+  border-bottom: 1px solid rgba(72, 232, 180, 0.5);
+  border-radius: 0 0 0 3px;
+  background: linear-gradient(
+    135deg,
+    rgba(8, 54, 62, 0.97),
+    rgba(6, 34, 54, 0.98)
+  );
+  transform: rotate(45deg);
+  box-shadow: -4px 4px 10px rgba(54, 224, 177, 0.12);
+}
+
+.teddy-factory-pipeline .ref-worker.desk-worker {
+  overflow: visible !important;
+}
+
+.teddy-factory-pipeline .ref-machine.is-last-desk {
+  overflow: visible !important;
+  z-index: 28 !important;
+}
+
+.teddy-factory-pipeline .teddy-factory-stage.has-runner:has(.teddy-ai-response-beacon) {
+  overflow: visible !important;
+}
+
+.teddy-ai-response-beacon.is-fallback {
+  left: auto;
+  right: 24px;
+  bottom: 18px;
+  top: auto;
+}
+
+.teddy-ai-response-beacon.is-fallback::before {
+  display: none;
+}
+
+.teddy-ai-response-beacon:hover {
+  transform: translateY(-2px) scale(1.03);
+  border-color: rgba(99, 255, 204, 0.78);
+  filter: brightness(1.08);
+}
+
+.teddy-ai-response-beacon.is-speech:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+.teddy-ai-response-terminal {
+  position: relative;
+  width: 34px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(82, 225, 184, 0.5);
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 36, 49, 0.98),
+    rgba(4, 20, 31, 0.98)
+  );
+  box-shadow: inset 0 0 12px rgba(60, 225, 180, 0.12);
+}
+
+.teddy-ai-response-terminal::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: -10px;
+  height: 8px;
+  background: rgba(91, 255, 205, 0.16);
+  filter: blur(2px);
+  animation: teddyAiScan 1.55s linear infinite;
+}
+
+.teddy-ai-response-terminal b {
+  color: #78efc7;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+}
+
+.teddy-ai-response-terminal i {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  width: 7px;
+  height: 2px;
+  border-radius: 99px;
+  background: #73efc5;
+  box-shadow: 0 0 7px rgba(115, 239, 197, 0.65);
+  animation: teddyAiCursor 0.72s steps(1) infinite;
+}
+
+.teddy-ai-response-copy {
+  min-width: 0;
+}
+
+.teddy-ai-response-copy strong {
+  display: block;
+  color: #dffdf3;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.teddy-ai-response-copy small {
+  display: block;
+  margin-top: 3px;
+  color: #74bca8;
+  font-size: 7.5px;
+  white-space: nowrap;
+}
+
+@keyframes teddyAiBeaconFloat {
+  0%,
+  100% {
+    margin-top: 0;
+  }
+  50% {
+    margin-top: -4px;
+  }
+}
+
+@keyframes teddyAiBeaconGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(75, 231, 185, 0.08),
+      0 0 16px rgba(54, 224, 177, 0.16),
+      0 10px 22px rgba(0, 0, 0, 0.24);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(75, 231, 185, 0.18),
+      0 0 28px rgba(54, 224, 177, 0.34),
+      0 10px 22px rgba(0, 0, 0, 0.24);
+  }
+}
+
+@keyframes teddyAiScan {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(48px);
+  }
+}
+
+@keyframes teddyAiCursor {
+  50% {
+    opacity: 0.18;
+  }
+}
+
+@media (max-width: 1180px) {
+  .teddy-ai-response-beacon.is-speech {
+    min-width: 140px;
+    transform: scale(0.92);
+    transform-origin: left center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .teddy-ai-response-beacon,
+  .teddy-ai-response-terminal::after,
+  .teddy-ai-response-terminal i {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,480 @@
+.task-live-panel {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(76, 143, 199, .24);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(8,31,51,.96), rgba(5,22,38,.98));
+}
+
+.task-live-panel.empty {
+  min-height: 94px;
+  display: grid;
+  place-items: center;
+}
+
+.task-live-empty {
+  color: #7595ae;
+  font-size: 12px;
+}
+
+.task-live-head {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 17px;
+  border-bottom: 1px solid rgba(77, 137, 187, .14);
+}
+
+.task-live-head > div:first-child > span {
+  display: block;
+  color: #55c4ff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .15em;
+}
+
+.task-live-head h2 {
+  margin: 4px 0 0;
+  color: #eef8ff;
+  font-size: 17px;
+}
+
+.task-live-head p {
+  margin: 4px 0 0;
+  color: #6f8da5;
+  font-size: 9px;
+}
+
+.task-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(89, 142, 184, .22);
+  border-radius: 999px;
+  color: #7896ae;
+  background: rgba(8, 30, 49, .74);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.task-live-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #73899d;
+}
+
+.task-live-badge.live {
+  border-color: rgba(69, 221, 166, .28);
+  color: #5ce0ad;
+}
+
+.task-live-badge.live i {
+  background: #46dfa5;
+  box-shadow: 0 0 9px rgba(70, 223, 165, .7);
+  animation: taskLivePulse 1.25s ease-in-out infinite;
+}
+
+@keyframes taskLivePulse {
+  50% {
+    opacity: .42;
+    transform: scale(.82);
+  }
+}
+
+.task-live-now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 17px;
+  border-bottom: 1px solid rgba(77, 137, 187, .10);
+  background: rgba(8, 42, 67, .34);
+}
+
+.task-live-now-copy span,
+.task-live-agent span {
+  display: block;
+  color: #6e91ac;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.task-live-now-copy strong {
+  display: block;
+  margin-top: 4px;
+  color: #dcecf8;
+  font-size: 11px;
+}
+
+.task-live-agent {
+  min-width: 150px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(89, 143, 184, .15);
+}
+
+.task-live-agent strong {
+  display: block;
+  margin-top: 4px;
+  color: #eaf6ff;
+  font-size: 9px;
+}
+
+.task-live-agent small {
+  display: block;
+  margin-top: 2px;
+  color: #6c8aa2;
+  font-size: 7px;
+}
+
+.task-live-step-grid {
+  display: grid;
+  gap: 7px;
+  padding: 13px 15px;
+}
+
+.task-live-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid rgba(77, 133, 179, .12);
+  border-radius: 10px;
+  background: rgba(5, 24, 40, .68);
+}
+
+.task-live-step-index {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #385f80;
+  border-radius: 8px;
+  color: #6f8fa9;
+  background: rgba(10, 43, 67, .72);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.task-live-step-copy strong {
+  display: block;
+  color: #ccdeeb;
+  font-size: 10px;
+}
+
+.task-live-step-copy span {
+  display: block;
+  margin-top: 2px;
+  color: #66859d;
+  font-size: 8px;
+}
+
+.task-live-step > small {
+  color: #67869e;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.task-live-step.state-done {
+  border-color: rgba(66, 220, 164, .14);
+}
+
+.task-live-step.state-done .task-live-step-index {
+  border-color: rgba(66, 220, 164, .55);
+  color: #54dfa9;
+  background: rgba(39, 130, 97, .15);
+}
+
+.task-live-step.state-done > small {
+  color: #54dca7;
+}
+
+.task-live-step.state-active {
+  border-color: rgba(72, 190, 255, .34);
+  background: rgba(10, 48, 76, .78);
+  box-shadow: inset 3px 0 0 #46bdff;
+}
+
+.task-live-step.state-active .task-live-step-index {
+  border-color: #45bfff;
+  color: #70d0ff;
+}
+
+.task-live-step.state-active > small {
+  color: #62c8ff;
+}
+
+.task-live-step.state-failed {
+  border-color: rgba(255, 101, 119, .26);
+  box-shadow: inset 3px 0 0 #ff6577;
+}
+
+.task-live-step.state-failed .task-live-step-index,
+.task-live-step.state-failed > small {
+  color: #ff7b8a;
+}
+
+.task-live-step.state-skipped {
+  opacity: .62;
+}
+
+.task-live-technical {
+  border-top: 1px solid rgba(77, 137, 187, .13);
+}
+
+.task-live-technical summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  cursor: pointer;
+  color: #91aec5;
+  font-size: 9px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.task-live-technical summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-live-technical summary small {
+  color: #5f8099;
+  font-size: 7px;
+}
+
+.task-live-logbox {
+  max-height: 230px;
+  overflow-y: auto;
+  padding: 7px 12px 12px;
+  border-top: 1px solid rgba(77, 137, 187, .08);
+  background: rgba(3, 16, 27, .72);
+  scrollbar-width: thin;
+}
+
+.task-live-log-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(79, 130, 171, .07);
+}
+
+.task-live-log-row > span {
+  color: #4f7896;
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-live-log-row code {
+  overflow-wrap: anywhere;
+  color: #9fc0d8;
+  font-family: Consolas, "Liberation Mono", monospace;
+  font-size: 8px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.task-live-no-log {
+  padding: 16px 4px;
+  color: #66869f;
+  font-size: 9px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .task-live-now {
+    grid-template-columns: 1fr;
+  }
+
+  .task-live-agent {
+    padding: 10px 0 0;
+    border-top: 1px solid rgba(89, 143, 184, .15);
+    border-left: 0;
+  }
+
+  .task-live-step {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .task-live-step > small {
+    grid-column: 2;
+  }
+}
+
+/* TASK_LIVE_COMPACT_V1 */
+
+.reference-view-tasks .task-live-panel {
+  height: 448px;
+  display: flex;
+  flex-direction: column;
+}
+
+.reference-view-tasks .task-live-head {
+  min-height: 60px;
+  padding: 10px 13px;
+}
+
+.reference-view-tasks .task-live-head h2 {
+  font-size: 15px;
+}
+
+.reference-view-tasks .task-live-head p {
+  margin-top: 2px;
+}
+
+.reference-view-tasks .task-live-now {
+  grid-template-columns: minmax(0,1fr) auto;
+  padding: 8px 13px;
+}
+
+.reference-view-tasks .task-live-step-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 5px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.reference-view-tasks .task-live-step {
+  min-height: 39px;
+  grid-template-columns: 25px minmax(0,1fr) auto;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.reference-view-tasks .task-live-step-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 8px;
+}
+
+.reference-view-tasks .task-live-step-copy strong {
+  font-size: 9px;
+}
+
+.reference-view-tasks .task-live-step-copy span {
+  margin-top: 1px;
+  font-size: 7.5px;
+}
+
+.reference-view-tasks .task-live-step > small {
+  font-size: 7px;
+}
+
+.reference-view-tasks .task-live-technical {
+  flex: 0 0 auto;
+}
+
+.reference-view-tasks .task-live-technical summary {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.reference-view-tasks .task-live-logbox {
+  max-height: 135px;
+}
+
+@media (max-width: 1180px) {
+  .reference-view-tasks .task-live-panel {
+    height: auto;
+    max-height: none;
+  }
+
+  .reference-view-tasks .task-live-step-grid {
+    max-height: none;
+  }
+}
+
+
+/* TASK_LIVE_READABILITY_V2 */
+
+.reference-view-tasks
+.task-live-head > div:first-child > span {
+  font-size: 10px !important;
+}
+
+.reference-view-tasks
+.task-live-head h2 {
+  font-size: 18px !important;
+}
+
+.reference-view-tasks
+.task-live-head p {
+  font-size: 10.5px !important;
+}
+
+.reference-view-tasks
+.task-live-badge {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+.task-live-now-copy span,
+.reference-view-tasks
+.task-live-agent span {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-live-now-copy strong {
+  font-size: 13px !important;
+}
+
+.reference-view-tasks
+.task-live-agent strong {
+  font-size: 11px !important;
+}
+
+.reference-view-tasks
+.task-live-agent small {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-live-step-copy strong {
+  font-size: 11.5px !important;
+}
+
+.reference-view-tasks
+.task-live-step-copy span {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+.task-live-step > small {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-live-technical summary {
+  font-size: 10.5px !important;
+}
+
+.reference-view-tasks
+.task-live-technical summary small {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-live-log-row > span {
+  font-size: 8.5px !important;
+}
+
+.reference-view-tasks
+.task-live-log-row code {
+  font-size: 10px !important;
+  line-height: 1.5 !important;
+}

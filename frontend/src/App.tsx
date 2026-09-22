@@ -10,6 +10,7 @@ import {
   approveTask,
   createProject,
   createTask,
+  browseProjectFolder,
   getControlCenterStatus,
   getTaskDiff,
   getTaskAgentExecutions,
@@ -38,6 +39,9 @@ import {
 import { UiIcon } from "./UiIcon"
 
 import "./App.css"
+
+import { ReferenceDashboard } from "./ReferenceDashboard"
+import "./theme/FactoryTheme.css"
 
 const stateLabels: Record<string, string> = {
   queued: "S\u0131rada",
@@ -68,6 +72,474 @@ const pipelineTools: Record<string, string> = {
   tests: "Docker Sandbox",
   diff: "Git Diff",
   approval: "Manuel Onay",
+}
+
+const showcaseStatusLabels: Record<string, string> = {
+  pending: "Bekliyor",
+  active: "İşleniyor",
+  completed: "Tamam",
+  success: "Tamam",
+  waiting: "Onay Bekliyor",
+  failed: "Hata",
+}
+
+const showcaseBlueprint = [
+  {
+    key: "ideas",
+    label: "IDEAS",
+    subtitle: "Task Intake",
+    icon: "task",
+    teddy: "Planner",
+  },
+  {
+    key: "analysis",
+    label: "ANALYST",
+    subtitle: "Analyze & plan",
+    icon: "repo_analysis",
+    teddy: "Analyst",
+  },
+  {
+    key: "coding",
+    label: "CODER",
+    subtitle: "Write code",
+    icon: "model",
+    teddy: "Coder",
+  },
+  {
+    key: "review",
+    label: "REVIEWER",
+    subtitle: "Review & improve",
+    icon: "patch",
+    teddy: "Reviewer",
+  },
+  {
+    key: "verify",
+    label: "VERIFIER",
+    subtitle: "Test & validate",
+    icon: "tests",
+    teddy: "Verifier",
+  },
+  {
+    key: "merge",
+    label: "DEPLOY",
+    subtitle: "Ship to production",
+    icon: "approval",
+    teddy: "Lead",
+  },
+]
+
+function FactoryBear({
+  accentIndex,
+  active,
+}: {
+  accentIndex: number
+  active: boolean
+}) {
+  const accents = [
+    "#ffb44c",
+    "#45a7ff",
+    "#9b6dff",
+    "#ff9f43",
+    "#37dca0",
+    "#45bfff",
+  ]
+
+  const accent =
+    accents[accentIndex % accents.length]
+
+  const role = accentIndex % 6
+  const uid = `factory-bear-${accentIndex}`
+
+  return (
+    <svg
+      className={`factory-bear-svg bear-role-${role} ${
+        active ? "is-active" : ""
+      }`}
+      viewBox="0 0 132 138"
+      aria-hidden="true"
+    >
+      <defs>
+        <radialGradient
+          id={`${uid}-fur`}
+          cx="38%"
+          cy="28%"
+          r="76%"
+        >
+          <stop
+            offset="0%"
+            stopColor="#e8aa70"
+          />
+          <stop
+            offset="55%"
+            stopColor="#bf7c49"
+          />
+          <stop
+            offset="100%"
+            stopColor="#8f552f"
+          />
+        </radialGradient>
+
+        <linearGradient
+          id={`${uid}-cloth`}
+          x1="0"
+          y1="0"
+          x2="1"
+          y2="1"
+        >
+          <stop
+            offset="0%"
+            stopColor={accent}
+          />
+          <stop
+            offset="100%"
+            stopColor="#17324f"
+          />
+        </linearGradient>
+
+        <filter
+          id={`${uid}-shadow`}
+          x="-50%"
+          y="-50%"
+          width="200%"
+          height="220%"
+        >
+          <feDropShadow
+            dx="0"
+            dy="7"
+            stdDeviation="6"
+            floodColor="#000"
+            floodOpacity="0.45"
+          />
+        </filter>
+
+        <filter
+          id={`${uid}-glow`}
+          x="-80%"
+          y="-80%"
+          width="260%"
+          height="260%"
+        >
+          <feGaussianBlur
+            stdDeviation="3.2"
+            result="blur"
+          />
+
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g filter={`url(#${uid}-shadow)`}>
+        <ellipse
+          cx="66"
+          cy="126"
+          rx="34"
+          ry="7"
+          fill="#020814"
+          opacity="0.42"
+        />
+
+        <circle
+          cx="34"
+          cy="37"
+          r="18"
+          fill={`url(#${uid}-fur)`}
+        />
+
+        <circle
+          cx="98"
+          cy="37"
+          r="18"
+          fill={`url(#${uid}-fur)`}
+        />
+
+        <circle
+          cx="34"
+          cy="37"
+          r="9"
+          fill="#e6aa73"
+        />
+
+        <circle
+          cx="98"
+          cy="37"
+          r="9"
+          fill="#e6aa73"
+        />
+
+        <ellipse
+          cx="66"
+          cy="102"
+          rx="31"
+          ry="31"
+          fill={`url(#${uid}-cloth)`}
+        />
+
+        <circle
+          cx="66"
+          cy="60"
+          r="43"
+          fill={`url(#${uid}-fur)`}
+        />
+
+        <ellipse
+          cx="66"
+          cy="72"
+          rx="21"
+          ry="16"
+          fill="#f2c99e"
+        />
+
+        <circle
+          cx="51"
+          cy="56"
+          r="5"
+          fill="#161311"
+        />
+
+        <circle
+          cx="81"
+          cy="56"
+          r="5"
+          fill="#161311"
+        />
+
+        <circle
+          cx="49.5"
+          cy="54.5"
+          r="1.5"
+          fill="#ffffff"
+        />
+
+        <circle
+          cx="79.5"
+          cy="54.5"
+          r="1.5"
+          fill="#ffffff"
+        />
+
+        <ellipse
+          cx="66"
+          cy="68"
+          rx="6"
+          ry="5"
+          fill="#2e2119"
+        />
+
+        <path
+          d="M58 76c4.8 5 11.2 5 16 0"
+          fill="none"
+          stroke="#6e422b"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+
+        <path
+          d="M39 96c8-8 46-8 54 0v24H39z"
+          fill={`url(#${uid}-cloth)`}
+        />
+
+        <circle
+          cx="44"
+          cy="101"
+          r="10"
+          fill="#b87343"
+        />
+
+        <circle
+          cx="88"
+          cy="101"
+          r="10"
+          fill="#b87343"
+        />
+
+        {/* ANALYST - gözlük */}
+        {role === 1 && (
+          <g>
+            <circle
+              cx="51"
+              cy="56"
+              r="11"
+              fill="none"
+              stroke="#172238"
+              strokeWidth="4"
+            />
+
+            <circle
+              cx="81"
+              cy="56"
+              r="11"
+              fill="none"
+              stroke="#172238"
+              strokeWidth="4"
+            />
+
+            <path
+              d="M62 56h8"
+              stroke="#172238"
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+          </g>
+        )}
+
+        {/* CODER - kulaklık */}
+        {role === 2 && (
+          <g>
+            <path
+              d="M31 51c0-25 14-39 35-39s35 14 35 39"
+              fill="none"
+              stroke={accent}
+              strokeWidth="8"
+              strokeLinecap="round"
+            />
+
+            <rect
+              x="24"
+              y="47"
+              width="13"
+              height="27"
+              rx="6.5"
+              fill={accent}
+            />
+
+            <rect
+              x="95"
+              y="47"
+              width="13"
+              height="27"
+              rx="6.5"
+              fill={accent}
+            />
+          </g>
+        )}
+
+        {/* REVIEWER / VERIFIER / DEPLOY - şapka */}
+        {(role === 3 ||
+          role === 4 ||
+          role === 5) && (
+          <g>
+            <path
+              d="M36 31c7-18 22-24 34-22 15 2 24 10 29 24-22-4-42-4-63-2z"
+              fill={
+                role === 4
+                  ? "#168d67"
+                  : role === 5
+                    ? "#e8f3ff"
+                    : "#2862a2"
+              }
+            />
+
+            <path
+              d="M70 28c13-1 24 1 34 5-8 5-18 7-30 6z"
+              fill={
+                role === 5
+                  ? "#74b7ff"
+                  : accent
+              }
+            />
+
+            {role === 5 && (
+              <text
+                x="63"
+                y="27"
+                textAnchor="middle"
+                fill="#306db2"
+                fontSize="13"
+                fontWeight="900"
+              >
+                A
+              </text>
+            )}
+          </g>
+        )}
+
+        {/* IDEAS - tablet */}
+        {role === 0 && (
+          <g filter={`url(#${uid}-glow)`}>
+            <rect
+              x="78"
+              y="85"
+              width="34"
+              height="27"
+              rx="5"
+              fill="#ffbb42"
+            />
+
+            <path
+              d="M95 91v14M88 98h14"
+              stroke="#fff3c5"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </g>
+        )}
+
+        {/* CODER - laptop */}
+        {role === 2 && (
+          <g filter={`url(#${uid}-glow)`}>
+            <rect
+              x="43"
+              y="88"
+              width="48"
+              height="28"
+              rx="5"
+              fill="#3b236d"
+              stroke={accent}
+              strokeWidth="2"
+            />
+
+            <text
+              x="67"
+              y="107"
+              textAnchor="middle"
+              fill="#f1eaff"
+              fontSize="17"
+              fontWeight="800"
+            >
+              &lt;/&gt;
+            </text>
+          </g>
+        )}
+
+        {/* VERIFIER - checklist */}
+        {role === 4 && (
+          <g filter={`url(#${uid}-glow)`}>
+            <rect
+              x="79"
+              y="84"
+              width="31"
+              height="31"
+              rx="5"
+              fill="#18a875"
+            />
+
+            <path
+              d="M87 94l5 5 10-11M87 106h15"
+              fill="none"
+              stroke="#dffff2"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </g>
+        )}
+
+        {/* DEPLOY - el kaldırma */}
+        {role === 5 && (
+          <path
+            d="M97 90c9-5 15-1 15 7-1 7-8 11-16 8"
+            fill="none"
+            stroke="#b97849"
+            strokeWidth="9"
+            strokeLinecap="round"
+          />
+        )}
+      </g>
+    </svg>
+  )
 }
 
 
@@ -146,6 +618,8 @@ function App() {
     useState(false)
 
   const [projectSubmitting, setProjectSubmitting] =
+    useState(false)
+  const [browsingFolder, setBrowsingFolder] =
     useState(false)
 
   const [actionLoading, setActionLoading] =
@@ -600,6 +1074,7 @@ function App() {
     setDiff("")
     setTaskReadResult(null)
     setTaskPlan(null)
+    setPipeline(null)
     setAgentExecutions([])
     setAgentCheckpoints([])
     setAgentHandoffs([])
@@ -816,6 +1291,34 @@ function App() {
     }
   }
 
+  async function handleBrowseProjectFolder() {
+    setBrowsingFolder(true)
+    try {
+      const result = await browseProjectFolder()
+      const selectedPath = result.path?.trim()
+      if (!selectedPath) {
+        return
+      }
+
+      setNewProjectPath(selectedPath)
+
+      if (!newProjectName.trim()) {
+        const parts = selectedPath
+          .replace(/\\/g, "/")
+          .split("/")
+          .filter(Boolean)
+        const folderName = parts[parts.length - 1]
+        if (folderName) {
+          setNewProjectName(folderName)
+        }
+      }
+    } catch {
+      // iptal / diyalog hatası
+    } finally {
+      setBrowsingFolder(false)
+    }
+  }
+
   async function handleCreateProject(
     event: FormEvent,
   ) {
@@ -1006,8 +1509,93 @@ function App() {
         controlCenter.system.memory.available_bytes
       : null
 
+  const showcaseStages = useMemo(() => {
+    const repoStage = pipelineStages.find(
+      (stage) =>
+        getStageIconName(stage.id) === "repo_analysis",
+    )
+
+    const modelStage = pipelineStages.find(
+      (stage) =>
+        getStageIconName(stage.id) === "model",
+    )
+
+    const patchStage = pipelineStages.find(
+      (stage) =>
+        getStageIconName(stage.id) === "patch",
+    )
+
+    const testStage = pipelineStages.find(
+      (stage) =>
+        getStageIconName(stage.id) === "tests",
+    )
+
+    const approvalStage = pipelineStages.find(
+      (stage) =>
+        getStageIconName(stage.id) === "approval",
+    )
+
+    return [
+      {
+        ...showcaseBlueprint[0],
+        status: selectedTask ? "completed" : "pending",
+        detail:
+          selectedTask?.task_id ??
+          "Yeni görev bekleniyor",
+      },
+      {
+        ...showcaseBlueprint[1],
+        status: repoStage?.status ?? "pending",
+        detail:
+          repoStage?.label ??
+          "Repository taraması",
+      },
+      {
+        ...showcaseBlueprint[2],
+        status: modelStage?.status ?? "pending",
+        detail:
+          selectedTask?.model ??
+          modelStage?.label ??
+          "Local model execution",
+      },
+      {
+        ...showcaseBlueprint[3],
+        status: patchStage?.status ?? "pending",
+        detail:
+          patchStage?.label ??
+          "Patch + review",
+      },
+      {
+        ...showcaseBlueprint[4],
+        status: testStage?.status ?? "pending",
+        detail:
+          testStage?.label ??
+          "Validation + tests",
+      },
+      {
+        ...showcaseBlueprint[5],
+        status:
+          selectedTask?.state === "approved"
+            ? "completed"
+            : selectedTask?.state ===
+                "ready_for_approval"
+              ? "waiting"
+              : approvalStage?.status ??
+                "pending",
+        detail:
+          selectedTask?.state ===
+          "ready_for_approval"
+            ? "İnsan onayı bekleniyor"
+            : approvalStage?.label ??
+              "Merge / release",
+      },
+    ]
+  }, [pipelineStages, selectedTask])
+
   return (
-    <div className="factory-shell">
+    <div
+      className="factory-shell reference-layout"
+    >
       <header className="factory-topbar">
         <div className="factory-brand">
           <div className="factory-logo"><UiIcon name="factory" /></div>
@@ -1030,19 +1618,27 @@ function App() {
         <nav className="main-nav">
           <button
             className={
-              activeMainView === "dashboard"
+              activeMainView === "dashboard" &&
+              activeProjectTab === "overview"
                 ? "active"
                 : ""
             }
-            onClick={() =>
+            onClick={() => {
               setActiveMainView("dashboard")
-            }
+              setActiveProjectTab("overview")
+            }}
           >
             <UiIcon name="dashboard" />
             {"Kontrol Paneli"}
           </button>
 
           <button
+            className={
+              activeMainView === "dashboard" &&
+              activeProjectTab === "running"
+                ? "active"
+                : ""
+            }
             onClick={() => {
               setActiveMainView("dashboard")
               setActiveProjectTab("running")
@@ -1053,9 +1649,10 @@ function App() {
           </button>
 
           <button
-            onClick={() =>
+            onClick={() => {
               setActiveMainView("dashboard")
-            }
+              setActiveProjectTab("overview")
+            }}
           >
             <UiIcon name="projects" />
             {"Projeler"}
@@ -1076,6 +1673,12 @@ function App() {
           </button>
 
           <button
+            className={
+              activeMainView === "dashboard" &&
+              activeProjectTab === "settings"
+                ? "active"
+                : ""
+            }
             onClick={() => {
               setActiveMainView("dashboard")
               setActiveProjectTab("settings")
@@ -1146,15 +1749,29 @@ function App() {
                 placeholder="Proje ad\u0131"
               />
 
-              <input
-                value={newProjectPath}
-                onChange={(event) =>
-                  setNewProjectPath(
-                    event.target.value,
-                  )
-                }
-                placeholder="C:\Projects\EduTest"
-              />
+              <div className="rail-form-row rail-path-picker">
+                <input
+                  value={newProjectPath}
+                  readOnly
+                  placeholder="Proje klas\u00f6r\u00fc se\u00e7"
+                  title={newProjectPath || undefined}
+                />
+                <button
+                  type="button"
+                  className="rail-browse-button"
+                  onClick={() => {
+                    void handleBrowseProjectFolder()
+                  }}
+                  disabled={
+                    browsingFolder ||
+                    projectSubmitting
+                  }
+                >
+                  {browsingFolder
+                    ? "Se\u00e7iliyor..."
+                    : "Klas\u00f6r Se\u00e7"}
+                </button>
+              </div>
 
               <button
                 type="submit"
@@ -1399,7 +2016,11 @@ function App() {
             {"Ayarlar\u0131 D\u00fczenle"}
           </button>
 
-          <button>
+          <button
+            onClick={() => {
+              setActiveMainView("models")
+            }}
+          >
             <UiIcon name="models" />
             {"Model Testi Yap"}
           </button>
@@ -1413,6 +2034,61 @@ function App() {
             : "dashboard-active"
         }`}
       >
+
+        {/* REFERENCE_DASHBOARD_RENDER — unified modern theme for all sections */}
+        <ReferenceDashboard
+          controlCenter={controlCenter}
+          selectedTask={selectedTask}
+          actionLoading={actionLoading}
+          onApproveTask={() => void handleAction("approve")}
+          onRejectTask={() => void handleAction("reject")}
+          taskReadResult={taskReadResult}
+          pipeline={pipeline}
+          pipelineStages={pipelineStages}
+          runningTasks={runningTasks}
+          tasks={tasks}
+          liveLogs={liveLogs}
+          agentExecutions={agentExecutions}
+          availableModels={availableModels}
+          onSelectTask={setSelectedTaskId}
+          onTasks={() => {
+            setActiveMainView("dashboard")
+            setActiveProjectTab("running")
+          }}
+          onSettings={() => {
+            setActiveMainView("dashboard")
+            setActiveProjectTab("settings")
+          }}
+          onModels={() => {
+            setActiveMainView("dashboard")
+            setActiveProjectTab("overview")
+          }}
+          projects={projects}
+          selectedTaskId={selectedTaskId}
+          selectedProjectId={selectedProjectId}
+          prompt={prompt}
+          maxAttempts={maxAttempts}
+          taskModelChoice={taskModelChoice}
+          submitting={submitting}
+          newProjectName={newProjectName}
+          newProjectPath={newProjectPath}
+          projectSubmitting={projectSubmitting}
+          projectCreateError={error}
+          projectSettingsName={projectSettingsName}
+          projectSettingsPath={projectSettingsPath}
+          projectSettingsSaving={projectSettingsSaving}
+          onSelectProject={setSelectedProjectId}
+          onPromptChange={setPrompt}
+          onMaxAttemptsChange={setMaxAttempts}
+          onTaskModelChoiceChange={setTaskModelChoice}
+          onCreateTask={handleCreateTask}
+          onNewProjectNameChange={setNewProjectName}
+          onNewProjectPathChange={setNewProjectPath}
+          onCreateProject={handleCreateProject}
+          onProjectSettingsNameChange={setProjectSettingsName}
+          onProjectSettingsPathChange={setProjectSettingsPath}
+          onSaveProjectSettings={handleProjectSettingsSave}
+        />
 
         {activeMainView === "models" && (
           <section className="models-page">
@@ -1797,6 +2473,118 @@ function App() {
 
         {activeProjectTab === "overview" && (
           <>
+        <section className="factory-showcase-card">
+          <div className="factory-showcase-copy">
+            <div className="factory-showcase-heading">
+              <span className="factory-showcase-kicker">
+                AI SOFTWARE FACTORY
+              </span>
+
+              <h2>
+                Small bears, big things.
+              </h2>
+
+              <p>
+                Oyuncak ayı çalışanların yönettiği üretim hattında görevler analiz edilir, kod yazılır, gözden geçirilir, doğrulanır ve dağıtıma hazırlanır.
+              </p>
+            </div>
+
+            <div className="factory-showcase-stats">
+              <div className="factory-showcase-stat">
+                <span>Aktif Görev</span>
+                <strong>
+                  {selectedTask?.task_id ?? "—"}
+                </strong>
+              </div>
+
+              <div className="factory-showcase-stat">
+                <span>Çalışan Task</span>
+                <strong>{runningTasks.length}</strong>
+              </div>
+
+              <div className="factory-showcase-stat">
+                <span>Kurulu Model</span>
+                <strong>{availableModels.length}</strong>
+              </div>
+
+              <div className="factory-showcase-stat">
+                <span>Pipeline</span>
+                <strong>
+                  {pipeline
+                    ? `${pipeline.progress_percent}%`
+                    : "—"}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="factory-floor-scene">
+            <div className="factory-machine-header">
+              <span>INPUT</span>
+              <strong>IDEAS → ANALYST → CODER → REVIEWER → VERIFIER → DEPLOY</strong>
+              <span>OUTPUT</span>
+            </div>
+
+            <div className="factory-floor-line">
+              <div className="factory-floor-cable top" />
+              <div className="factory-floor-cable bottom" />
+
+              <div className="factory-data-flow">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <span
+                    key={index}
+                    className="factory-data-packet"
+                    style={{
+                      animationDelay: `${index * 0.55}s`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {showcaseStages.map((station, index) => (
+                <div
+                  key={station.key}
+                  className={`factory-station station-${station.status}`}
+                  style={{
+                    animationDelay: `${index * 0.08}s`,
+                  }}
+                >
+                  <div className="factory-station-top">
+                    <div className="factory-station-bear">
+                      <FactoryBear
+                        accentIndex={index}
+                        active={station.status === "active"}
+                      />
+                    </div>
+
+                    <div className="factory-station-screen">
+                      <UiIcon name={station.icon} />
+                    </div>
+                  </div>
+
+                  <div className="factory-station-copy">
+                    <span>{station.subtitle}</span>
+                    <strong>{station.label}</strong>
+                    <small>{station.detail}</small>
+                  </div>
+
+                  <div
+                    className={`factory-station-status badge-${station.status}`}
+                  >
+                    {showcaseStatusLabels[
+                      station.status
+                    ] ?? station.status}
+                  </div>
+
+                  <div className="factory-station-role">
+                    {station.teddy}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section
           className={`active-task-card ${
             activeProjectTab !== "overview"

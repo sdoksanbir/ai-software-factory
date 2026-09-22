@@ -47,6 +47,7 @@ export type PipelineStage = {
 export type TaskPipeline = {
   task_id: string
   task_state: string
+  task_kind: "read" | "write" | string | null
   current_stage: string
   progress_percent: number
   stages: PipelineStage[]
@@ -304,6 +305,16 @@ export function retryTask(taskId: string) {
 
 export function listProjects() {
   return request<Project[]>("/projects")
+}
+
+
+export function browseProjectFolder() {
+  return request<{ path: string | null }>(
+    "/projects/browse-folder",
+    {
+      method: "POST",
+    },
+  )
 }
 
 

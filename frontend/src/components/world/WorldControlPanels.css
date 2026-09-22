@@ -1,0 +1,751 @@
+.world-control-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.world-panel {
+  position: relative;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(76, 132, 193, .25);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 10% 0, rgba(51, 140, 224, .08), transparent 27%),
+    linear-gradient(180deg, rgba(11,32,55,.96), rgba(7,23,40,.97));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.035),
+    0 15px 36px rgba(0,0,0,.18);
+  scroll-margin-top: 16px;
+}
+
+.world-panel::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(66,178,255,.58), rgba(145,105,255,.28), transparent);
+}
+
+.world-agents-panel {
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.world-agents-panel::before {
+  display: none;
+}
+
+.world-projects-panel {
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.world-projects-panel::before {
+  display: none;
+}
+
+.world-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 15px;
+}
+
+.world-panel-head > div:first-child > span {
+  display: block;
+  color: #63bbff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .14em;
+}
+
+.world-panel-head h2 {
+  margin: 4px 0 0;
+  color: #eef7ff;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.world-panel-head p {
+  max-width: 650px;
+  margin: 5px 0 0;
+  color: #8aa6c0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.world-primary-button,
+.world-submit {
+  min-height: 39px;
+  padding: 0 14px;
+  border: 1px solid rgba(70,184,255,.48);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #187cc2, #105787);
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.world-primary-button:disabled,
+.world-submit:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.world-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  margin-bottom: 15px;
+  padding: 13px;
+  border: 1px solid rgba(69,139,201,.22);
+  border-radius: 12px;
+  background: rgba(4,17,30,.58);
+}
+
+.world-form-wide {
+  grid-column: span 2;
+}
+
+.world-form label > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #9bb4cb;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.world-form input,
+.world-form select,
+.world-form textarea {
+  width: 100%;
+  border: 1px solid rgba(74,130,184,.34);
+  border-radius: 8px;
+  outline: 0;
+  background: #061827;
+  color: #eaf6ff;
+  font-size: 12px;
+}
+
+.world-form input,
+.world-form select {
+  min-height: 38px;
+  padding: 0 9px;
+}
+
+.world-form textarea {
+  min-height: 90px;
+  padding: 9px;
+  resize: vertical;
+}
+
+.world-task-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.world-task-column {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(74,123,174,.18);
+  border-radius: 12px;
+  background: rgba(5,19,33,.62);
+}
+
+.world-task-column-head {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 11px;
+  border-bottom: 1px solid rgba(77,120,162,.14);
+}
+
+.world-task-column-head strong {
+  color: #d8e8f8;
+  font-size: 11px;
+}
+
+.world-task-column-head span {
+  min-width: 22px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(64,138,202,.12);
+  color: #86a8c6;
+  font-size: 8px;
+}
+
+.world-task-column.tone-active .world-task-column-head {
+  box-shadow: inset 3px 0 #3ad7ff;
+}
+
+.world-task-column.tone-approval .world-task-column-head {
+  box-shadow: inset 3px 0 #ffbd4d;
+}
+
+.world-task-column.tone-done .world-task-column-head {
+  box-shadow: inset 3px 0 #46dda6;
+}
+
+.world-task-column-list {
+  max-height: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  overflow-y: auto;
+}
+
+.world-task-card {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(72,122,174,.16);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(15,41,68,.76), rgba(7,24,41,.86));
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.world-task-card:hover,
+.world-task-card.selected {
+  border-color: rgba(62,180,255,.55);
+  background: linear-gradient(145deg, rgba(20,57,93,.88), rgba(8,29,49,.90));
+}
+
+.world-task-card.selected {
+  box-shadow: inset 3px 0 #45baff;
+}
+
+.world-task-card > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.world-task-card strong {
+  color: #8dccff;
+  font-size: 10px;
+}
+
+.world-task-card p {
+  display: -webkit-box;
+  margin: 6px 0;
+  overflow: hidden;
+  color: #d1deea;
+  font-size: 11px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.world-task-card small {
+  color: #7895af;
+  font-size: 8px;
+}
+
+.world-task-state {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(69,141,203,.12);
+  color: #8fb2d0;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.world-task-state.state-running,
+.world-task-state.state-queued {
+  color: #5adbb9;
+}
+
+.world-task-state.state-ready_for_approval {
+  color: #ffd178;
+}
+
+.world-task-state.state-failed,
+.world-task-state.state-rejected {
+  color: #ff8793;
+}
+
+.world-empty {
+  padding: 28px 10px;
+  color: #718da6;
+  font-size: 10px;
+  text-align: center;
+}
+
+.world-project-grid,
+.world-model-grid,
+.world-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.world-project-card,
+.world-model-card,
+.world-agent-card {
+  min-width: 0;
+  min-height: 83px;
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(76,128,182,.18);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(14,40,66,.72), rgba(7,24,41,.84));
+  color: inherit;
+}
+
+.world-project-card {
+  grid-template-columns: 42px minmax(0, 1fr);
+  cursor: pointer;
+  text-align: left;
+}
+
+.world-project-card:hover,
+.world-project-card.selected {
+  border-color: rgba(62,180,255,.52);
+}
+
+.world-project-card.selected {
+  box-shadow: inset 3px 0 #45baff;
+}
+
+.world-project-icon,
+.world-model-orb,
+.world-agent-bot {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(80,166,255,.24);
+  border-radius: 12px;
+  background: rgba(22,69,108,.45);
+  color: #77c7ff;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.world-project-card strong,
+.world-model-card strong,
+.world-agent-card strong {
+  display: block;
+  overflow: hidden;
+  color: #eef7ff;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-project-card small,
+.world-model-card small,
+.world-agent-card small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #7794af;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-model-card {
+  position: relative;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
+.world-online {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #5de2aa;
+  font-size: 8px;
+}
+
+.world-online i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #43e29f;
+  box-shadow: 0 0 8px rgba(67,226,159,.6);
+}
+
+.world-agent-card {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.world-agent-card.state-running {
+  border-color: rgba(55,201,255,.44);
+  box-shadow: 0 0 15px rgba(55,201,255,.08);
+}
+
+.world-agent-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.world-agent-title span {
+  color: #7794af;
+  font-size: 8px;
+}
+
+.world-agent-card.state-running .world-agent-title span {
+  color: #56dcff;
+}
+
+.world-agent-card.state-completed .world-agent-title span {
+  color: #5be1a9;
+}
+
+.world-agent-card.state-failed .world-agent-title span {
+  color: #ff7d89;
+}
+
+.world-agent-card p {
+  margin: 4px 0 0;
+  color: #87a2bb;
+  font-size: 9px;
+}
+
+.world-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 7px;
+}
+
+.world-capabilities span {
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: rgba(126,94,218,.16);
+  color: #a893e3;
+  font-size: 7px;
+}
+
+.world-head-stat {
+  min-width: 98px;
+  padding: 8px 10px;
+  border: 1px solid rgba(72,126,183,.18);
+  border-radius: 10px;
+  background: rgba(5,20,35,.56);
+  text-align: center;
+}
+
+.world-head-stat strong {
+  display: block;
+  color: #eff8ff;
+  font-size: 18px;
+}
+
+.world-head-stat span {
+  color: #6987a2;
+  font-size: 8px;
+}
+
+.world-memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.world-memory-grid > div {
+  padding: 11px;
+  border: 1px solid rgba(120,91,215,.18);
+  border-radius: 10px;
+  background: rgba(33,26,72,.22);
+}
+
+.world-memory-grid small {
+  color: #8878b9;
+  font-size: 9px;
+}
+
+.world-memory-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #dcd3ff;
+  font-size: 16px;
+}
+
+.world-git-status {
+  min-width: 120px;
+  padding: 8px 10px;
+  border: 1px solid rgba(72,128,181,.18);
+  border-radius: 9px;
+  background: rgba(5,20,35,.58);
+}
+
+.world-git-status span {
+  display: block;
+  color: #6885a0;
+  font-size: 8px;
+}
+
+.world-git-status strong {
+  display: block;
+  margin-top: 3px;
+  color: #bdebd2;
+  font-size: 10px;
+}
+
+.world-settings-form {
+  grid-template-columns: .8fr 1.5fr auto;
+}
+
+.world-project-meta {
+  display: block;
+  margin-top: 6px;
+  color: #6f91ad;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.world-offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #ff7d88;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.world-offline i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff6573;
+}
+
+.world-memory-recent {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.world-memory-recent article {
+  padding: 10px 12px;
+  border: 1px solid rgba(80, 140, 200, 0.22);
+  border-radius: 10px;
+  background: rgba(8, 26, 44, 0.7);
+}
+
+.world-memory-recent strong {
+  display: block;
+  color: #e8f4ff;
+  font-size: 12px;
+}
+
+.world-memory-recent small {
+  display: block;
+  margin-top: 3px;
+  color: #7ea3c4;
+  font-size: 10px;
+}
+
+@media (max-width: 1250px) {
+  .world-project-grid,
+  .world-model-grid,
+  .world-agent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .world-form,
+  .world-settings-form {
+    grid-template-columns: 1fr;
+  }
+
+  .world-form-wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 850px) {
+  .world-task-columns,
+  .world-project-grid,
+  .world-model-grid,
+  .world-agent-grid,
+  .world-memory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* TASK_CENTER_COMPACT_V1 */
+
+.reference-view-tasks .world-control-stack,
+.reference-view-tasks #world-tasks {
+  min-height: 0 !important;
+}
+
+.reference-view-tasks #world-tasks {
+  height: 448px;
+  display: flex !important;
+  flex-direction: column;
+  padding: 12px !important;
+  overflow: hidden;
+}
+
+.reference-view-tasks #world-tasks .world-panel-head {
+  flex: 0 0 auto;
+  margin-bottom: 9px !important;
+}
+
+.reference-view-tasks #world-tasks .world-panel-head h2 {
+  font-size: 20px !important;
+}
+
+.reference-view-tasks #world-tasks .world-panel-head p {
+  margin-top: 3px !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+}
+
+.reference-view-tasks #world-tasks .world-primary-button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.reference-view-tasks #world-tasks .world-task-form {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  padding: 9px !important;
+}
+
+.reference-view-tasks #world-tasks .world-task-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 8px !important;
+}
+
+.reference-view-tasks #world-tasks .world-task-column {
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+.reference-view-tasks #world-tasks .world-task-column-head {
+  min-height: 34px;
+  padding: 7px 9px !important;
+}
+
+.reference-view-tasks #world-tasks .world-task-column-list {
+  max-height: 285px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.reference-view-tasks #world-tasks .world-task-card {
+  padding: 9px !important;
+}
+
+.reference-view-tasks #world-tasks .world-task-card p {
+  margin-top: 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.35 !important;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.reference-view-tasks #world-tasks .world-task-card small {
+  margin-top: 5px !important;
+  font-size: 8px !important;
+}
+
+@media (max-width: 1180px) {
+  .reference-view-tasks #world-tasks {
+    height: auto;
+    max-height: 520px;
+    overflow-y: auto;
+  }
+}
+
+
+/* TASK_CENTER_READABILITY_V2 */
+
+.reference-view-tasks
+#world-tasks
+.world-panel-head > div > span {
+  font-size: 10px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-panel-head h2 {
+  font-size: 23px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-panel-head p {
+  font-size: 11.5px !important;
+  line-height: 1.45 !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-primary-button {
+  font-size: 11px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-column-head strong {
+  font-size: 11.5px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-column-head span {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-card strong {
+  font-size: 11.5px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-state {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-card p {
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-task-card small {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+#world-tasks
+.world-empty {
+  font-size: 10.5px !important;
+}

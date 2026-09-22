@@ -1,0 +1,374 @@
+.task-history-panel {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(69,132,193,.30);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(9,35,60,.98), rgba(5,24,42,.98));
+}
+
+.task-history-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(75,130,183,.16);
+}
+
+.task-history-header span {
+  color: #5ec7ff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .14em;
+}
+
+.task-history-header h2 {
+  margin: 4px 0 0;
+  color: #f4f9ff;
+  font-size: 22px;
+}
+
+.task-history-header p {
+  max-width: 760px;
+  margin: 5px 0 0;
+  color: #98afc4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.task-history-current {
+  height: fit-content;
+  min-width: 130px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: #18354e;
+  color: #cad9e6;
+  font-size: 10px;
+  text-align: center;
+}
+
+.task-history-current.state-running,
+.task-history-current.state-queued {
+  background: #125477;
+  color: #abe7ff;
+}
+
+.task-history-current.state-ready_for_approval {
+  background: #644b17;
+  color: #ffe092;
+}
+
+.task-history-current.state-approved,
+.task-history-current.state-completed {
+  background: #10533f;
+  color: #8bf1c8;
+}
+
+.task-history-current.state-failed,
+.task-history-current.state-rejected {
+  background: #5d2934;
+  color: #ffa8b2;
+}
+
+.task-history-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 7px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(74,129,181,.14);
+}
+
+.task-history-stages > div {
+  display: grid;
+  grid-template-columns: 8px minmax(0,1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(82,126,166,.20);
+  border-radius: 8px;
+  background: rgba(11,34,55,.62);
+}
+
+.task-history-stages i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #647f98;
+}
+
+.task-history-stages b,
+.task-history-stages small {
+  display: block;
+}
+
+.task-history-stages b {
+  overflow: hidden;
+  color: #d9e8f4;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-history-stages small {
+  margin-top: 2px;
+  color: #809bb3;
+  font-size: 8px;
+}
+
+.task-history-stages .state-completed i { background: #43dda5; }
+.task-history-stages .state-active i { background: #4bc8ff; }
+.task-history-stages .state-waiting i { background: #ffc653; }
+.task-history-stages .state-failed i { background: #ff6576; }
+.task-history-stages .state-skipped i { background: #a5afb8; }
+
+.task-history-timeline {
+  padding: 8px 18px 16px;
+}
+
+.task-history-timeline article {
+  display: grid;
+  grid-template-columns: 150px minmax(0,1fr);
+  gap: 14px;
+  padding: 11px 8px;
+  border-bottom: 1px solid rgba(72,120,162,.13);
+}
+
+.task-history-timeline time {
+  color: #7996af;
+  font-size: 9px;
+}
+
+.task-history-timeline strong {
+  color: #e9f3fb;
+  font-size: 11px;
+}
+
+.task-history-timeline p {
+  margin: 3px 0 0;
+  color: #91a8bc;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.task-history-timeline .state-failed strong {
+  color: #ff8491;
+}
+
+.task-history-empty {
+  padding: 20px 8px;
+  color: #829eb6;
+  font-size: 10px;
+}
+
+/* TASK_FAILURE_REASON_UI_V1 */
+
+.task-history-failure {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 14px 18px 4px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 91, 111, .42);
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(105, 31, 45, .58),
+      rgba(55, 20, 31, .40)
+    );
+}
+
+.task-history-failure-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 119, 133, .55);
+  border-radius: 50%;
+  background: rgba(144, 42, 58, .40);
+  color: #ff9aa7;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.task-history-failure span {
+  display: block;
+  margin-bottom: 3px;
+  color: #ff7888;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .13em;
+}
+
+.task-history-failure strong {
+  display: block;
+  color: #ffd7dc;
+  font-size: 12px;
+}
+
+.task-history-failure p {
+  margin: 5px 0 0;
+  color: #e7afb7;
+  font-size: 10px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* TASK_HISTORY_COMPACT_V1 */
+
+.reference-view-tasks .task-history-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+}
+
+.reference-view-tasks .task-history-head,
+.reference-view-tasks .task-history-header {
+  flex: 0 0 auto;
+  padding: 11px 14px !important;
+}
+
+.reference-view-tasks .task-history-head h2,
+.reference-view-tasks .task-history-header h2 {
+  margin-top: 2px !important;
+  font-size: 17px !important;
+}
+
+.reference-view-tasks .task-history-head p,
+.reference-view-tasks .task-history-header p {
+  margin-top: 3px !important;
+  overflow: hidden;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-view-tasks .task-history-current {
+  min-width: 110px !important;
+  padding: 7px 10px !important;
+}
+
+.reference-view-tasks .task-history-stage-strip,
+.reference-view-tasks .task-history-stages {
+  flex: 0 0 auto;
+  gap: 6px !important;
+  padding: 8px 14px !important;
+}
+
+.reference-view-tasks .task-history-stage {
+  padding: 7px 8px !important;
+}
+
+.reference-view-tasks .task-history-timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 155px;
+  padding: 6px 14px 10px !important;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.reference-view-tasks .task-history-event,
+.reference-view-tasks .task-history-timeline article {
+  min-height: 44px !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+
+.reference-view-tasks .task-history-failure {
+  flex: 0 0 auto;
+  margin: 8px 14px !important;
+  padding: 9px 11px !important;
+}
+
+.reference-view-tasks .task-history-failure p {
+  margin-top: 3px !important;
+  font-size: 9px !important;
+  line-height: 1.35 !important;
+}
+
+@media (max-width: 1180px) {
+  .reference-view-tasks .task-history-panel {
+    max-height: none;
+  }
+
+  .reference-view-tasks .task-history-timeline {
+    max-height: 220px;
+  }
+}
+
+
+/* TASK_HISTORY_READABILITY_V2 */
+
+.reference-view-tasks
+.task-history-head span,
+.reference-view-tasks
+.task-history-header span {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+.task-history-head h2,
+.reference-view-tasks
+.task-history-header h2 {
+  font-size: 19px !important;
+}
+
+.reference-view-tasks
+.task-history-head p,
+.reference-view-tasks
+.task-history-header p {
+  font-size: 11px !important;
+}
+
+.reference-view-tasks
+.task-history-current {
+  font-size: 10px !important;
+}
+
+.reference-view-tasks
+.task-history-stage strong {
+  font-size: 11px !important;
+}
+
+.reference-view-tasks
+.task-history-stage span {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-history-event time,
+.reference-view-tasks
+.task-history-timeline time {
+  font-size: 9.5px !important;
+}
+
+.reference-view-tasks
+.task-history-event strong,
+.reference-view-tasks
+.task-history-timeline strong {
+  font-size: 11.5px !important;
+}
+
+.reference-view-tasks
+.task-history-event p,
+.reference-view-tasks
+.task-history-timeline p {
+  font-size: 10.5px !important;
+}
+
+.reference-view-tasks
+.task-history-failure span {
+  font-size: 9px !important;
+}
+
+.reference-view-tasks
+.task-history-failure strong {
+  font-size: 13px !important;
+}
+
+.reference-view-tasks
+.task-history-failure p {
+  font-size: 10px !important;
+}

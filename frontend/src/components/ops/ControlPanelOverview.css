@@ -1,0 +1,1312 @@
+.control-panel-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding-bottom: 24px;
+}
+
+.control-panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 4px 10px 0;
+}
+
+.control-panel-title h1 {
+  margin: 0;
+  color: #f4f8ff;
+  font-size: 34px;
+  font-weight: 850;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.control-panel-title p {
+  max-width: 820px;
+  margin: 7px 0 0;
+  color: #8caac7;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.control-panel-title blockquote {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  border-left: 2px solid rgba(73, 164, 255, .36);
+  color: #7898b8;
+  font-size: 12px;
+  line-height: 1.55;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.control-panel-kpis {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.control-kpi {
+  min-width: 0;
+  min-height: 108px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(70, 141, 212, .38);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(15, 48, 82, .96),
+      rgba(7, 29, 51, .96)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.035),
+    0 14px 28px rgba(0,0,0,.16);
+}
+
+.control-kpi.tone-blue {
+  border-color: rgba(32, 150, 255, .58);
+}
+
+.control-kpi.tone-green {
+  border-color: rgba(41, 215, 165, .48);
+}
+
+.control-kpi.tone-violet {
+  border-color: rgba(146, 97, 255, .52);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(43, 38, 110, .72),
+      rgba(15, 28, 60, .96)
+    );
+}
+
+.control-kpi.tone-amber {
+  border-color: rgba(255, 167, 44, .48);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(86, 55, 18, .48),
+      rgba(17, 31, 48, .96)
+    );
+}
+
+.control-kpi-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(20, 111, 190, .46);
+  color: #67c9ff;
+  box-shadow:
+    inset 0 0 18px rgba(64,181,255,.12),
+    0 0 16px rgba(53, 160, 255, .12);
+}
+
+.control-kpi.tone-green .control-kpi-icon {
+  background: rgba(16, 141, 110, .48);
+  color: #5fe6b6;
+}
+
+.control-kpi.tone-violet .control-kpi-icon {
+  background: rgba(92, 55, 209, .56);
+  color: #c19cff;
+}
+
+.control-kpi.tone-amber .control-kpi-icon {
+  background: rgba(172, 105, 16, .54);
+  color: #ffc15d;
+}
+
+.control-kpi-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.control-kpi-copy {
+  min-width: 0;
+}
+
+.control-kpi-copy > span {
+  display: block;
+  color: #9bb4cc;
+  font-size: 12px;
+}
+
+.control-kpi-copy strong {
+  display: inline-block;
+  margin-top: 2px;
+  color: #f6f9ff;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.control-kpi-copy small {
+  display: block;
+  margin-top: 8px;
+  color: #7e9db9;
+  font-size: 10px;
+}
+
+.control-kpi-value-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-kpi-value-row em {
+  margin-top: 3px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(24, 191, 142, .12);
+  color: #45dcaa;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.control-production-card,
+.control-recent-tasks {
+  overflow: hidden;
+  border: 1px solid rgba(67, 130, 193, .28);
+  border-radius: 15px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(10, 34, 59, .98),
+      rgba(6, 25, 44, .98)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.035),
+    0 18px 34px rgba(0,0,0,.17);
+}
+
+.control-section-heading {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+}
+
+.control-section-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, #158fe9, #0966ad);
+  color: #dff5ff;
+  box-shadow: 0 0 15px rgba(34, 157, 255, .22);
+}
+
+.control-section-icon.document {
+  width: 38px;
+  height: 42px;
+}
+
+.control-section-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.control-section-heading h2 {
+  margin: 0;
+  color: #f1f7ff;
+  font-size: 20px;
+  font-weight: 820;
+}
+
+.control-section-heading p {
+  margin: 4px 0 0;
+  color: #86a6c2;
+  font-size: 11px;
+}
+
+.control-active-agents {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px;
+  border: 1px solid rgba(28, 204, 162, .34);
+  border-radius: 10px;
+  background: rgba(7, 73, 72, .38);
+  color: #d9f9f0;
+  font-size: 10px;
+}
+
+.control-active-agents i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2fe3a1;
+  box-shadow: 0 0 9px rgba(47,227,161,.66);
+}
+
+.control-active-agents strong {
+  font-size: 12px;
+}
+
+.control-production-pipeline {
+  padding: 0 14px 14px;
+}
+
+.control-production-pipeline
+.teddy-factory-pipeline {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.control-production-pipeline
+.teddy-pipeline-head {
+  display: none !important;
+}
+
+.control-production-pipeline
+.teddy-factory-stage {
+  height: 300px !important;
+  min-height: 300px !important;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(13, 43, 74, .2),
+      rgba(5, 21, 37, .12)
+    ) !important;
+}
+
+.control-production-pipeline
+.ref-machine-row {
+  bottom: 14px !important;
+  gap: 10px !important;
+}
+
+.control-production-pipeline
+.ref-conveyor,
+.control-production-pipeline
+.ref-conveyor-rail,
+.control-production-pipeline
+.teddy-flow-light {
+  display: none !important;
+}
+
+.control-production-pipeline
+.ref-machine {
+  height: 236px !important;
+  overflow: visible !important;
+}
+
+.control-production-pipeline
+.ref-worker {
+  top: -4px !important;
+  width: 98px !important;
+  height: 112px !important;
+}
+
+.control-production-pipeline
+.factory-machine-svg {
+  height: 132px !important;
+  opacity: .93;
+}
+
+.control-production-pipeline
+.ref-machine-face {
+  bottom: 4px !important;
+  height: 120px !important;
+  padding: 8px !important;
+  border-radius: 10px !important;
+}
+
+.control-production-pipeline
+.ref-machine-face strong {
+  font-size: 12px !important;
+}
+
+.control-production-pipeline
+.ref-machine-face > span {
+  min-height: 31px !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+}
+
+.control-production-pipeline
+.ref-machine-state {
+  min-width: 92px !important;
+  min-height: 23px !important;
+  font-size: 8.5px !important;
+}
+
+.control-production-pipeline
+.ref-machine:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  right: -13px;
+  top: 132px;
+  z-index: 30;
+  color: #7fcaff;
+  font-size: 24px;
+  font-weight: 400;
+  text-shadow: 0 0 10px rgba(84, 185, 255, .45);
+  pointer-events: none;
+}
+
+.control-see-all {
+  border: 0;
+  background: transparent;
+  color: #4bbaff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.control-see-all span {
+  margin-left: 6px;
+}
+
+.control-task-table {
+  margin: 0 18px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(65, 119, 171, .20);
+  border-radius: 10px;
+  background: rgba(4, 19, 34, .36);
+}
+
+.control-task-row {
+  width: 100%;
+  min-height: 43px;
+  display: grid;
+  grid-template-columns:
+    24px
+    86px
+    minmax(220px, 1.7fr)
+    120px
+    minmax(120px, .8fr)
+    90px
+    30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(65, 119, 171, .14);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.control-task-row:last-child {
+  border-bottom: 0;
+}
+
+.control-task-row:hover,
+.control-task-row.selected {
+  background: rgba(20, 70, 113, .27);
+}
+
+.control-task-row.selected {
+  box-shadow: inset 3px 0 #43baff;
+}
+
+.control-task-doc {
+  color: #54c4ff;
+}
+
+.control-task-doc svg {
+  width: 16px;
+  height: 16px;
+}
+
+.control-task-id {
+  color: #6bc9ff;
+  font-size: 10px;
+}
+
+.control-task-prompt {
+  overflow: hidden;
+  color: #c7d8e8;
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-task-status {
+  justify-self: start;
+  min-width: 88px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(75, 106, 136, .22);
+  color: #9db3c8;
+  font-size: 8px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.control-task-status.state-approved,
+.control-task-status.state-completed {
+  background: rgba(24, 142, 110, .24);
+  color: #55e2ad;
+}
+
+.control-task-status.state-ready_for_approval {
+  background: rgba(155, 111, 25, .25);
+  color: #ffd05f;
+}
+
+.control-task-status.state-rejected,
+.control-task-status.state-failed {
+  background: rgba(155, 51, 67, .24);
+  color: #ff7c8b;
+}
+
+.control-task-status.state-running,
+.control-task-status.state-queued {
+  background: rgba(31, 116, 181, .25);
+  color: #68c8ff;
+}
+
+.control-task-project,
+.control-task-row time {
+  overflow: hidden;
+  color: #8ca6bd;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-task-row time {
+  text-align: right;
+}
+
+.control-task-more {
+  color: #86a2bb;
+  font-size: 10px;
+  text-align: center;
+}
+
+.control-task-empty {
+  padding: 32px;
+  color: #7d9ab4;
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 1400px) {
+  .control-panel-title h1 {
+    font-size: 30px;
+  }
+
+  .control-panel-kpis {
+    gap: 10px;
+  }
+
+  .control-kpi {
+    grid-template-columns: 48px minmax(0,1fr);
+    padding: 13px;
+  }
+
+  .control-kpi-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .control-production-pipeline
+  .ref-worker {
+    width: 86px !important;
+    height: 98px !important;
+  }
+
+  .control-task-row {
+    grid-template-columns:
+      22px
+      78px
+      minmax(180px, 1.5fr)
+      108px
+      minmax(100px, .7fr)
+      76px
+      26px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .control-panel-kpis {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+
+  .control-panel-title blockquote {
+    display: none;
+  }
+
+  .control-production-pipeline {
+    overflow-x: auto;
+  }
+
+  .control-production-pipeline
+  .teddy-factory-stage {
+    min-width: 980px !important;
+  }
+
+  .control-task-table {
+    overflow-x: auto;
+  }
+
+  .control-task-row {
+    min-width: 900px;
+  }
+}
+
+@media (max-width: 700px) {
+  .control-panel-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .control-panel-title h1 {
+    font-size: 26px;
+  }
+}
+
+/* TEDDY_CONTROL_PANEL_REFINEMENT_V2 */
+
+/* Üretim hattını biraz büyüt. */
+.control-production-pipeline {
+  padding: 4px 18px 18px !important;
+}
+
+.control-production-pipeline .teddy-factory-stage {
+  height: 344px !important;
+  min-height: 344px !important;
+  overflow: hidden !important;
+}
+
+.control-production-pipeline .ref-machine-row {
+  left: 0.6% !important;
+  right: 0.6% !important;
+  bottom: 18px !important;
+  gap: 8px !important;
+  align-items: flex-end !important;
+}
+
+.control-production-pipeline .ref-machine {
+  height: 275px !important;
+  overflow: visible !important;
+}
+
+/* Masa/makine kasası hücre içinde kalsın. */
+.control-production-pipeline .factory-machine-svg {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 176px !important;
+  margin: 0 !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+.control-production-pipeline .ref-worker {
+  top: auto !important;
+  bottom: 198px !important;
+  width: 112px !important;
+  height: 128px !important;
+  z-index: 20 !important;
+}
+
+/* Koyu bilgi alanı kasanın içine otursun. */
+.control-production-pipeline .ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 36px !important;
+  height: 78px !important;
+  min-height: 78px !important;
+  max-height: 78px !important;
+  padding: 5px 5px 4px !important;
+  overflow: hidden !important;
+  border-radius: 9px !important;
+  background: linear-gradient(180deg, rgba(7,24,42,.985), rgba(6,19,34,.985)) !important;
+  box-shadow: inset 0 0 0 1px rgba(117,171,219,.10), inset 0 0 20px rgba(65,145,221,.09), 0 8px 20px rgba(0,0,0,.22) !important;
+}
+
+.control-production-pipeline .ref-machine-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin-bottom: 0 !important;
+}
+
+.control-production-pipeline .ref-machine-icon svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+/* PLANLAYICI / ANALİST / ... */
+.control-production-pipeline .ref-machine-face strong {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: #f7fbff !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  line-height: 1.18 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* TASK-4786 · Mevcut yapıyı incele gibi alt metinler. */
+.control-production-pipeline .ref-machine-face > span {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: 22px !important;
+  display: -webkit-box !important;
+  margin-top: 1px !important;
+  overflow: hidden !important;
+  color: #d0dfed !important;
+  font-size: 8.5px !important;
+  font-weight: 620 !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  white-space: normal !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+/* Durum badge'leri — ekran kutusuna sığacak kompakt */
+.control-production-pipeline .ref-machine-state {
+  position: relative !important;
+  z-index: 40 !important;
+  min-width: 58px !important;
+  min-height: 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-top: 2px !important;
+  padding: 1px 5px !important;
+  border: 1px solid rgba(121,158,193,.34) !important;
+  border-radius: 999px !important;
+  background: #173652 !important;
+  color: #c5d7e7 !important;
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  letter-spacing: .035em !important;
+  text-shadow: 0 1px 5px rgba(0,0,0,.38);
+  box-shadow: 0 4px 10px rgba(0,0,0,.26) !important;
+}
+
+.control-production-pipeline .ref-machine-state.state-completed {
+  border-color: rgba(75,231,177,.52) !important;
+  background: #0d604b !important;
+  color: #8dffd2 !important;
+}
+
+.control-production-pipeline .ref-machine-state.state-active {
+  border-color: rgba(82,201,255,.58) !important;
+  background: #12537b !important;
+  color: #b7e9ff !important;
+}
+
+.control-production-pipeline .ref-machine-state.state-waiting {
+  border-color: rgba(255,198,80,.58) !important;
+  background: #674b13 !important;
+  color: #ffe397 !important;
+}
+
+.control-production-pipeline .ref-machine-state.state-failed {
+  border-color: rgba(255,103,119,.58) !important;
+  background: #642b37 !important;
+  color: #ffb0ba !important;
+}
+
+.control-production-pipeline .ref-machine-state.state-pending {
+  border-color: rgba(121,158,193,.34) !important;
+  background: #173650 !important;
+  color: #bfd0df !important;
+}
+
+/* Tüm ayılar hafif idle animasyonu yapsın. */
+.control-production-pipeline .factory-bear-body {
+  transform-origin: 95px 182px !important;
+  animation: controlBearIdle 2.8s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .factory-bear-arms {
+  transform-origin: 95px 150px !important;
+  animation: controlBearArms 2.1s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .bear-device {
+  animation: controlBearDevice 1.8s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .bear-wave-arm {
+  transform-origin: 143px 149px !important;
+  animation: controlBearWave 1.45s ease-in-out infinite !important;
+}
+
+/* Aktif ajan daha canlı. */
+.control-production-pipeline .ref-machine.state-active .factory-bear-body {
+  animation: controlBearWorking .9s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .ref-machine.state-active .factory-bear-arms {
+  animation: controlBearWorkingArms .68s ease-in-out infinite !important;
+}
+
+/* Aynı anda hareket etmesinler. */
+.control-production-pipeline .ref-machine:nth-child(2) .factory-bear-body,
+.control-production-pipeline .ref-machine:nth-child(2) .factory-bear-arms { animation-delay: -.45s !important; }
+.control-production-pipeline .ref-machine:nth-child(3) .factory-bear-body,
+.control-production-pipeline .ref-machine:nth-child(3) .factory-bear-arms { animation-delay: -.9s !important; }
+.control-production-pipeline .ref-machine:nth-child(4) .factory-bear-body,
+.control-production-pipeline .ref-machine:nth-child(4) .factory-bear-arms { animation-delay: -1.35s !important; }
+.control-production-pipeline .ref-machine:nth-child(5) .factory-bear-body,
+.control-production-pipeline .ref-machine:nth-child(5) .factory-bear-arms { animation-delay: -1.8s !important; }
+.control-production-pipeline .ref-machine:nth-child(6) .factory-bear-body,
+.control-production-pipeline .ref-machine:nth-child(6) .factory-bear-arms { animation-delay: -2.2s !important; }
+
+@keyframes controlBearIdle {
+  0%, 100% { transform: translateY(0) rotate(-0.3deg); }
+  50% { transform: translateY(-2px) rotate(0.3deg); }
+}
+
+@keyframes controlBearArms {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@keyframes controlBearDevice {
+  0%, 100% { opacity: .88; filter: brightness(.96); }
+  50% { opacity: 1; filter: brightness(1.18); }
+}
+
+@keyframes controlBearWave {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes controlBearWorking {
+  0%, 100% { transform: translateY(0) rotate(-0.6deg); }
+  50% { transform: translateY(-3px) rotate(0.6deg); }
+}
+
+@keyframes controlBearWorkingArms {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(7deg); }
+}
+
+/* Hover'da istasyonun konumu değişmesin. */
+.control-production-pipeline .ref-machine:hover {
+  transform: none !important;
+  filter: brightness(1.07) saturate(1.04) !important;
+}
+
+.control-production-pipeline .ref-machine:hover .factory-machine-svg {
+  transform: translateX(-50%) !important;
+}
+
+@media (max-width: 1500px) {
+  .control-production-pipeline .teddy-factory-stage {
+    height: 326px !important;
+    min-height: 326px !important;
+  }
+
+  .control-production-pipeline .ref-machine {
+    height: 258px !important;
+  }
+
+  .control-production-pipeline .factory-machine-svg {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 164px !important;
+  }
+
+  .control-production-pipeline .ref-worker {
+    width: 102px !important;
+    height: 116px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face {
+    left: 13.5% !important;
+    right: 13.5% !important;
+    bottom: 32px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face strong {
+    font-size: 9.5px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face > span {
+    font-size: 8px !important;
+    max-height: 20px !important;
+  }
+
+  .control-production-pipeline .ref-machine-state {
+    min-width: 96px !important;
+    min-height: 26px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* ——— Masa aralığı + çalışan ayılar + alt koşucu (satıra sığan kompakt) ——— */
+
+.control-production-pipeline .teddy-factory-stage,
+.control-production-pipeline .teddy-factory-stage.has-runner {
+  height: 360px !important;
+  min-height: 360px !important;
+}
+
+.control-production-pipeline .ref-machine-row,
+.control-production-pipeline
+.teddy-factory-pipeline.station-count-4
+.ref-machine-row {
+  left: 0.5% !important;
+  right: 0.5% !important;
+  bottom: 70px !important;
+  top: 0 !important;
+  width: auto !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  grid-template-columns: repeat(4, minmax(0, 185px)) !important;
+}
+
+.control-production-pipeline
+.teddy-factory-pipeline.station-count-6
+.ref-machine-row {
+  left: 0.4% !important;
+  right: 0.4% !important;
+  bottom: 70px !important;
+  gap: 5px !important;
+  justify-content: center !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
+
+.control-production-pipeline .ref-machine,
+.control-production-pipeline
+.teddy-factory-pipeline.station-count-4
+.ref-machine,
+.control-production-pipeline
+.teddy-factory-pipeline.station-count-6
+.ref-machine {
+  width: 100% !important;
+  max-width: 185px !important;
+  height: auto !important;
+  min-height: 250px !important;
+  justify-self: center !important;
+  overflow: visible !important;
+}
+
+/* Masadaki çalışanlar — kompakt */
+.control-production-pipeline .ref-worker.desk-worker {
+  top: auto !important;
+  bottom: 142px !important;
+  width: 74px !important;
+  height: 86px !important;
+  z-index: 20 !important;
+  animation: none !important;
+}
+
+.control-production-pipeline .ref-worker.desk-worker .factory-svg-bear {
+  transform: translateY(10px) !important;
+}
+
+/* Sadece aktif masadaki ayı çalışsın */
+.control-production-pipeline .ref-machine:not(.state-active) .factory-bear-body,
+.control-production-pipeline .ref-machine:not(.state-active) .factory-bear-arms {
+  animation: none !important;
+}
+
+.control-production-pipeline .ref-machine.state-active .desk-worker.is-busy .factory-bear-body {
+  animation: controlBearWorking 0.75s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .ref-machine.state-active .desk-worker.is-busy .factory-bear-arms {
+  animation: controlBearWorkingArms 0.55s ease-in-out infinite !important;
+}
+
+.control-production-pipeline .ref-machine.state-active .desk-worker.is-busy .bear-paper-left {
+  animation: deskPaperLeft 0.85s ease-in-out infinite;
+  transform-origin: 26px 141px;
+}
+
+.control-production-pipeline .ref-machine.state-active .desk-worker.is-busy .bear-paper-right {
+  animation: deskPaperRight 0.85s ease-in-out infinite;
+  transform-origin: 165px 140px;
+}
+
+.control-production-pipeline .desk-worker {
+  overflow: visible !important;
+}
+
+.control-production-pipeline .desk-paper {
+  position: absolute;
+  width: 18px;
+  height: 24px;
+  border: 1px solid rgba(170, 198, 222, 0.7);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, #ffffff, #e8f0f8);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.control-production-pipeline .desk-paper::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 5px;
+  height: 2px;
+  background: rgba(110, 140, 168, 0.55);
+  box-shadow:
+    0 5px 0 rgba(110, 140, 168, 0.45),
+    0 10px 0 rgba(110, 140, 168, 0.35);
+}
+
+.control-production-pipeline .desk-paper-left {
+  left: -14px;
+  top: 42px;
+  transform: rotate(-18deg);
+  animation: deskFloatLeft 1s ease-in-out infinite;
+}
+
+.control-production-pipeline .desk-paper-left.mid {
+  left: -22px;
+  top: 58px;
+  width: 15px;
+  height: 20px;
+  animation-delay: 0.2s;
+  transform: rotate(-28deg);
+}
+
+.control-production-pipeline .desk-paper-right {
+  right: -14px;
+  top: 40px;
+  transform: rotate(16deg);
+  animation: deskFloatRight 1s ease-in-out infinite;
+}
+
+.control-production-pipeline .desk-paper-right.mid {
+  right: -20px;
+  top: 56px;
+  width: 15px;
+  height: 20px;
+  animation-delay: 0.25s;
+  transform: rotate(26deg);
+}
+
+@keyframes deskPaperLeft {
+  0%,
+  100% {
+    transform: rotate(-12deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-24deg) translateY(-4px);
+  }
+}
+
+@keyframes deskPaperRight {
+  0%,
+  100% {
+    transform: rotate(12deg) translateY(0);
+  }
+  50% {
+    transform: rotate(24deg) translateY(-4px);
+  }
+}
+
+@keyframes deskFloatLeft {
+  0%,
+  100% {
+    transform: rotate(-18deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-28deg) translateY(-6px);
+  }
+}
+
+@keyframes deskFloatRight {
+  0%,
+  100% {
+    transform: rotate(16deg) translateY(0);
+  }
+  50% {
+    transform: rotate(28deg) translateY(-6px);
+  }
+}
+
+.control-production-pipeline .teddy-runner {
+  bottom: 4px !important;
+  width: 68px !important;
+  height: 76px !important;
+  z-index: 45 !important;
+}
+
+.control-production-pipeline .teddy-runner .factory-svg-bear {
+  transform: none !important;
+}
+
+
+/*
+  Masa kasası: hücre genişliğini aşmasın,
+  komşu masalarla üst üste binmesin.
+*/
+.control-production-pipeline .factory-machine-svg,
+.control-production-pipeline
+.teddy-factory-pipeline
+.factory-machine-svg {
+  position: absolute !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 0 !important;
+  width: 185px !important;
+  max-width: 100% !important;
+  height: 175px !important;
+  margin: 0 !important;
+  transform: translateX(-50%) !important;
+  opacity: 1 !important;
+}
+
+.control-production-pipeline
+.teddy-factory-pipeline.station-count-6
+.factory-machine-svg {
+  width: 100% !important;
+  max-width: 185px !important;
+}
+
+.control-production-pipeline .ref-machine:hover .factory-machine-svg {
+  transform: translateX(-50%) !important;
+}
+
+/* Oklar masaları ezmesin */
+.control-production-pipeline .ref-machine:not(:last-child)::after {
+  right: -8px !important;
+  top: 58% !important;
+  font-size: 14px !important;
+  opacity: 0.75;
+}
+
+/*
+  SVG viewBox 230×190 — ekran: x=31 y=59 w=168 h=93
+  SVG 185×175 iken kutu ekranın içinde kalsın.
+*/
+.control-production-pipeline .ref-machine-face {
+  left: 13.5% !important;
+  right: 13.5% !important;
+  bottom: 36px !important;
+  height: 78px !important;
+  min-height: 78px !important;
+  max-height: 78px !important;
+  padding: 5px 5px 4px !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 0;
+  overflow: hidden !important;
+  border-radius: 9px !important;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 18, 32, 0.96),
+    rgba(4, 14, 26, 0.98)
+  ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(117, 171, 219, 0.12),
+    inset 0 0 16px rgba(65, 145, 221, 0.08) !important;
+}
+
+.control-production-pipeline .ref-machine-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin-bottom: 0 !important;
+  flex: 0 0 auto;
+}
+
+.control-production-pipeline .ref-machine-icon svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+.control-production-pipeline .ref-machine-face strong {
+  font-size: 10px !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.1 !important;
+}
+
+.control-production-pipeline .ref-machine-face > span {
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: 22px !important;
+  margin-top: 1px !important;
+  font-size: 8.5px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  color: #e2edf8 !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.control-production-pipeline .ref-machine-state {
+  margin-top: 2px !important;
+  min-width: 58px !important;
+  min-height: 16px !important;
+  padding: 1px 5px !important;
+  font-size: 8px !important;
+}
+
+/* Son Görevler — daha okunur tipografi */
+.control-recent-tasks .control-section-heading h2 {
+  font-size: 20px !important;
+}
+
+.control-recent-tasks .control-section-heading p {
+  font-size: 13px !important;
+  color: #9eb8d0 !important;
+}
+
+.control-task-row {
+  min-height: 54px !important;
+  gap: 10px !important;
+  padding: 8px 14px !important;
+  font-family:
+    "Segoe UI",
+    "Segoe UI Variable Text",
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
+}
+
+.control-task-id {
+  font-size: 13px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.01em;
+}
+
+.control-task-prompt {
+  color: #e8f1fa !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+}
+
+.control-task-status {
+  min-width: 108px !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+.control-task-project,
+.control-task-row time {
+  color: #a8c0d6 !important;
+  font-size: 12px !important;
+  font-weight: 550 !important;
+}
+
+.control-task-doc svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.control-see-all {
+  font-size: 13px !important;
+}
+
+.control-task-empty {
+  font-size: 14px !important;
+}
+
+@media (max-width: 1500px) {
+  .control-production-pipeline .teddy-factory-stage,
+  .control-production-pipeline .teddy-factory-stage.has-runner {
+    height: 340px !important;
+    min-height: 340px !important;
+  }
+
+  .control-production-pipeline .ref-machine {
+    min-height: 230px !important;
+  }
+
+  .control-production-pipeline .factory-machine-svg,
+  .control-production-pipeline
+  .teddy-factory-pipeline
+  .factory-machine-svg {
+    height: 160px !important;
+    width: 170px !important;
+    max-width: 100% !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+  }
+
+  .control-production-pipeline .ref-machine-row,
+  .control-production-pipeline
+  .teddy-factory-pipeline.station-count-4
+  .ref-machine-row {
+    gap: 5px !important;
+    bottom: 64px !important;
+    grid-template-columns: repeat(4, minmax(0, 170px)) !important;
+  }
+
+  .control-production-pipeline
+  .teddy-factory-pipeline.station-count-6
+  .ref-machine-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+
+  .control-production-pipeline .ref-machine,
+  .control-production-pipeline
+  .teddy-factory-pipeline.station-count-6
+  .ref-machine {
+    max-width: 170px !important;
+  }
+
+  .control-production-pipeline .ref-worker.desk-worker {
+    bottom: 128px !important;
+    width: 66px !important;
+    height: 76px !important;
+  }
+
+  .control-production-pipeline .ref-worker.desk-worker .factory-svg-bear {
+    transform: translateY(8px) !important;
+  }
+
+  .control-production-pipeline .teddy-runner {
+    width: 60px !important;
+    height: 68px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face {
+    left: 13.5% !important;
+    right: 13.5% !important;
+    bottom: 32px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face strong {
+    font-size: 9.5px !important;
+  }
+
+  .control-production-pipeline .ref-machine-face > span {
+    font-size: 8px !important;
+    max-height: 20px !important;
+  }
+
+  .control-task-prompt {
+    font-size: 13px !important;
+  }
+}

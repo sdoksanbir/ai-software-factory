@@ -125,17 +125,80 @@ def _memory_status() -> dict[str, Any]:
 
 
 def _cpu_status() -> dict[str, Any]:
-    percent = None
+    percent: float | None = None
 
     try:
         import psutil  # type: ignore
 
         percent = float(
-            psutil.cpu_percent(interval=None)
+            psutil.cpu_percent(interval=0.15)
         )
 
     except ImportError:
         pass
+    except Exception:
+        percent = None
+
+    if percent is None and os.name == "nt":
+        try:
+            import ctypes
+
+            class FILETIME(ctypes.Structure):
+                _fields_ = [
+                    ("dwLowDateTime", ctypes.c_uint32),
+                    ("dwHighDateTime", ctypes.c_uint32),
+                ]
+
+            def to_int(value: FILETIME) -> int:
+                return (
+                    int(value.dwHighDateTime) << 32
+                ) | int(value.dwLowDateTime)
+
+            def sample() -> tuple[int, int, int]:
+                idle = FILETIME()
+                kernel = FILETIME()
+                user = FILETIME()
+
+                ok = ctypes.windll.kernel32.GetSystemTimes(
+                    ctypes.byref(idle),
+                    ctypes.byref(kernel),
+                    ctypes.byref(user),
+                )
+
+                if not ok:
+                    raise OSError("GetSystemTimes failed")
+
+                return (
+                    to_int(idle),
+                    to_int(kernel),
+                    to_int(user),
+                )
+
+            idle_1, kernel_1, user_1 = sample()
+            time.sleep(0.15)
+            idle_2, kernel_2, user_2 = sample()
+
+            idle_delta = idle_2 - idle_1
+            kernel_delta = kernel_2 - kernel_1
+            user_delta = user_2 - user_1
+            total_delta = kernel_delta + user_delta
+
+            if total_delta > 0:
+                busy_delta = total_delta - idle_delta
+                percent = (
+                    busy_delta
+                    / total_delta
+                    * 100.0
+                )
+
+        except Exception:
+            percent = None
+
+    if percent is not None:
+        percent = round(
+            max(0.0, min(100.0, percent)),
+            1,
+        )
 
     return {
         "logical_count": os.cpu_count(),

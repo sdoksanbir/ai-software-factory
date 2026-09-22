@@ -117,6 +117,67 @@ def open_local_project_folder(
     )
 
 
+def pick_local_project_folder() -> str | None:
+    """Tek bir modern klasör seçici açar; iptalde None döner."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.wm_attributes("-topmost", 1)
+        except Exception:
+            pass
+        selected = filedialog.askdirectory(
+            title="Proje klasörünü seç",
+            mustexist=True,
+        )
+        root.destroy()
+        return selected or None
+    except Exception:
+        pass
+
+    # Tk açılamazsa (nadir): modern Windows diyalogu — eski tree diyaloğu yok
+    if os.name == "nt":
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "$dialog.Description = 'Proje klasörünü seç'; "
+            "$dialog.UseDescriptionForTitle = $true; "
+            "$dialog.ShowNewFolderButton = $true; "
+            "try { $dialog.AutoUpgradeEnabled = $true } catch {}; "
+            "if ($dialog.ShowDialog() -eq "
+            "[System.Windows.Forms.DialogResult]::OK) { "
+            "Write-Output $dialog.SelectedPath "
+            "}"
+        )
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-STA",
+                    "-Command",
+                    script,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            selected = (completed.stdout or "").strip()
+            return selected or None
+        except Exception:
+            return None
+
+    return None
+
+
+class BrowseFolderResponse(BaseModel):
+    path: str | None = None
+
+
 def open_local_project_terminal(
     project_path: str,
 ) -> None:
@@ -417,7 +478,7 @@ def normalize_and_validate_project_path(
     if not os.path.isdir(normalized):
         raise HTTPException(
             status_code=400,
-            detail="Project directory does not exist",
+            detail="Seçilen klasör bulunamadı.",
         )
 
     git_marker = os.path.join(
@@ -428,7 +489,10 @@ def normalize_and_validate_project_path(
     if not os.path.exists(git_marker):
         raise HTTPException(
             status_code=400,
-            detail="Project path is not a Git repository",
+            detail=(
+                "Seçilen klasör bir Git deposu değil. "
+                "Klasörün içinde .git bulunmalı."
+            ),
         )
 
     return normalized
@@ -599,6 +663,28 @@ def hydrate_runtime_from_database() -> None:
 
 
 hydrate_runtime_from_database()
+
+# APPROVAL_RUNTIME_RECOVERY_V2
+def ensure_approval_runtime(task_id: str):
+    """
+    Restore approval runtime after a backend restart.
+
+    TASKS and TASK_CONTEXTS are in-memory caches while the task record,
+    branch and worktree metadata are persisted in SQLite.
+    """
+    task = TASKS.get(task_id)
+    context = TASK_CONTEXTS.get(task_id)
+
+    if task is None or (
+        task.state == "ready_for_approval"
+        and context is None
+    ):
+        hydrate_runtime_from_database()
+        task = TASKS.get(task_id)
+        context = TASK_CONTEXTS.get(task_id)
+
+    return task, context
+
 
 def api_approval_handler(
     task_id,
@@ -1154,6 +1240,17 @@ def run_task_for_api(task_id: str):
 
 
 @app.post(
+    "/projects/browse-folder",
+    response_model=BrowseFolderResponse,
+)
+async def browse_project_folder_endpoint():
+    selected = await asyncio.to_thread(
+        pick_local_project_folder,
+    )
+    return BrowseFolderResponse(path=selected)
+
+
+@app.post(
     "/projects",
     response_model=ProjectResponse,
     status_code=status.HTTP_201_CREATED,
@@ -1172,7 +1269,7 @@ def create_project_endpoint(
     if existing is not None:
         raise HTTPException(
             status_code=409,
-            detail="Project path is already registered",
+            detail="Bu proje yolu zaten kayıtlı.",
         )
 
     while True:
@@ -1711,20 +1808,30 @@ def approve_task(
     task_id: str,
     background_tasks: BackgroundTasks,
 ):
-    task = TASKS.get(task_id)
+    task, context = ensure_approval_runtime(task_id)
 
     if task is None:
         raise HTTPException(
             status_code=404,
-            detail="Task not found",
+            detail=f"Task not found after SQLite recovery: {task_id}",
         )
 
-    context = TASK_CONTEXTS.get(task_id)
-
-    if context is None or task.state != "ready_for_approval":
+    if task.state != "ready_for_approval":
         raise HTTPException(
             status_code=409,
-            detail="Task is not ready for approval",
+            detail=(
+                f"Task state is {task.state!r}, expected "
+                "'ready_for_approval'"
+            ),
+        )
+
+    if context is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approval runtime context could not be recovered from "
+                f"SQLite for {task_id}"
+            ),
         )
 
     state_machine = context["state_machine"]
@@ -1818,20 +1925,30 @@ def approve_task(
     response_model=TaskCreateResponse,
 )
 def reject_task(task_id: str):
-    task = TASKS.get(task_id)
+    task, context = ensure_approval_runtime(task_id)
 
     if task is None:
         raise HTTPException(
             status_code=404,
-            detail="Task not found",
+            detail=f"Task not found after SQLite recovery: {task_id}",
         )
 
-    context = TASK_CONTEXTS.get(task_id)
-
-    if context is None or task.state != "ready_for_approval":
+    if task.state != "ready_for_approval":
         raise HTTPException(
             status_code=409,
-            detail="Task is not ready for rejection",
+            detail=(
+                f"Task state is {task.state!r}, expected "
+                "'ready_for_approval'"
+            ),
+        )
+
+    if context is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approval runtime context could not be recovered from "
+                f"SQLite for {task_id}"
+            ),
         )
 
     state_machine = context["state_machine"]

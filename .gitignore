@@ -9,3 +9,7 @@ test_worktrees/
 .venv-1/
 data/*.db-wal
 data/*.db-shm
+
+.ui-backups/
+_exact_factory_patch/
+data/backup-*/
