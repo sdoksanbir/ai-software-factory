@@ -37,6 +37,7 @@ type Props = {
   actionLoading: boolean
   onApproveTask: () => void
   onRejectTask: () => void
+  onRetryTask: () => void
   taskReadResult: string | null
   pipeline: TaskPipeline | null
   pipelineStages: PipelineStage[]
@@ -71,6 +72,7 @@ type Props = {
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
   onCreateProject: (event: FormEvent<HTMLFormElement>) => void
+  onCreateNewProject: (event: FormEvent<HTMLFormElement>) => void
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: FormEvent<HTMLFormElement>) => void
@@ -150,6 +152,7 @@ export function ReferenceDashboard({
   actionLoading,
   onApproveTask,
   onRejectTask,
+  onRetryTask,
   taskReadResult,
   pipeline,
   pipelineStages,
@@ -184,6 +187,7 @@ export function ReferenceDashboard({
   onNewProjectNameChange,
   onNewProjectPathChange,
   onCreateProject,
+  onCreateNewProject,
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
@@ -667,6 +671,7 @@ export function ReferenceDashboard({
           onNewProjectNameChange={onNewProjectNameChange}
           onNewProjectPathChange={onNewProjectPathChange}
           onCreateProject={onCreateProject}
+          onCreateNewProject={onCreateNewProject}
           onProjectSettingsNameChange={onProjectSettingsNameChange}
           onProjectSettingsPathChange={onProjectSettingsPathChange}
           onSaveProjectSettings={onSaveProjectSettings}
@@ -747,6 +752,30 @@ export function ReferenceDashboard({
 
 
 
+            {/* TASK_RETRY_ACTION_V1 */}
+            {selectedTask?.state === "failed" && (
+              <section className="task-approval-panel task-retry-panel">
+                <div className="task-approval-copy">
+                  <span>GÖREV BAŞARISIZ</span>
+                  <strong>Görevi yeniden çalıştır</strong>
+                  <p>
+                    Mevcut backend retry akışı kullanılarak aynı görev
+                    tekrar denenecek.
+                  </p>
+                </div>
+
+                <div className="task-approval-actions">
+                  <button
+                    type="button"
+                    className="approve-action"
+                    disabled={actionLoading}
+                    onClick={onRetryTask}
+                  >
+                    {actionLoading ? "Yeniden başlatılıyor..." : "Tekrar Dene"}
+                  </button>
+                </div>
+              </section>
+            )}
             <TaskHistoryPanel
               selectedTask={selectedTask}
               pipelineStages={pipelineStages}
@@ -830,6 +859,7 @@ export function ReferenceDashboard({
           onNewProjectNameChange={onNewProjectNameChange}
           onNewProjectPathChange={onNewProjectPathChange}
           onCreateProject={onCreateProject}
+          onCreateNewProject={onCreateNewProject}
           onProjectSettingsNameChange={onProjectSettingsNameChange}
           onProjectSettingsPathChange={onProjectSettingsPathChange}
           onSaveProjectSettings={onSaveProjectSettings}

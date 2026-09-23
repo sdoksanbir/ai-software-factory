@@ -59,6 +59,7 @@ type Props = {
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
   onCreateProject: (event: React.FormEvent<HTMLFormElement>) => void
+  onCreateNewProject: (event: React.FormEvent<HTMLFormElement>) => void
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void
@@ -108,6 +109,7 @@ export function WorldControlPanels({
   onNewProjectNameChange,
   onNewProjectPathChange,
   onCreateProject,
+  onCreateNewProject,
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
@@ -403,6 +405,7 @@ export function WorldControlPanels({
             onNewProjectNameChange={onNewProjectNameChange}
             onNewProjectPathChange={onNewProjectPathChange}
             onCreateProject={onCreateProject}
+          onCreateNewProject={onCreateNewProject}
             onProjectSettingsNameChange={onProjectSettingsNameChange}
             onProjectSettingsPathChange={onProjectSettingsPathChange}
             onSaveProjectSettings={onSaveProjectSettings}

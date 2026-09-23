@@ -9,6 +9,7 @@ import {
 import {
   approveTask,
   createProject,
+  createNewProject,
   createTask,
   browseProjectFolder,
   getControlCenterStatus,
@@ -1364,6 +1365,55 @@ function App() {
     }
   }
 
+  async function handleCreateNewProject(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault()
+
+    const cleanName =
+      newProjectName.trim()
+
+    const cleanParentPath =
+      newProjectPath.trim()
+
+    if (!cleanName || !cleanParentPath) {
+      setError(
+        "Proje adı ve ana klasör yolu zorunludur.",
+      )
+      return
+    }
+
+    setProjectSubmitting(true)
+    setError(null)
+
+    try {
+      const project =
+        await createNewProject(
+          cleanName,
+          cleanParentPath,
+        )
+
+      await loadProjects()
+
+      setSelectedProjectId(
+        project.project_id,
+      )
+
+      setNewProjectName("")
+      setNewProjectPath("")
+      setShowProjectComposer(false)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Yeni proje oluşturulamadı.",
+      )
+    } finally {
+      setProjectSubmitting(false)
+    }
+  }
+
+
   async function handleDiff() {
     if (!selectedTask) return
 
@@ -1736,7 +1786,7 @@ function App() {
             <form
               className="rail-form"
               onSubmit={
-                handleCreateProject
+                handleCreateNewProject
               }
             >
               <input
@@ -1781,7 +1831,7 @@ function App() {
               >
                 {projectSubmitting
                   ? "Ekleniyor..."
-                  : "Projeyi Ekle"}
+                  : "Projeyi Oluştur"}
               </button>
             </form>
           )}
@@ -2042,6 +2092,7 @@ function App() {
           actionLoading={actionLoading}
           onApproveTask={() => void handleAction("approve")}
           onRejectTask={() => void handleAction("reject")}
+          onRetryTask={() => void handleAction("retry")}
           taskReadResult={taskReadResult}
           pipeline={pipeline}
           pipelineStages={pipelineStages}
@@ -2085,6 +2136,7 @@ function App() {
           onNewProjectNameChange={setNewProjectName}
           onNewProjectPathChange={setNewProjectPath}
           onCreateProject={handleCreateProject}
+          onCreateNewProject={handleCreateNewProject}
           onProjectSettingsNameChange={setProjectSettingsName}
           onProjectSettingsPathChange={setProjectSettingsPath}
           onSaveProjectSettings={handleProjectSettingsSave}

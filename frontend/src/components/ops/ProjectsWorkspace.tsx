@@ -33,6 +33,7 @@ type Props = {
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
   onCreateProject: (event: React.FormEvent<HTMLFormElement>) => void
+  onCreateNewProject: (event: React.FormEvent<HTMLFormElement>) => void
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void
@@ -363,6 +364,7 @@ export function ProjectsWorkspace({
   onNewProjectNameChange,
   onNewProjectPathChange,
   onCreateProject,
+  onCreateNewProject,
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
@@ -371,6 +373,7 @@ export function ProjectsWorkspace({
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortBy, setSortBy] = useState("name")
   const [showComposer, setShowComposer] = useState(false)
+  const [createMode, setCreateMode] = useState<"new" | "existing">("new")
   const [viewMode, setViewMode] = useState<"list" | "details">("list")
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [createAttempted, setCreateAttempted] = useState(false)
@@ -590,6 +593,12 @@ export function ProjectsWorkspace({
   ) {
     projectCountAtSubmit.current = projects.length
     setCreateAttempted(true)
+
+    if (createMode === "new") {
+      onCreateNewProject(event)
+      return
+    }
+
     onCreateProject(event)
   }
 
@@ -929,7 +938,28 @@ export function ProjectsWorkspace({
         </div>
 
         {showComposer && (
-          <form className="projects-composer" onSubmit={handleCreateProjectSubmit}>
+          <form
+            className="projects-composer"
+            onSubmit={handleCreateProjectSubmit}
+          >
+            <div className="projects-create-mode">
+              <button
+                type="button"
+                className={createMode === "new" ? "active" : ""}
+                onClick={() => setCreateMode("new")}
+              >
+                Yeni Proje Oluştur
+              </button>
+
+              <button
+                type="button"
+                className={createMode === "existing" ? "active" : ""}
+                onClick={() => setCreateMode("existing")}
+              >
+                Mevcut Proje Ekle
+              </button>
+            </div>
+
             <label>
               <span>Proje adı</span>
               <input
@@ -937,32 +967,59 @@ export function ProjectsWorkspace({
                 onChange={(event) =>
                   onNewProjectNameChange(event.target.value)
                 }
-                placeholder="Yeni proje"
-                required
+                placeholder={
+                  createMode === "new"
+                    ? "Yeni proje"
+                    : "Mevcut proje"
+                }
               />
             </label>
-            <label className="projects-path-field">
-              <span>Proje klasörü</span>
-              <div className="projects-path-picker">
-                <input
-                  value={newProjectPath}
-                  readOnly
-                  placeholder="Klasör seçilmedi"
-                  required
-                  title={newProjectPath || undefined}
-                />
-                <button
-                  type="button"
-                  className="projects-browse-btn"
-                  onClick={() => {
-                    void handleBrowseFolder()
-                  }}
-                  disabled={browsingFolder || projectSubmitting}
-                >
-                  {browsingFolder ? "Seçiliyor..." : "Klasör Seç"}
-                </button>
-              </div>
+
+            <label>
+              <span>
+                {createMode === "new"
+                  ? "Konum (ana klasör)"
+                  : "Mevcut Git repo yolu"}
+              </span>
+
+              <input
+                value={newProjectPath}
+                onChange={(event) =>
+                  onNewProjectPathChange(event.target.value)
+                }
+                placeholder={
+                  createMode === "new"
+                    ? "D:\\AI-Projects"
+                    : "D:\\AI-Projects\\mevcut-proje"
+                }
+              />
             </label>
+
+            <button
+              type="button"
+              className="projects-create-browse"
+              onClick={() => void handleBrowseFolder()}
+              disabled={browsingFolder}
+            >
+              {browsingFolder
+                ? "Klasör açılıyor..."
+                : createMode === "new"
+                  ? "Ana Klasör Seç"
+                  : "Repo Klasörü Seç"}
+            </button>
+
+            {createAttempted && projectCreateError && (
+              <div
+                className="projects-composer-error"
+                role="alert"
+              >
+                <strong>Proje oluşturulamadı</strong>
+                <span>
+                  {projectCreateErrorTr(projectCreateError)}
+                </span>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={
@@ -971,20 +1028,14 @@ export function ProjectsWorkspace({
                 !newProjectPath.trim()
               }
             >
-              {projectSubmitting ? "Ekleniyor..." : "Projeyi Ekle"}
+              {projectSubmitting
+                ? createMode === "new"
+                  ? "Oluşturuluyor..."
+                  : "Ekleniyor..."
+                : createMode === "new"
+                  ? "Projeyi Oluştur"
+                  : "Mevcut Projeyi Ekle"}
             </button>
-
-            {createAttempted && projectCreateError && (
-              <div
-                className="projects-composer-error"
-                role="alert"
-              >
-                <strong>Proje eklenemedi</strong>
-                <span>
-                  Sebep: {projectCreateErrorTr(projectCreateError)}
-                </span>
-              </div>
-            )}
           </form>
         )}
 

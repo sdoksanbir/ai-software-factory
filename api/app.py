@@ -9,6 +9,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
@@ -44,6 +45,10 @@ from factory.project_memory_store import (
 )
 from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
+from factory.project_creator import (
+    create_new_git_project,
+    planned_new_project_path,
+)
 from factory.models import ModelClient
 from factory.agents.providers.model_client import (
     ModelClientProvider,
@@ -437,6 +442,11 @@ class TaskGraphRunnableResponse(BaseModel):
 class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     path: str = Field(min_length=1)
+
+
+class ProjectNewRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    parent_path: str = Field(min_length=1)
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -1248,6 +1258,96 @@ async def browse_project_folder_endpoint():
         pick_local_project_folder,
     )
     return BrowseFolderResponse(path=selected)
+
+
+# NEW_PROJECT_CREATE_V1
+@app.post(
+    "/projects/create-new",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_new_project_endpoint(
+    request: ProjectNewRequest,
+):
+    try:
+        planned_path = planned_new_project_path(
+            request.parent_path,
+            request.name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    factory_root = Path(__file__).resolve().parents[1]
+
+    try:
+        planned_path.resolve().relative_to(
+            factory_root.resolve()
+        )
+    except ValueError:
+        pass
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Yeni proje AI Software Factory klasorunun "
+                "icinde olusturulamaz. Baska bir konum secin."
+            ),
+        )
+
+    planned_path_text = str(planned_path.resolve())
+
+    existing = db_get_project_by_path(
+        planned_path_text
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bu proje yolu Factory'de zaten kayitli."
+            ),
+        )
+
+    try:
+        project_path = create_new_git_project(
+            request.parent_path,
+            request.name,
+        )
+    except FileExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Git projesi olusturulamadi: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    while True:
+        project_id = (
+            f"PROJECT-{random.randint(1000, 9999)}"
+        )
+        if db_get_project(project_id) is None:
+            break
+
+    row = db_create_project(
+        project_id,
+        name=request.name.strip(),
+        path=project_path,
+    )
+
+    return project_row_to_response(row)
 
 
 @app.post(

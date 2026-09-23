@@ -331,6 +331,19 @@ export function createProject(
   })
 }
 
+export function createNewProject(
+  name: string,
+  parentPath: string,
+) {
+  return request<Project>("/projects/create-new", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      parent_path: parentPath,
+    }),
+  })
+}
+
 
 export function updateProject(
   projectId: string,
