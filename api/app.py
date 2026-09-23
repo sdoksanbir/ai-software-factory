@@ -53,7 +53,10 @@ from factory.models import ModelClient
 from factory.agents.providers.model_client import (
     ModelClientProvider,
 )
-from factory.task_plan_store import get_task_plan
+from factory.task_plan_store import (
+    get_task_plan,
+    reset_retryable_task_steps,
+)
 from factory.agent_checkpoint_store import (
     list_agent_checkpoints,
 )
@@ -2170,6 +2173,8 @@ def retry_task(
 
     db_delete_task_diff(task_id)
     db_clear_task_logs(task_id)
+
+    reset_retryable_task_steps(task_id)
 
     task.status = "queued"
     task.state = "queued"

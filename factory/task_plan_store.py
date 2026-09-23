@@ -438,6 +438,53 @@ def update_task_step(
     finally:
         connection.close()
 
+def reset_retryable_task_steps(
+    task_id: str,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> int:
+    plan = get_task_plan(
+        task_id,
+        db_path=db_path,
+    )
+
+    if plan is None:
+        return 0
+
+    reset_count = 0
+
+    for step in plan.get("steps", []):
+        step_status = str(
+            step.get("status") or ""
+        ).strip().lower()
+
+        if step_status not in {
+            "failed",
+            "running",
+        }:
+            continue
+
+        update_task_step(
+            task_id,
+            int(step["step_index"]),
+            status="pending",
+            attempt=0,
+            error="",
+            db_path=db_path,
+        )
+
+        reset_count += 1
+
+    if reset_count > 0:
+        update_task_plan_status(
+            task_id,
+            "pending",
+            db_path=db_path,
+        )
+
+    return reset_count
+
+
 
 def delete_task_plan(
     task_id: str,
