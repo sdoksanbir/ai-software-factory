@@ -560,6 +560,46 @@ class TaskStepHandlers:
             )
         )
 
+        # REVIEWER_GROUNDING_V1
+        # Reviewer yalniz dosya adlarini degil, gercek degisiklik
+        # kanitini da gorsun. Gercek Orchestrator'da git diff'i
+        # tercih et; hafif test doubles icin patch icerigine dus.
+        review_evidence = ""
+
+        git_manager = getattr(
+            self.orchestrator,
+            "git_manager",
+            None,
+        )
+
+        if git_manager is not None:
+            try:
+                review_evidence = str(
+                    git_manager.get_diff(
+                        worktree_path
+                    )
+                    or ""
+                ).strip()
+            except Exception:
+                review_evidence = ""
+
+        if not review_evidence:
+            evidence_parts = []
+
+            for file_change in patch.files:
+                evidence_parts.append(
+                    "FILE: "
+                    f"{file_change.path}\n"
+                    "FULL CONTENT AFTER WRITE:\n"
+                    f"{file_change.content}"
+                )
+
+            review_evidence = (
+                "\n\n".join(evidence_parts)
+            )
+
+        review_evidence = review_evidence[:16000]
+
         return StepHandlerResult(
             output=output,
             agent_name=agent_route.agent.name,
@@ -581,6 +621,12 @@ class TaskStepHandlers:
                     str(item)
                     for item in written_files
                 ],
+                "original_task": (
+                    self.scope_prompt
+                    or instruction
+                ),
+                "write_instruction": instruction,
+                "diff": review_evidence,
             },
             handoff_request=StepHandoffRequest(
                 required_capabilities=frozenset(
@@ -593,14 +639,29 @@ class TaskStepHandlers:
                     "WRITE step"
                 ),
                 instruction=(
-                    "Review the completed WRITE "
-                    "step using the supplied "
-                    "checkpoint context. "
-                    "Identify correctness, "
-                    "regression, security, and "
-                    "scope problems. Do not "
-                    "modify files. Return ONLY "
-                    "valid JSON with this shape: "
+                    "Review the completed WRITE step using ONLY "
+                    "the supplied checkpoint context and change "
+                    "evidence. Evaluate the change against "
+                    "payload.original_task and "
+                    "payload.write_instruction. Treat "
+                    "artifacts.diff (or payload.diff) as the "
+                    "primary evidence of what changed. "
+                    "Do not invent requirements that the user "
+                    "did not request. Missing input validation, "
+                    "error handling, logging, authentication, "
+                    "or other generic hardening is NOT a finding "
+                    "unless the original task requires it or the "
+                    "changed code concretely introduces an "
+                    "untrusted-input/security boundary that needs "
+                    "it. A scope finding is valid only when the "
+                    "change evidence shows files or behavior "
+                    "outside the requested scope. A security "
+                    "finding must name a concrete vulnerable "
+                    "behavior visible in the changed content; "
+                    "generic security advice must not block. "
+                    "If there is no concrete task-relevant defect, "
+                    "return verdict pass. Do not modify files. "
+                    "Return ONLY valid JSON with this shape: "
                     "{"
                     "\"verdict\": "
                     "\"pass|warn|block\", "
@@ -619,8 +680,10 @@ class TaskStepHandlers:
                     "}"
                     "]"
                     "}. "
-                    "Use block when a finding "
-                    "must prevent progression."
+                    "Use block only for a concrete, "
+                    "evidence-backed defect that must prevent "
+                    "progression. Warnings and hypothetical "
+                    "improvements must not block."
                 ),
                 required=False,
                 quality_gate=True,

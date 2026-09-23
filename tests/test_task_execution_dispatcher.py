@@ -26,7 +26,7 @@ def _model_route():
     )
 
 
-def test_single_step_uses_legacy_runner(
+def test_single_step_uses_agent_pipeline(
     monkeypatch,
 ):
     orchestrator = FakeOrchestrator()
@@ -61,12 +61,14 @@ def test_single_step_uses_legacy_runner(
 
     multi_calls = []
 
+    def fake_multi(**kwargs):
+        multi_calls.append(kwargs)
+        return "ready_for_approval"
+
     monkeypatch.setattr(
         "factory.task_execution_dispatcher."
         "run_multi_step_task",
-        lambda **kwargs: (
-            multi_calls.append(kwargs)
-        ),
+        fake_multi,
     )
 
     result, plan = execute_write_task(
@@ -77,17 +79,17 @@ def test_single_step_uses_legacy_runner(
         model_route=_model_route(),
     )
 
-    assert result == "legacy-result"
-    assert plan["planner_mode"] == (
-        "single_step"
-    )
-
-    assert len(
-        orchestrator.legacy_calls
-    ) == 1
-
-    assert multi_calls == []
-    assert len(saved) == 1
+    assert result == "ready_for_approval"
+    assert len(multi_calls) == 1
+    assert [
+        step["kind"]
+        for step in plan["steps"]
+    ] == [
+        "write",
+        "verify",
+    ]
+    assert saved
+    assert saved[-1][0][1][-1]["kind"] == "verify"
 
 
 def test_multi_step_uses_new_runner(
@@ -220,6 +222,12 @@ def test_plan_is_persisted(
         fake_save,
     )
 
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "run_multi_step_task",
+        lambda **kwargs: "ready_for_approval",
+    )
+
     execute_write_task(
         orchestrator=orchestrator,
         prompt="Write",
@@ -271,6 +279,12 @@ def test_progress_reports_planner_mode(
     )
 
     events = []
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "run_multi_step_task",
+        lambda **kwargs: "ready_for_approval",
+    )
 
     execute_write_task(
         orchestrator=orchestrator,

@@ -223,3 +223,92 @@ def test_checkpoint_write_failure_marks_step_failed(
         plan["steps"][0]["status"]
         == "failed"
     )
+
+def test_previous_leaf_prefers_latest_retry_attempt(
+    tmp_path,
+):
+    from factory.agent_checkpoint_store import (
+        create_agent_checkpoint,
+    )
+    from factory.task_step_executor import (
+        _find_previous_step_leaf_checkpoint,
+    )
+
+    db_path = tmp_path / "factory.db"
+    task_id = "TASK-LINEAGE-RETRY-1"
+
+    old_coder = create_agent_checkpoint(
+        task_id,
+        step_index=1,
+        agent_name="ollama-coder",
+        provider_name="ollama",
+        status="handed_off",
+        summary="old coder",
+        payload={
+            "attempt": 1,
+            "step_kind": "write",
+        },
+        checkpoint_id="CHK-OLD-CODER",
+        db_path=db_path,
+    )
+
+    create_agent_checkpoint(
+        task_id,
+        step_index=1,
+        agent_name="reviewer",
+        provider_name="model_client",
+        status="completed",
+        summary="old review",
+        payload={
+            "source_checkpoint_id": (
+                old_coder["checkpoint_id"]
+            ),
+        },
+        checkpoint_id="CHK-OLD-REVIEW",
+        db_path=db_path,
+    )
+
+    new_coder = create_agent_checkpoint(
+        task_id,
+        step_index=1,
+        agent_name="ollama-coder",
+        provider_name="ollama",
+        status="handed_off",
+        summary="new coder",
+        payload={
+            "attempt": 2,
+            "step_kind": "write",
+        },
+        checkpoint_id="CHK-NEW-CODER",
+        db_path=db_path,
+    )
+
+    new_review = create_agent_checkpoint(
+        task_id,
+        step_index=1,
+        agent_name="reviewer",
+        provider_name="model_client",
+        status="completed",
+        summary="new review",
+        payload={
+            "source_checkpoint_id": (
+                new_coder["checkpoint_id"]
+            ),
+        },
+        checkpoint_id="CHK-NEW-REVIEW",
+        db_path=db_path,
+    )
+
+    selected = (
+        _find_previous_step_leaf_checkpoint(
+            task_id,
+            2,
+            db_path=db_path,
+        )
+    )
+
+    assert (
+        selected["checkpoint_id"]
+        == new_review["checkpoint_id"]
+    )
+

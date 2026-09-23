@@ -120,6 +120,44 @@ def execute_write_task(
         "single_step",
     )
 
+    # SINGLE_STEP_AGENT_PIPELINE_V1
+    # Basit WRITE gorevleri de agent pipeline'dan gecsin:
+    # WRITE -> REVIEW handoff -> VERIFY -> APPROVAL.
+    # Reviewer, TaskStepHandlers.write() tarafindan uretilen
+    # quality-gate handoff ile gercekten calisir.
+    if planner_mode == "single_step":
+        steps = list(plan.get("steps", []))
+
+        has_verify = any(
+            str(step.get("kind", ""))
+            .strip()
+            .lower()
+            == "verify"
+            for step in steps
+        )
+
+        if not has_verify:
+            steps.append(
+                {
+                    "title": "Dogrula",
+                    "instruction": (
+                        "Uygulanan degisikligi dogrula ve "
+                        "ilgili testleri calistir."
+                    ),
+                    "kind": "verify",
+                    "status": "pending",
+                    "attempt": 0,
+                }
+            )
+
+            plan["steps"] = steps
+
+            save_task_plan(
+                task_id,
+                plan["steps"],
+                summary=plan.get("summary"),
+            )
+
     if (
         progress_handler is not None
         and not resume_multi_step
@@ -133,7 +171,7 @@ def execute_write_task(
             ),
         )
 
-    if planner_mode == "multi_step":
+    if planner_mode in {"multi_step", "single_step"}:
         result = run_multi_step_task(
             orchestrator=orchestrator,
             prompt=prompt,

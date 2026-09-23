@@ -215,6 +215,109 @@ def _find_previous_step_leaf_checkpoint(
     if len(candidates) == 1:
         return candidates[0]
 
+    # CHECKPOINT_LINEAGE_ATTEMPT_V1
+    # Reviewer/handoff checkpoint'lerinde attempt dogrudan
+    # payload icinde olmayabilir. source_checkpoint_id zincirini
+    # geriye takip ederek WRITE checkpoint'inin attempt degerini
+    # devral ve yalniz en yeni attempt lineage'ini aktif say.
+    checkpoints_by_id = {
+        str(
+            checkpoint.get(
+                "checkpoint_id",
+                "",
+            )
+        ): checkpoint
+        for checkpoint in checkpoints
+        if checkpoint.get(
+            "checkpoint_id"
+        )
+    }
+
+    def checkpoint_attempt(
+        checkpoint: dict[str, Any],
+    ) -> int | None:
+        current = checkpoint
+        seen: set[str] = set()
+
+        while current is not None:
+            payload = current.get(
+                "payload"
+            )
+
+            if isinstance(
+                payload,
+                dict,
+            ):
+                raw_attempt = payload.get(
+                    "attempt"
+                )
+
+                if raw_attempt is not None:
+                    try:
+                        return int(
+                            raw_attempt
+                        )
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        return None
+
+                source_id = str(
+                    payload.get(
+                        "source_checkpoint_id",
+                        "",
+                    )
+                    or ""
+                ).strip()
+            else:
+                source_id = ""
+
+            if (
+                not source_id
+                or source_id in seen
+            ):
+                return None
+
+            seen.add(
+                source_id
+            )
+            current = checkpoints_by_id.get(
+                source_id
+            )
+
+        return None
+
+    attempts = [
+        (
+            checkpoint,
+            checkpoint_attempt(
+                checkpoint
+            ),
+        )
+        for checkpoint in candidates
+    ]
+
+    known_attempts = [
+        attempt
+        for _, attempt in attempts
+        if attempt is not None
+    ]
+
+    if known_attempts:
+        latest_attempt = max(
+            known_attempts
+        )
+        candidates = [
+            checkpoint
+            for checkpoint, attempt
+            in attempts
+            if attempt == latest_attempt
+        ]
+
+        if len(candidates) == 1:
+            return candidates[0]
+
     candidate_ids = {
         str(
             checkpoint.get(
