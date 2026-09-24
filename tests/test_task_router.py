@@ -71,3 +71,45 @@ def test_empty_prompt_rejected():
     raise AssertionError(
         "Bos prompt ValueError vermeliydi."
     )
+
+
+def test_virtualenv_setup_is_execute():
+    route = route_task(
+        "Ana klasore venv sanal ortami kur."
+    )
+    assert route.kind == "execute"
+
+
+def test_virtualenv_create_is_execute():
+    route = route_task(
+        "Proje kokunde .venv olustur."
+    )
+    assert route.kind == "execute"
+
+
+def test_virtualenv_explanation_stays_read():
+    route = route_task(
+        "venv sanal ortami nedir, acikla."
+    )
+    assert route.kind == "read"
+
+
+def test_pip_setup_is_execute():
+    route = route_task(
+        "Simdi bu klasore pip kurulumunu gerceklestir."
+    )
+    assert route.kind == "execute"
+
+
+def test_pip_install_is_execute():
+    route = route_task(
+        "Bu projede pip install islemini gerceklestir."
+    )
+    assert route.kind == "execute"
+
+
+def test_pip_explanation_stays_read():
+    route = route_task(
+        "pip nedir, acikla."
+    )
+    assert route.kind == "read"

@@ -6,6 +6,7 @@ from factory.database import get_connection
 VALID_TASK_KINDS = {
     "read",
     "write",
+    "execute",
 }
 
 
@@ -104,3 +105,4 @@ def delete_task_route(
         )
 
         connection.commit()
+

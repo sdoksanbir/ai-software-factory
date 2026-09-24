@@ -236,6 +236,38 @@ export function WorldControlPanels({
               className="world-form world-task-form"
               onSubmit={onCreateTask}
             >
+                <label className="world-task-project-field world-form-wide">
+                  <span>Proje</span>
+
+                  <select
+                    value={selectedProjectId ?? ""}
+                    onChange={(event) =>
+                      onSelectProject(event.target.value)
+                    }
+                    required
+                  >
+                    <option value="" disabled>
+                      Proje seç
+                    </option>
+
+                    {projects.map((project) => (
+                      <option
+                        key={project.project_id}
+                        value={project.project_id}
+                      >
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <small>
+                    {projects.find(
+                      (project) =>
+                        project.project_id === selectedProjectId,
+                    )?.path ?? "Görev için proje seçmelisin."}
+                  </small>
+                </label>
+
               <label className="world-form-wide">
                 <span>Görev</span>
 

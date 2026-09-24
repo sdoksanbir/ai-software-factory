@@ -180,6 +180,16 @@ export function TeddyFactoryPipeline({
   const [walking, setWalking] = useState(false)
   const prevIndex = useRef<number | null>(null)
 
+  // RUNNER_REAL_DESK_POSITION_V1
+  // Kosan ayicik sahneyi yuzdelere bolmez.
+  // Hedef masanin gercek DOM merkezine gider.
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const machineRefs = useRef<Array<HTMLElement | null>>([])
+  const [runnerLeftPx, setRunnerLeftPx] =
+    useState<number | null>(null)
+
+  const runnerIndex = runner?.index ?? null
+
   useEffect(() => {
     if (runner == null) {
       return
@@ -199,6 +209,61 @@ export function TeddyFactoryPipeline({
 
     prevIndex.current = runner.index
   }, [runner?.index])
+
+  useEffect(() => {
+    if (runnerIndex == null) {
+      setRunnerLeftPx(null)
+      return
+    }
+
+    const updateRunnerPosition = () => {
+      const stage = stageRef.current
+      const machine = machineRefs.current[runnerIndex]
+
+      if (!stage || !machine) {
+        return
+      }
+
+      const stageRect = stage.getBoundingClientRect()
+      const machineRect = machine.getBoundingClientRect()
+
+      setRunnerLeftPx(
+        machineRect.left -
+          stageRect.left +
+          machineRect.width / 2,
+      )
+    }
+
+    updateRunnerPosition()
+
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(updateRunnerPosition)
+        : null
+
+    if (stageRef.current) {
+      observer?.observe(stageRef.current)
+    }
+
+    machineRefs.current.forEach((machine) => {
+      if (machine) {
+        observer?.observe(machine)
+      }
+    })
+
+    window.addEventListener(
+      "resize",
+      updateRunnerPosition,
+    )
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener(
+        "resize",
+        updateRunnerPosition,
+      )
+    }
+  }, [runnerIndex, stations.length])
 
   const runnerMood: RunnerMood =
     walking &&
@@ -228,7 +293,9 @@ export function TeddyFactoryPipeline({
   const runnerLeft =
     runner == null
       ? "8%"
-      : `${((runner.index + 0.5) / count) * 100}%`
+      : runnerLeftPx != null
+        ? `${runnerLeftPx}px`
+        : `${((runner.index + 0.5) / count) * 100}%`
 
   const lastStationIndex = Math.max(stations.length - 1, 0)
 
@@ -253,7 +320,10 @@ export function TeddyFactoryPipeline({
         </small>
       </header>
 
-      <div className="ref-factory-stage teddy-factory-stage has-runner">
+      <div
+        ref={stageRef}
+        className="ref-factory-stage teddy-factory-stage has-runner"
+      >
         <div className="ref-stage-background" />
 
         <div className="ref-conveyor">
@@ -274,6 +344,9 @@ export function TeddyFactoryPipeline({
 
             return (
               <article
+                ref={(element) => {
+                  machineRefs.current[index] = element
+                }}
                 key={station.key}
                 className={`ref-machine teddy-station state-${station.state}${
                   isLastDesk ? " is-last-desk" : ""

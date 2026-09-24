@@ -74,11 +74,17 @@ from factory.review_quality import (
 )
 from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
+from factory.semantic_task_router import (
+    route_task_semantic,
+)
 from factory.task_route_store import (
     get_task_route,
     save_task_route,
 )
 from factory.read_task_runner import run_read_task
+from factory.execute_task_runner import (
+    run_execute_task,
+)
 from factory.task_execution_dispatcher import execute_write_task
 from factory.task_graph_execution import (
     evaluate_task_execution_gate,
@@ -947,6 +953,11 @@ def run_task_for_api(task_id: str):
     if task is None:
         raise KeyError(f"Unknown task: {task_id}")
 
+    append_task_log(
+        task_id,
+        "Task worker baslatildi.",
+    )
+
     # Task Graph: dependency kontrolu
     # planner/model/worktree baslamadan once
     # yapilir.
@@ -974,12 +985,29 @@ def run_task_for_api(task_id: str):
             known_task_id
         ] = str(known_state)
 
-    graph_gate = (
-        evaluate_task_execution_gate(
-            task_id,
-            task_states,
+    try:
+        graph_gate = (
+            evaluate_task_execution_gate(
+                task_id,
+                task_states,
+            )
         )
-    )
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Task Graph baslangic hatasi: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
+
+        update_task_runtime(
+            task_id,
+            status="failed",
+            state="failed",
+        )
+
+        return None
 
     if graph_gate["state"] == "blocked":
         pending = (
@@ -1045,8 +1073,10 @@ def run_task_for_api(task_id: str):
 
         return None
 
-    task_route = route_task(
+    # SEMANTIC_TASK_ROUTER_V1
+    task_route = route_task_semantic(
         task.prompt,
+        model_client=ModelClient(),
     )
 
     save_task_route(
@@ -1062,7 +1092,12 @@ def run_task_for_api(task_id: str):
         (
             "Task Router: "
             f"{task_route.kind.upper()} - "
-            f"{task_route.reason}"
+            f"{task_route.reason} "
+            f"[intent={task_route.intent}; "
+            f"target={task_route.target}; "
+            f"framework={task_route.framework}; "
+            f"confidence={task_route.confidence:.2f}; "
+            f"source={task_route.source}]"
         ),
     )
 
@@ -1072,7 +1107,23 @@ def run_task_for_api(task_id: str):
         )
     )
 
-    if requested_model:
+    if task_route.kind == "execute":
+        model_route = ModelRoute(
+            model="local-executor",
+            profile="execute",
+            reason=(
+                "Deterministik yerel eylem "
+                "calistiricisi secildi."
+            ),
+            code_score=0,
+        )
+
+        selection_log = (
+            "Execution Router: local-executor - "
+            "Model cagrisi gerekmiyor."
+        )
+
+    elif requested_model:
         model_route = ModelRoute(
             model=requested_model,
             profile="manual",
@@ -1130,6 +1181,75 @@ def run_task_for_api(task_id: str):
             state="failed",
         )
         return None
+
+    if task_route.kind == "execute":
+        try:
+            append_task_log(
+                task_id,
+                "EXECUTE gorevi calistiriliyor.",
+            )
+
+            execute_result = run_execute_task(
+                project_path=orchestrator.project_path,
+                prompt=task.prompt,
+                intent=task_route.intent,
+                target=task_route.target,
+                framework=task_route.framework,
+            )
+
+            save_task_read_result(
+                task_id,
+                execute_result,
+            )
+
+            update_task_runtime(
+                task_id,
+                status="completed",
+                state="completed",
+                test_result="not_required",
+            )
+
+            append_task_log(
+                task_id,
+                execute_result,
+            )
+
+            append_task_log(
+                task_id,
+                "EXECUTE gorevi tamamlandi.",
+            )
+
+            released_dependents = (
+                release_runnable_graph_dependents(
+                    task_id
+                )
+            )
+
+            for dependent_task_id in (
+                released_dependents
+            ):
+                run_task_for_api(
+                    dependent_task_id
+                )
+
+            return
+
+        except Exception as exc:
+            append_task_log(
+                task_id,
+                (
+                    "EXECUTE gorevi basarisiz: "
+                    f"{exc}"
+                ),
+            )
+
+            update_task_runtime(
+                task_id,
+                status="failed",
+                state="failed",
+            )
+
+            return
 
     if task_route.kind == "read":
         try:

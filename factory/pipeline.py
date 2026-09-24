@@ -106,6 +106,26 @@ def _mark_success_through(
 
 
 
+EXECUTE_PIPELINE_STAGES = [
+    {
+        "id": "task",
+        "label": "G\u00f6rev Al\u0131nd\u0131",
+    },
+    {
+        "id": "action_prepare",
+        "label": "Eylem Haz\u0131rl\u0131\u011f\u0131",
+    },
+    {
+        "id": "action_execute",
+        "label": "Yerel \u00c7al\u0131\u015ft\u0131rma",
+    },
+    {
+        "id": "completed",
+        "label": "Sonu\u00e7",
+    },
+]
+
+
 READ_PIPELINE_STAGES = [
     {
         "id": "task",
@@ -296,16 +316,182 @@ def _build_read_task_pipeline(
     }
 
 
+
+def _build_execute_task_pipeline(
+    task: Any,
+    logs: Iterable[str] = (),
+) -> dict[str, Any]:
+    log_items = [
+        str(item)
+        for item in logs
+    ]
+
+    task_state = str(
+        _value(
+            task,
+            "state",
+            "queued",
+        )
+    )
+
+    stages = [
+        {
+            "id": stage["id"],
+            "label": stage["label"],
+            "status": "pending",
+        }
+        for stage in EXECUTE_PIPELINE_STAGES
+    ]
+
+    by_id = {
+        stage["id"]: stage
+        for stage in stages
+    }
+
+    by_id["task"]["status"] = "success"
+
+    router_detected = _contains(
+        log_items,
+        "Task Router: EXECUTE",
+    )
+
+    execution_routed = _contains(
+        log_items,
+        "Execution Router:",
+    )
+
+    execute_started = _contains(
+        log_items,
+        "EXECUTE gorevi calistiriliyor",
+    )
+
+    execute_completed = _contains(
+        log_items,
+        "EXECUTE gorevi tamamlandi",
+    )
+
+    execute_failed = _contains(
+        log_items,
+        "EXECUTE gorevi basarisiz",
+    )
+
+    if (
+        execute_completed
+        or task_state == "completed"
+    ):
+        for stage in stages:
+            stage["status"] = "success"
+
+    elif (
+        execute_failed
+        or task_state == "failed"
+    ):
+        if execute_started:
+            by_id[
+                "action_prepare"
+            ]["status"] = "success"
+
+            by_id[
+                "action_execute"
+            ]["status"] = "failed"
+
+        else:
+            by_id[
+                "action_prepare"
+            ]["status"] = "failed"
+
+    elif execute_started:
+        by_id[
+            "action_prepare"
+        ]["status"] = "success"
+
+        by_id[
+            "action_execute"
+        ]["status"] = "active"
+
+    elif (
+        execution_routed
+        or router_detected
+        or task_state == "running"
+    ):
+        by_id[
+            "action_prepare"
+        ]["status"] = "active"
+
+    current_stage = next(
+        (
+            stage["id"]
+            for stage in stages
+            if stage["status"]
+            in {
+                "active",
+                "failed",
+            }
+        ),
+        None,
+    )
+
+    if current_stage is None:
+        pending_stage = next(
+            (
+                stage["id"]
+                for stage in stages
+                if stage["status"]
+                == "pending"
+            ),
+            None,
+        )
+
+        current_stage = (
+            pending_stage
+            or "completed"
+        )
+
+    completed = sum(
+        stage["status"] == "success"
+        for stage in stages
+    )
+
+    progress_percent = round(
+        completed
+        / len(stages)
+        * 100
+    )
+
+    if task_state == "completed":
+        progress_percent = 100
+
+    return {
+        "task_id": _value(
+            task,
+            "task_id",
+        ),
+        "task_state": task_state,
+        "task_kind": "execute",
+        "current_stage": current_stage,
+        "progress_percent": progress_percent,
+        "stages": stages,
+    }
+
+
 def build_task_pipeline(
     task: Any,
     logs: Iterable[str] = (),
     task_kind: str | None = None,
 ) -> dict[str, Any]:
-    if (
-        task_kind is not None
-        and task_kind.strip().casefold()
-        == "read"
-    ):
+    normalized_kind = (
+        task_kind.strip().casefold()
+        if task_kind is not None
+        else None
+    )
+
+    if normalized_kind == "execute":
+        return _build_execute_task_pipeline(
+            task,
+            logs,
+        )
+
+    if normalized_kind == "read":
         return _build_read_task_pipeline(
             task,
             logs,

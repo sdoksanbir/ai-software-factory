@@ -28,6 +28,19 @@ TRANSLATION_TABLE = str.maketrans(
 )
 
 
+EXECUTE_PATTERNS = (
+    # pip-install-execute-v1
+    r"\bpip\b.*\b(kur|kurulum|yukle|install|setup|gerceklestir)\w*\b",
+    r"\b(kur|kurulum|yukle|install|setup|gerceklestir)\w*\b.*\bpip\b",
+    r"\bvenv\b.*\b(kur|olustur|hazirla)\b",
+    r"\b(kur|olustur|hazirla)\b.*\bvenv\b",
+    r"\bsanal ortam\b.*\b(kur|olustur|hazirla)\b",
+    r"\b(kur|olustur|hazirla)\b.*\bsanal ortam\b",
+    r"\bvirtual environment\b.*\b(create|setup|set up)\b",
+    r"\b(create|setup|set up)\b.*\bvirtual environment\b",
+)
+
+
 WRITE_PATTERNS = (
     r"\bolustur\b",
     r"\bekle\b",
@@ -97,6 +110,17 @@ def route_task(
     if not clean:
         raise ValueError(
             "prompt bos olamaz"
+        )
+
+    # Yerel proje ortaminda gercek bir eylem isteyen
+    # gorevler READ/WRITE hattina gonderilmez.
+    if _matches(clean, EXECUTE_PATTERNS):
+        return TaskRoute(
+            kind="execute",
+            reason=(
+                "Proje ortaminda gercek bir yerel "
+                "eylem istegi algilandi."
+            ),
         )
 
     # Acik bir degisiklik talebi varsa WRITE,

@@ -243,6 +243,9 @@ export function ReferenceDashboard({
   const isReadTask =
     taskKind === "read"
 
+  const isExecuteTask =
+    taskKind === "execute"
+
   const findBackendStages = (
     names: string[],
   ) =>
@@ -405,6 +408,73 @@ export function ReferenceDashboard({
     },
   ]
 
+  const executeStations: PipelineStation[] = [
+    {
+      key: "execute-task",
+      label: "G\u00d6REV",
+      lines: lineOrWait(
+        selectedTask?.task_id,
+        labelForStages(["task"]),
+        displayStatus(
+          findBackendStages(["task"])[0]
+            ?.status,
+        ),
+      ),
+      state: stateForStages(["task"]),
+      accent: "amber",
+      icon: "idea",
+    },
+    {
+      key: "execute-prepare",
+      label: "EYLEM HAZIRLI\u011eI",
+      lines: lineOrWait(
+        selectedTask?.model,
+        labelForStages(["action_prepare"]),
+        displayStatus(
+          findBackendStages(["action_prepare"])[0]
+            ?.status,
+        ),
+      ),
+      state: stateForStages(["action_prepare"]),
+      accent: "blue",
+      icon: "flow",
+    },
+    {
+      key: "execute-run",
+      label: "YEREL \u00c7ALI\u015eTIRMA",
+      lines: lineOrWait(
+        labelForStages(["action_execute"]),
+        displayStatus(
+          findBackendStages(["action_execute"])[0]
+            ?.status,
+        ),
+      ),
+      state: stateForStages(["action_execute"]),
+      accent: "violet",
+      icon: "code",
+    },
+    {
+      key: "execute-result",
+      label: "SONU\u00c7",
+      lines: lineOrWait(
+        labelForStages(["completed"]),
+        selectedTask?.state === "completed"
+          ? "\u0130\u015flem tamamland\u0131"
+          : null,
+        displayStatus(
+          findBackendStages(["completed"])[0]
+            ?.status,
+        ),
+      ),
+      state:
+        selectedTask?.state === "completed"
+          ? "completed"
+          : stateForStages(["completed"]),
+      accent: "green",
+      icon: "verify",
+    },
+  ]
+
   const writeStations: PipelineStation[] = [
     {
       key: "write-plan",
@@ -481,9 +551,11 @@ export function ReferenceDashboard({
   ]
 
   const stations: PipelineStation[] =
-    isReadTask
-      ? readStations
-      : writeStations
+    isExecuteTask
+      ? executeStations
+      : isReadTask
+        ? readStations
+        : writeStations
 
   const activeAgentCount = agentExecutions.filter(
     (item) => item.status === "running",
@@ -579,6 +651,56 @@ export function ReferenceDashboard({
 
       <main className="reference-workspace">
 
+        {/* GLOBAL_PROJECT_TASKBAR_V1 */}
+        <div className="reference-global-taskbar">
+          <div className="reference-global-project">
+            <div className="reference-global-project-label">
+              <span>AKTİF PROJE</span>
+              <strong>
+                {selectedProject?.name ?? "Proje seçilmedi"}
+              </strong>
+            </div>
+
+            <select
+              value={selectedProjectId ?? ""}
+              onChange={(event) =>
+                onSelectProject(event.target.value)
+              }
+              disabled={projects.length === 0}
+              aria-label="Aktif proje"
+            >
+              {projects.length === 0 ? (
+                <option value="">
+                  Henüz proje yok
+                </option>
+              ) : (
+                projects.map((project) => (
+                  <option
+                    key={project.project_id}
+                    value={project.project_id}
+                  >
+                    {project.name}
+                  </option>
+                ))
+              )}
+            </select>
+
+            <small title={selectedProject?.path ?? ""}>
+              {selectedProject?.path ??
+                "Görev oluşturmak için önce bir proje oluştur."}
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className="reference-global-new-task"
+            onClick={openNewTask}
+            disabled={!selectedProjectId}
+          >
+            + Yeni Görev
+          </button>
+        </div>
+
         <DashboardHeader
           runningCount={runningTasks.length}
           onNewTask={openNewTask}
@@ -627,7 +749,10 @@ export function ReferenceDashboard({
 
         <TeddyFactoryPipeline
           stations={stations}
-          hasAiResponse={Boolean(taskReadResult)}
+          hasAiResponse={
+            isReadTask &&
+            Boolean(taskReadResult)
+          }
         />
         {/* TASK_LIVE_ACTIVITY_PANEL_V1 */}
                 <div className="task-operations-row">
@@ -715,21 +840,29 @@ export function ReferenceDashboard({
 
 
 
-        {/* READ_TASK_RESULT_PANEL_V1 */}
+        {/* TASK_RESULT_PANEL_V2 */}
         {(
-          pipeline?.task_kind === "read" ||
-          selectedTask?.task_kind === "read"
+          isReadTask ||
+          isExecuteTask
         ) &&
           selectedTask?.state === "completed" && (
             <section
-              id="task-ai-response"
+              id={
+                isExecuteTask
+                  ? "task-execution-result"
+                  : "task-ai-response"
+              }
               className="read-task-result-card"
               aria-label="Görev sonucu"
             >
               <div className="read-task-result-head">
                 <div>
                   <span>GÖREV SONUCU</span>
-                  <h2>AI Yanıtı</h2>
+                  <h2>
+                    {isExecuteTask
+                      ? "İşlem Sonucu"
+                      : "AI Yanıtı"}
+                  </h2>
                 </div>
 
                 <div className="read-task-result-status">

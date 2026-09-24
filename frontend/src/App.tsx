@@ -594,7 +594,15 @@ import { getTaskResult } from "./api"
 function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] =
-    useState<string | null>(null)
+    useState<string | null>(() => {
+      try {
+        return window.localStorage.getItem(
+          "ai-software-factory.active-project",
+        )
+      } catch {
+        return null
+      }
+    })
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [selectedTaskId, setSelectedTaskId] =
@@ -716,6 +724,23 @@ function App() {
       ) ?? null,
     [projects, selectedProjectId],
   )
+
+  useEffect(() => {
+    try {
+      if (selectedProjectId) {
+        window.localStorage.setItem(
+          "ai-software-factory.active-project",
+          selectedProjectId,
+        )
+      } else {
+        window.localStorage.removeItem(
+          "ai-software-factory.active-project",
+        )
+      }
+    } catch {
+      // localStorage kullanilamiyorsa normal state ile devam et.
+    }
+  }, [selectedProjectId])
 
   useEffect(() => {
     setProjectSettingsName(
