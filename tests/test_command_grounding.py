@@ -252,3 +252,62 @@ def test_help_marker_must_be_last_token():
         request=request,
         evidence_store=evidence,
     )
+
+def test_command_evidence_runtime_ref_must_match():
+    evidence = FakeEvidenceStore(
+        inspected_dirs={".", "okulprojesi"},
+        files={"okulprojesi/manage.py"},
+    )
+
+    store = CommandEvidenceStore()
+
+    record = store.add_probe_result(
+        request=_request(
+            [
+                "python",
+                "manage.py",
+                "help",
+            ],
+            cwd="okulprojesi",
+        ),
+        result={
+            "returncode": 0,
+            "stdout": "Available subcommands:\n  startapp\n",
+        },
+        source_observation_id="o1",
+        evidence_store=evidence,
+        runtime_ref="runtime-python-project",
+    )
+
+    mutation = _request(
+        [
+            "python",
+            "manage.py",
+            "startapp",
+            "users",
+        ],
+        cwd="okulprojesi",
+    )
+
+    matched = store.validate_mutation_command(
+        request=mutation,
+        command_evidence_refs=[
+            record.command_evidence_id
+        ],
+        runtime_ref="runtime-python-project",
+    )
+
+    assert matched.runtime_ref == "runtime-python-project"
+
+    with pytest.raises(
+        CommandGroundingError,
+        match="runtime_ref eslesmiyor",
+    ):
+        store.validate_mutation_command(
+            request=mutation,
+            command_evidence_refs=[
+                record.command_evidence_id
+            ],
+            runtime_ref="runtime-python-other",
+        )
+
