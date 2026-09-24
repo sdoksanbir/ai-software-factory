@@ -25,7 +25,9 @@ from factory.tool_registry import (
 from factory.command_grounding import (
     CommandEvidenceStore,
     CommandGroundingError,
+    build_safe_capability_probe_request,
     is_safe_capability_probe,
+    logical_runtime_for_script_path,
 )
 from factory.runtime_grounding import (
     RuntimeEvidenceStore,
@@ -638,11 +640,20 @@ def resolve_deferred_step_action(
         "otomatik baglar; secim belirsizse runtime_ref kullan.\n"
         "11. Bir runtime ile capability probe basarisiz olduysa o runtime "
         "icin command evidence yoktur; mutation yapma.\n"
-        "12. complete deme; tool veya fail dondur.\n"
-        "13. evidence_refs, command_evidence_refs, runtime_ref ve answer "
+        "12. TARGET STEP permission bir tool emri DEGILDIR. Permission "
+        "yalniz adimin risk sinifini anlatir; gercek tool permission'ini "
+        "Registry belirler. Gerekiyorsa READ, capability probe niteliginde "
+        "EXECUTE veya grounded mutation sec.\n"
+        "13. Evidence yetersizken ayni mutation'i tekrar deneme. "
+        "Inspect edilmemis klasor veya okunmamis bilinen dosya varsa "
+        "once onu READ ile kesfet. Bilinen proje scripti ve uygun "
+        "runtime varsa once safe capability probe yap. Boyle bir alan "
+        "kalmadiysa fail dondur. Olmayan framework veya komut uydurma.\n"
+        "14. complete deme; tool veya fail dondur.\n"
+        "15. evidence_refs, command_evidence_refs, runtime_ref ve answer "
         "tool nesnesinin ICINDE DEGIL; en dis JSON nesnesinde tool ile "
         "AYNI SEVIYEDE olmalidir.\n"
-        "14. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
+        "16. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
         "Markdown ekleme.\n\n"
         "GECERLI JSON OUTPUT ORNEGI:\n"
         + json.dumps(
@@ -746,6 +757,11 @@ def decide_next_action(
         "Sen genel amacli agent karar vericisisin. "
         "Evidence Store disinda path/cwd uydurma. "
         "Basari kanitlanmadan complete deme. "
+        "Evidence yetersizken ayni mutation'i tekrar deneme. "
+        "Inspect edilmemis klasor veya okunmamis bilinen dosya varsa "
+        "once READ yap; bilinen proje scripti ve uygun runtime varsa "
+        "safe capability probe yap; boyle bir alan kalmadiysa fail dondur. "
+        "Olmayan framework veya komut uydurma. "
         "Tool permission'ini Registry belirler. "
         "Yalnizca JSON dondur. "
         "evidence_refs, command_evidence_refs, runtime_ref ve answer "
@@ -959,6 +975,245 @@ def _fingerprint(
     )
 
 
+def _mutation_identity(
+    action: NextAction,
+) -> str:
+    request = action.tool
+    if request is None:
+        raise EvidenceValidationError(
+            "Tool action tool request icermiyor."
+        )
+
+    return _fingerprint(request)
+
+
+def _remember_read_file(
+    observation: Observation,
+    read_file_paths: set[str],
+) -> None:
+    if (
+        not observation.success
+        or observation.tool_name != "read_file"
+    ):
+        return
+
+    raw = observation.data.get("path")
+    if isinstance(raw, str) and raw.strip():
+        read_file_paths.add(_norm(raw))
+
+
+def _next_discovery_action(
+    *,
+    evidence_store: EvidenceStore,
+    tool_registry: ToolRegistry,
+    read_fingerprints: set[str],
+    read_file_paths: set[str],
+    attempted_discoveries: set[str],
+    runtime_evidence_store: RuntimeEvidenceStore,
+    command_evidence_store: CommandEvidenceStore,
+    attempted_probes: set[str],
+) -> NextAction | None:
+    directories = sorted(
+        (
+            record.path
+            for record in evidence_store.records()
+            if record.kind == "directory"
+            and not evidence_store.inspected_directory(
+                record.path
+            )
+        ),
+        key=lambda path: (
+            path.count("/"),
+            path.casefold(),
+        ),
+    )
+
+    known_tools = set(
+        tool_registry.names()
+    )
+
+    for path in directories:
+        if "list_files" not in known_tools:
+            break
+
+        request = ToolRequest(
+            tool_name="list_files",
+            arguments={"path": path},
+            permission=tool_registry.get(
+                "list_files"
+            ).permission,
+            cwd=None,
+        )
+        fingerprint = _fingerprint(request)
+        if (
+            fingerprint in read_fingerprints
+            or fingerprint in attempted_discoveries
+        ):
+            continue
+
+        action = NextAction(
+            action="tool",
+            reason=(
+                "Mutation icin kanit yetersiz. "
+                "Once bilinmeyen alan okunuyor."
+            ),
+            tool=request,
+            evidence_refs=[],
+        )
+
+        try:
+            validate_evidence_bound_action(
+                action=action,
+                evidence_store=evidence_store,
+            )
+        except EvidenceValidationError:
+            continue
+
+        attempted_discoveries.add(
+            fingerprint
+        )
+        return action
+
+    if "run_process" in known_tools:
+        scripts = sorted(
+            (
+                record.path
+                for record in evidence_store.records()
+                if record.kind == "file"
+                and logical_runtime_for_script_path(
+                    record.path
+                )
+                is not None
+            ),
+            key=lambda path: (
+                path.count("/"),
+                path.casefold(),
+            ),
+        )
+
+        run_permission = tool_registry.get(
+            "run_process"
+        ).permission
+
+        for script_path in scripts:
+            family = logical_runtime_for_script_path(
+                script_path
+            )
+            if family is None:
+                continue
+
+            if not runtime_evidence_store.candidates_for(
+                family
+            ):
+                continue
+
+            try:
+                probe_request = (
+                    build_safe_capability_probe_request(
+                        script_path=script_path,
+                        evidence_store=evidence_store,
+                        permission=run_permission,
+                    )
+                )
+            except CommandGroundingError:
+                continue
+
+            prefix = list(
+                probe_request.arguments["argv"][:-1]
+            )
+            cwd = probe_request.cwd or "."
+
+            if command_evidence_store.has_prefix(
+                cwd=cwd,
+                prefix=prefix,
+            ):
+                continue
+
+            fingerprint = _fingerprint(
+                probe_request
+            )
+            if (
+                fingerprint in attempted_discoveries
+                or fingerprint in attempted_probes
+            ):
+                continue
+
+            attempted_discoveries.add(
+                fingerprint
+            )
+            attempted_probes.add(
+                fingerprint
+            )
+            return NextAction(
+                action="tool",
+                reason=(
+                    "Mutation icin command evidence yok. "
+                    "Once bilinen proje scriptinin "
+                    "yetenekleri kesfediliyor."
+                ),
+                tool=probe_request,
+                evidence_refs=[],
+            )
+
+    files = sorted(
+        (
+            record.path
+            for record in evidence_store.records()
+            if record.kind == "file"
+            and _norm(record.path)
+            not in read_file_paths
+        ),
+        key=lambda path: (
+            path.count("/"),
+            path.casefold(),
+        ),
+    )
+
+    for path in files:
+        if "read_file" not in known_tools:
+            break
+
+        request = ToolRequest(
+            tool_name="read_file",
+            arguments={"path": path},
+            permission=tool_registry.get(
+                "read_file"
+            ).permission,
+            cwd=None,
+        )
+        fingerprint = _fingerprint(request)
+        if (
+            fingerprint in read_fingerprints
+            or fingerprint in attempted_discoveries
+        ):
+            continue
+
+        action = NextAction(
+            action="tool",
+            reason=(
+                "Mutation icin kanit yetersiz. "
+                "Once bilinmeyen alan okunuyor."
+            ),
+            tool=request,
+            evidence_refs=[],
+        )
+
+        try:
+            validate_evidence_bound_action(
+                action=action,
+                evidence_store=evidence_store,
+            )
+        except EvidenceValidationError:
+            continue
+
+        attempted_discoveries.add(
+            fingerprint
+        )
+        return action
+
+    return None
+
+
 def _execute_read(
     request: ToolRequest,
     registry: ToolRegistry,
@@ -1099,6 +1354,12 @@ def run_agent_loop_preview(
         or Path.cwd()
     )
     read_fingerprints: set[str] = set()
+    read_file_paths: set[str] = set()
+    attempted_discoveries: set[str] = set()
+    attempted_probes: set[str] = set()
+    blocked_mutations: set[str] = set()
+    forced_action: NextAction | None = None
+    invalid_model_actions = 0
     read_count = 0
     probe_count = 0
     decisions = 0
@@ -1145,37 +1406,228 @@ def run_agent_loop_preview(
             evidence_store.add_observation(
                 obs
             )
+            _remember_read_file(
+                obs,
+                read_file_paths,
+            )
 
         break
 
-    while decisions < max_decisions:
-        deferred = _first_deferred_step(
-            plan
+    def _insufficient_evidence_result() -> AgentLoopPreviewResult:
+        answer = (
+            "Mutation icin yeterli kanit yok ve "
+            "kesfedilecek bilinmeyen alan kalmadi."
+        )
+        return AgentLoopPreviewResult(
+            plan=plan,
+            observations=observations,
+            evidence=evidence_store.records(),
+            command_evidence=(
+                command_evidence_store.records()
+            ),
+            runtime_evidence=(
+                runtime_evidence_store.records()
+            ),
+            pending_action=NextAction(
+                action="fail",
+                reason=answer,
+                answer=answer,
+            ),
+            completed=False,
+            final_answer=answer,
+            stop_reason="insufficient_evidence",
         )
 
-        if deferred is not None:
-            action = resolve_deferred_step_action(
-                goal=plan.goal,
-                plan=plan,
-                target_step=deferred,
-                observations=observations,
-                evidence_store=evidence_store,
-                command_evidence_store=command_evidence_store,
-                runtime_evidence_store=runtime_evidence_store,
-                model_client=model_client,
-                tool_registry=tool_registry,
+    def _invalid_model_action_result(
+        message: str,
+    ) -> AgentLoopPreviewResult:
+        answer = (
+            "Model gecersiz action uretti ve "
+            "kesfedilecek bilinmeyen alan kalmadi."
+        )
+        return AgentLoopPreviewResult(
+            plan=plan,
+            observations=observations,
+            evidence=evidence_store.records(),
+            command_evidence=(
+                command_evidence_store.records()
+            ),
+            runtime_evidence=(
+                runtime_evidence_store.records()
+            ),
+            pending_action=NextAction(
+                action="fail",
+                reason=message or answer,
+                answer=answer,
+            ),
+            completed=False,
+            final_answer=answer,
+            stop_reason="invalid_model_action",
+        )
+
+    def _on_blocked_mutation(
+        *,
+        blocked_action: NextAction,
+        error_code: str,
+        message: str,
+        data: dict[str, Any],
+    ) -> NextAction | None | Literal["fail"]:
+        identity = _mutation_identity(
+            blocked_action
+        )
+        repeated = identity in blocked_mutations
+        blocked_mutations.add(identity)
+
+        observations.append(
+            _control(
+                len(observations) + 1,
+                error_code,
+                message,
+                data,
             )
-        else:
-            action = decide_next_action(
-                goal=plan.goal,
-                plan=plan,
-                observations=observations,
-                model_client=model_client,
-                tool_registry=tool_registry,
-                evidence_store=evidence_store,
+        )
+
+        discovery = _next_discovery_action(
+            evidence_store=evidence_store,
+            tool_registry=tool_registry,
+            read_fingerprints=read_fingerprints,
+            read_file_paths=read_file_paths,
+            attempted_discoveries=(
+                attempted_discoveries
+            ),
+            runtime_evidence_store=(
+                runtime_evidence_store
+            ),
+            command_evidence_store=(
+                command_evidence_store
+            ),
+            attempted_probes=attempted_probes,
+        )
+
+        if repeated:
+            if discovery is None:
+                summary = (
+                    "Ayni mutation kanit yetersizken "
+                    "tekrarlandi. Kesfedilecek "
+                    "bilinmeyen alan kalmadi."
+                )
+            else:
+                summary = (
+                    "Ayni mutation kanit yetersizken "
+                    "tekrarlandi. Once bilinmeyen "
+                    "alan okunuyor."
+                )
+
+            observations.append(
+                _control(
+                    len(observations) + 1,
+                    "REPEATED_UNGROUNDED_MUTATION",
+                    summary,
+                    data,
+                )
             )
 
-        decisions += 1
+        if discovery is not None:
+            return discovery
+
+        if repeated:
+            return "fail"
+
+        return None
+
+    while True:
+        if forced_action is not None:
+            action = forced_action
+            forced_action = None
+        else:
+            if decisions >= max_decisions:
+                return AgentLoopPreviewResult(
+                    plan=plan,
+                    observations=observations,
+                    evidence=evidence_store.records(),
+                    command_evidence=(
+                        command_evidence_store.records()
+                    ),
+                    runtime_evidence=(
+                        runtime_evidence_store.records()
+                    ),
+                    pending_action=None,
+                    completed=False,
+                    final_answer=None,
+                    stop_reason="max_decisions",
+                )
+
+            deferred = _first_deferred_step(
+                plan
+            )
+            decision_stage = (
+                "deferred_step"
+                if deferred is not None
+                else "next_action"
+            )
+
+            try:
+                if deferred is not None:
+                    action = resolve_deferred_step_action(
+                        goal=plan.goal,
+                        plan=plan,
+                        target_step=deferred,
+                        observations=observations,
+                        evidence_store=evidence_store,
+                        command_evidence_store=command_evidence_store,
+                        runtime_evidence_store=runtime_evidence_store,
+                        model_client=model_client,
+                        tool_registry=tool_registry,
+                    )
+                else:
+                    action = decide_next_action(
+                        goal=plan.goal,
+                        plan=plan,
+                        observations=observations,
+                        model_client=model_client,
+                        tool_registry=tool_registry,
+                        evidence_store=evidence_store,
+                    )
+            except AgentLoopError as exc:
+                decisions += 1
+                invalid_model_actions += 1
+                observations.append(
+                    _control(
+                        len(observations) + 1,
+                        "MODEL_ACTION_INVALID",
+                        str(exc),
+                        {
+                            "stage": decision_stage,
+                        },
+                    )
+                )
+
+                discovery = _next_discovery_action(
+                    evidence_store=evidence_store,
+                    tool_registry=tool_registry,
+                    read_fingerprints=read_fingerprints,
+                    read_file_paths=read_file_paths,
+                    attempted_discoveries=(
+                        attempted_discoveries
+                    ),
+                    runtime_evidence_store=(
+                        runtime_evidence_store
+                    ),
+                    command_evidence_store=(
+                        command_evidence_store
+                    ),
+                    attempted_probes=attempted_probes,
+                )
+
+                if discovery is not None:
+                    forced_action = discovery
+                    continue
+
+                return _invalid_model_action_result(
+                    str(exc)
+                )
+
+            decisions += 1
 
         if action.action == "fail":
             return AgentLoopPreviewResult(
@@ -1278,6 +1730,7 @@ def run_agent_loop_preview(
                         observations=observations,
                         evidence=evidence_store.records(),
                         command_evidence=command_evidence_store.records(),
+                        runtime_evidence=runtime_evidence_store.records(),
                         pending_action=logical_probe_action,
                         completed=False,
                         final_answer=None,
@@ -1334,19 +1787,23 @@ def run_agent_loop_preview(
                     evidence_store=evidence_store,
                 )
             except EvidenceValidationError as exc:
-                observations.append(
-                    _control(
-                        len(observations) + 1,
-                        "EVIDENCE_VALIDATION_BLOCKED",
-                        str(exc),
-                        {
-                            "tool_name": action.tool.tool_name,
-                            "arguments": action.tool.arguments,
-                            "cwd": action.tool.cwd,
-                            "evidence_refs": action.evidence_refs,
-                        },
-                    )
+                outcome = _on_blocked_mutation(
+                    blocked_action=action,
+                    error_code=(
+                        "EVIDENCE_VALIDATION_BLOCKED"
+                    ),
+                    message=str(exc),
+                    data={
+                        "tool_name": action.tool.tool_name,
+                        "arguments": action.tool.arguments,
+                        "cwd": action.tool.cwd,
+                        "evidence_refs": action.evidence_refs,
+                    },
                 )
+                if outcome == "fail":
+                    return _insufficient_evidence_result()
+                if isinstance(outcome, NextAction):
+                    forced_action = outcome
                 continue
 
             if action.tool.tool_name == "run_process":
@@ -1388,22 +1845,30 @@ def run_agent_loop_preview(
                         runtime_ref=selected_runtime_ref,
                     )
                 except CommandGroundingError as exc:
-                    observations.append(
-                        _control(
-                            len(observations) + 1,
-                            "COMMAND_GROUNDING_BLOCKED",
-                            str(exc),
-                            {
-                                "tool_name": logical_mutation_action.tool.tool_name,
-                                "arguments": logical_mutation_action.tool.arguments,
-                                "cwd": logical_mutation_action.tool.cwd,
-                                "runtime_ref": selected_runtime_ref,
-                                "command_evidence_refs": (
-                                    logical_mutation_action.command_evidence_refs
-                                ),
-                            },
-                        )
+                    outcome = _on_blocked_mutation(
+                        blocked_action=logical_mutation_action,
+                        error_code=(
+                            "COMMAND_GROUNDING_BLOCKED"
+                        ),
+                        message=str(exc),
+                        data={
+                            "tool_name": (
+                                logical_mutation_action.tool.tool_name
+                            ),
+                            "arguments": (
+                                logical_mutation_action.tool.arguments
+                            ),
+                            "cwd": logical_mutation_action.tool.cwd,
+                            "runtime_ref": selected_runtime_ref,
+                            "command_evidence_refs": (
+                                logical_mutation_action.command_evidence_refs
+                            ),
+                        },
                     )
+                    if outcome == "fail":
+                        return _insufficient_evidence_result()
+                    if isinstance(outcome, NextAction):
+                        forced_action = outcome
                     continue
 
                 action = logical_mutation_action.model_copy(
@@ -1466,15 +1931,7 @@ def run_agent_loop_preview(
             evidence_store.add_observation(
                 obs
             )
-
-    return AgentLoopPreviewResult(
-        plan=plan,
-        observations=observations,
-        evidence=evidence_store.records(),
-        command_evidence=command_evidence_store.records(),
-        runtime_evidence=runtime_evidence_store.records(),
-        pending_action=None,
-        completed=False,
-        final_answer=None,
-        stop_reason="max_decisions",
-    )
+            _remember_read_file(
+                obs,
+                read_file_paths,
+            )
