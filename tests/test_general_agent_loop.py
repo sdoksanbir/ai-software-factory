@@ -348,11 +348,35 @@ def test_loop_forces_discovery_before_mutation(
             key='"evidence_id": "',
         )
 
-        command_ref = _extract_ref(
-            prompt,
-            marker='"prefix": [\n      "python",\n      "manage.py"\n    ]',
-            key='"command_evidence_id": "',
+        state_text = prompt.split(
+            "STEP RESOLUTION STATE:\n",
+            1,
+        )[1].split(
+            "\n\nBir sonraki tool JSON'unu dondur.",
+            1,
+        )[0]
+
+        state = json.loads(
+            state_text
         )
+
+        matching = [
+            item
+            for item in state[
+                "command_evidence_store"
+            ]
+            if item.get("prefix")
+            == [
+                "python",
+                "manage.py",
+            ]
+        ]
+
+        assert len(matching) == 1
+
+        command_ref = matching[0][
+            "command_evidence_id"
+        ]
 
         return {
             "action": "execute",
