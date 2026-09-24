@@ -398,8 +398,11 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
                 text[start : end + 1]
             )
         except json.JSONDecodeError as exc:
+            preview = text[:4000]
             raise AgentLoopError(
-                "Agent JSON'i ayrıştırılamadı."
+                "Agent JSON'i ayrıştırılamadı. "
+                "Ham model cevabı:\n"
+                + preview
             ) from exc
 
     if not isinstance(payload, dict):
