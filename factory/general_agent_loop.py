@@ -638,22 +638,32 @@ def resolve_deferred_step_action(
         "otomatik baglar; secim belirsizse runtime_ref kullan.\n"
         "11. Bir runtime ile capability probe basarisiz olduysa o runtime "
         "icin command evidence yoktur; mutation yapma.\n"
-        "12. complete deme; tool veya fail dondur.\n\n"
-        "JSON:\n"
-        "{"
-        "\"action\":\"tool|fail\","
-        "\"reason\":\"neden\","
-        "\"tool\":null veya {"
-        "\"tool_name\":\"tool\","
-        "\"arguments\":{},"
-        "\"permission\":\"read|write|execute|destructive\","
-        "\"cwd\":null veya \"proje-ici-yol\""
-        "},"
-        "\"evidence_refs\":[\"ev-...\"],"
-        "\"command_evidence_refs\":[\"cmd-...\"],"
-        "\"runtime_ref\":null veya \"runtime-...\","
-        "\"answer\":null"
-        "}\n\n"
+        "12. complete deme; tool veya fail dondur.\n"
+        "13. evidence_refs, command_evidence_refs, runtime_ref ve answer "
+        "tool nesnesinin ICINDE DEGIL; en dis JSON nesnesinde tool ile "
+        "AYNI SEVIYEDE olmalidir.\n"
+        "14. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
+        "Markdown ekleme.\n\n"
+        "GECERLI JSON OUTPUT ORNEGI:\n"
+        + json.dumps(
+            {
+                "action": "tool",
+                "reason": "neden",
+                "tool": {
+                    "tool_name": "list_files",
+                    "arguments": {"path": "."},
+                    "permission": "read",
+                    "cwd": None,
+                },
+                "evidence_refs": [],
+                "command_evidence_refs": [],
+                "runtime_ref": None,
+                "answer": None,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n\n"
         "TOOL KATALOGU:\n"
         + json.dumps(
             tool_registry.describe_for_model(),
@@ -737,20 +747,30 @@ def decide_next_action(
         "Evidence Store disinda path/cwd uydurma. "
         "Basari kanitlanmadan complete deme. "
         "Tool permission'ini Registry belirler. "
-        "Yalnizca JSON dondur.\n\n"
-        "JSON:\n"
-        "{"
-        "\"action\":\"tool|complete|fail\","
-        "\"reason\":\"neden\","
-        "\"tool\":null veya {"
-        "\"tool_name\":\"tool\","
-        "\"arguments\":{},"
-        "\"permission\":\"read|write|execute|destructive\","
-        "\"cwd\":null veya \"proje-ici-yol\""
-        "},"
-        "\"evidence_refs\":[\"ev-...\"],"
-        "\"answer\":null veya \"sonuc\""
-        "}\n\n"
+        "Yalnizca JSON dondur. "
+        "evidence_refs, command_evidence_refs, runtime_ref ve answer "
+        "tool nesnesinin icinde degil; en dis JSON nesnesinde tool ile "
+        "ayni seviyede olmalidir.\n\n"
+        "GECERLI JSON OUTPUT ORNEGI:\n"
+        + json.dumps(
+            {
+                "action": "tool",
+                "reason": "neden",
+                "tool": {
+                    "tool_name": "list_files",
+                    "arguments": {"path": "."},
+                    "permission": "read",
+                    "cwd": None,
+                },
+                "evidence_refs": [],
+                "command_evidence_refs": [],
+                "runtime_ref": None,
+                "answer": None,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n\n"
         "TOOL KATALOGU:\n"
         + json.dumps(
             tool_registry.describe_for_model(),
