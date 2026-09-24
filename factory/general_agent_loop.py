@@ -1383,13 +1383,11 @@ def run_agent_loop_preview(
                     )
                     continue
 
-                if runtime_binding is not None:
-                    action = logical_mutation_action.model_copy(
-                        update={
-                            "tool": runtime_binding.request,
-                            "runtime_ref": selected_runtime_ref,
-                        }
-                    )
+                action = logical_mutation_action.model_copy(
+                    update={
+                        "runtime_ref": selected_runtime_ref,
+                    }
+                )
 
             return AgentLoopPreviewResult(
                 plan=plan,
