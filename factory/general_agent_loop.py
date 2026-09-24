@@ -25,9 +25,17 @@ from factory.tool_registry import (
 from factory.command_grounding import (
     CommandEvidenceStore,
     CommandGroundingError,
-    build_safe_capability_probe_request,
     is_safe_capability_probe,
     logical_runtime_for_script_path,
+)
+from factory.capability_discovery import (
+    CapabilityCandidateStore,
+)
+from factory.capability_resolver import (
+    CapabilityResolverError,
+    build_capability_inventory,
+    materialize_grounded_action,
+    resolve_capability_selection,
 )
 from factory.runtime_grounding import (
     RuntimeEvidenceStore,
@@ -613,19 +621,39 @@ def resolve_deferred_step_action(
     runtime_evidence_store: RuntimeEvidenceStore,
     model_client: Any,
     tool_registry: ToolRegistry,
+    capability_store: CapabilityCandidateStore | None = None,
+    resolve_with_capability: bool = False,
     model_role: str = "fast_local",
     timeout: int = 60,
 ) -> NextAction:
+    capability_rules = ""
+    if resolve_with_capability:
+        capability_rules = (
+            "RESOLVE_WITH_CAPABILITY MODU:\n"
+            "Command Evidence MEVCUT. "
+            "Yeni filesystem discovery yapma. "
+            "Yeni capability probe isteme. "
+            "list_files/read_file/find_files secme. "
+            "Mevcut Evidence Store, Runtime Evidence ve "
+            "Command Evidence ile grounded mutation sec "
+            "(command_evidence_refs zorunlu). "
+            "Command output icindeki gercek capability "
+            "tokenlarini kullan; framework veya komut uydurma. "
+            "Mevcut capability goal icin uygun degilse fail dondur.\n\n"
+        )
+
     system_prompt = (
         "Sen genel amacli STEP RESOLVER'sin. "
         "Sadece TARGET STEP icin bir sonraki tool'u sec. "
         "Tum gorevi yeniden planlama. Yalnizca JSON dondur.\n\n"
-        "ZORUNLU KURALLAR:\n"
+        + capability_rules
+        + "ZORUNLU KURALLAR:\n"
         "1. Evidence Store disinda path/cwd uydurma.\n"
         "2. Parent listede gorulen bir klasor mutation cwd icin "
         "yeterli degildir. Mutation cwd kullanmadan once o klasor "
         "READ ile bizzat inspect edilmis olmali: inspected=true.\n"
-        "3. Kanit yetersizse WRITE/EXECUTE secme; READ yap.\n"
+        "3. Kanit yetersizse WRITE/EXECUTE secme; READ yap. "
+        "Ama Command Evidence varken READ/discovery secme.\n"
         "4. Mutation tool icin evidence_refs zorunlu.\n"
         "5. EXECUTE icin cwd altindan en az bir FILE evidence_ref ver.\n"
         "6. run_process MUTATION icin command_evidence_refs zorunlu. "
@@ -640,15 +668,16 @@ def resolve_deferred_step_action(
         "otomatik baglar; secim belirsizse runtime_ref kullan.\n"
         "11. Bir runtime ile capability probe basarisiz olduysa o runtime "
         "icin command evidence yoktur; mutation yapma.\n"
-        "12. TARGET STEP permission bir tool emri DEGILDIR. Permission "
-        "yalniz adimin risk sinifini anlatir; gercek tool permission'ini "
-        "Registry belirler. Gerekiyorsa READ, capability probe niteliginde "
-        "EXECUTE veya grounded mutation sec.\n"
+        "12. PlanStep.permission final effect / approval sinifidir; "
+        "bir sonraki tool secimini BELIRLEMEZ. Tool permission'ini "
+        "ToolRegistry belirler. permission=write olsa bile "
+        "write_file zorunlu degildir; grounded run_process "
+        "veya baska uygun tool secilebilir.\n"
         "13. Evidence yetersizken ayni mutation'i tekrar deneme. "
-        "Inspect edilmemis klasor veya okunmamis bilinen dosya varsa "
-        "once onu READ ile kesfet. Bilinen proje scripti ve uygun "
-        "runtime varsa once safe capability probe yap. Boyle bir alan "
-        "kalmadiysa fail dondur. Olmayan framework veya komut uydurma.\n"
+        "Command Evidence yokken: inspect edilmemis klasor veya "
+        "okunmamis bilinen dosya varsa once READ; bilinen entry-point "
+        "ve runtime varsa safe capability probe. Command Evidence "
+        "varsa discovery yapma; grounded mutation veya fail.\n"
         "14. complete deme; tool veya fail dondur.\n"
         "15. evidence_refs, command_evidence_refs, runtime_ref ve answer "
         "tool nesnesinin ICINDE DEGIL; en dis JSON nesnesinde tool ile "
@@ -692,6 +721,9 @@ def resolve_deferred_step_action(
             x.model_dump(mode="json")
             for x in plan.success_criteria
         ],
+        "resolve_with_capability": (
+            resolve_with_capability
+        ),
         "evidence_store": (
             evidence_store.to_model_payload()
         ),
@@ -701,11 +733,23 @@ def resolve_deferred_step_action(
         "runtime_evidence_store": (
             runtime_evidence_store.to_model_payload()
         ),
+        "capability_candidates": (
+            capability_store.to_model_payload()
+            if capability_store is not None
+            else []
+        ),
         "recent_observations": [
             x.model_dump(mode="json")
             for x in observations[-8:]
         ],
     }
+
+    user_suffix = (
+        "\n\nCommand Evidence mevcut. "
+        "Grounded mutation JSON'unu dondur."
+        if resolve_with_capability
+        else "\n\nBir sonraki tool JSON'unu dondur."
+    )
 
     payload = _model_call(
         model_client=model_client,
@@ -718,7 +762,7 @@ def resolve_deferred_step_action(
                 ensure_ascii=False,
                 indent=2,
             )
-            + "\n\nBir sonraki tool JSON'unu dondur."
+            + user_suffix
         ),
         timeout=timeout,
         error_prefix=(
@@ -1002,6 +1046,51 @@ def _remember_read_file(
         read_file_paths.add(_norm(raw))
 
 
+def _forced_capability_probe_action(
+    *,
+    evidence_store: EvidenceStore,
+    tool_registry: ToolRegistry,
+    runtime_evidence_store: RuntimeEvidenceStore,
+    command_evidence_store: CommandEvidenceStore,
+    capability_store: CapabilityCandidateStore,
+    attempted_discoveries: set[str],
+    attempted_probes: set[str],
+) -> NextAction | None:
+    if "run_process" not in set(tool_registry.names()):
+        return None
+
+    probe = capability_store.next_probe_request(
+        evidence_store=evidence_store,
+        runtime_evidence_store=runtime_evidence_store,
+        command_evidence_store=command_evidence_store,
+        permission=tool_registry.get(
+            "run_process"
+        ).permission,
+        attempted_probes=attempted_probes,
+        fingerprint_fn=_fingerprint,
+    )
+    if probe is None:
+        return None
+
+    candidate, probe_request = probe
+    fingerprint = _fingerprint(probe_request)
+    attempted_discoveries.add(fingerprint)
+    attempted_probes.add(fingerprint)
+    return NextAction(
+        action="tool",
+        reason=(
+            "Entry-point candidate bulundu. "
+            "Capability probe yapiliyor."
+        ),
+        tool=probe_request,
+        evidence_refs=(
+            [candidate.source_evidence_ref]
+            if candidate.source_evidence_ref
+            else []
+        ),
+    )
+
+
 def _next_discovery_action(
     *,
     evidence_store: EvidenceStore,
@@ -1011,8 +1100,23 @@ def _next_discovery_action(
     attempted_discoveries: set[str],
     runtime_evidence_store: RuntimeEvidenceStore,
     command_evidence_store: CommandEvidenceStore,
+    capability_store: CapabilityCandidateStore,
     attempted_probes: set[str],
 ) -> NextAction | None:
+    """Deterministik discovery state machine.
+
+    FILESYSTEM_DISCOVERY → CAPABILITY_PROBE (aday varsa)
+    → CAPABILITY_DISCOVERY (okunmamis script)
+    → genel read fallback.
+
+    Unprobed candidate varken baska candidate-source
+    file okunmaz. CommandEvidence varken auto-probe yok.
+    """
+    known_tools = set(
+        tool_registry.names()
+    )
+
+    # Phase: FILESYSTEM_DISCOVERY — uninspected directories
     directories = sorted(
         (
             record.path
@@ -1026,10 +1130,6 @@ def _next_discovery_action(
             path.count("/"),
             path.casefold(),
         ),
-    )
-
-    known_tools = set(
-        tool_registry.names()
     )
 
     for path in directories:
@@ -1074,8 +1174,26 @@ def _next_discovery_action(
         )
         return action
 
-    if "run_process" in known_tools:
-        scripts = sorted(
+    # Phase: CAPABILITY_PROBE — pending entry-point first.
+    # Cuts filesystem/capability reads while a candidate waits.
+    probe_action = _forced_capability_probe_action(
+        evidence_store=evidence_store,
+        tool_registry=tool_registry,
+        runtime_evidence_store=runtime_evidence_store,
+        command_evidence_store=command_evidence_store,
+        capability_store=capability_store,
+        attempted_discoveries=attempted_discoveries,
+        attempted_probes=attempted_probes,
+    )
+    if probe_action is not None:
+        return probe_action
+
+    # Phase: CAPABILITY_DISCOVERY — read one unread script to classify
+    if (
+        not command_evidence_store.records()
+        and "read_file" in known_tools
+    ):
+        script_files = sorted(
             (
                 record.path
                 for record in evidence_store.records()
@@ -1084,6 +1202,11 @@ def _next_discovery_action(
                     record.path
                 )
                 is not None
+                and not capability_store.assessed(
+                    record.path
+                )
+                and _norm(record.path)
+                not in read_file_paths
             ),
             key=lambda path: (
                 path.count("/"),
@@ -1091,70 +1214,101 @@ def _next_discovery_action(
             ),
         )
 
-        run_permission = tool_registry.get(
-            "run_process"
-        ).permission
-
-        for script_path in scripts:
-            family = logical_runtime_for_script_path(
-                script_path
+        for path in script_files:
+            request = ToolRequest(
+                tool_name="read_file",
+                arguments={"path": path},
+                permission=tool_registry.get(
+                    "read_file"
+                ).permission,
+                cwd=None,
             )
-            if family is None:
-                continue
-
-            if not runtime_evidence_store.candidates_for(
-                family
+            fingerprint = _fingerprint(request)
+            if (
+                fingerprint in read_fingerprints
+                or fingerprint in attempted_discoveries
             ):
                 continue
+
+            action = NextAction(
+                action="tool",
+                reason=(
+                    "Capability adayi degerlendirmek "
+                    "icin bilinen script okunuyor."
+                ),
+                tool=request,
+                evidence_refs=[],
+            )
 
             try:
-                probe_request = (
-                    build_safe_capability_probe_request(
-                        script_path=script_path,
-                        evidence_store=evidence_store,
-                        permission=run_permission,
-                    )
+                validate_evidence_bound_action(
+                    action=action,
+                    evidence_store=evidence_store,
                 )
-            except CommandGroundingError:
-                continue
-
-            prefix = list(
-                probe_request.arguments["argv"][:-1]
-            )
-            cwd = probe_request.cwd or "."
-
-            if command_evidence_store.has_prefix(
-                cwd=cwd,
-                prefix=prefix,
-            ):
-                continue
-
-            fingerprint = _fingerprint(
-                probe_request
-            )
-            if (
-                fingerprint in attempted_discoveries
-                or fingerprint in attempted_probes
-            ):
+            except EvidenceValidationError:
                 continue
 
             attempted_discoveries.add(
                 fingerprint
             )
-            attempted_probes.add(
-                fingerprint
+            return action
+
+        package_json_files = sorted(
+            (
+                record.path
+                for record in evidence_store.records()
+                if record.kind == "file"
+                and PurePosixPath(record.path).name.casefold()
+                == "package.json"
+                and _norm(record.path)
+                not in read_file_paths
+            ),
+            key=lambda path: (
+                path.count("/"),
+                path.casefold(),
+            ),
+        )
+
+        for path in package_json_files:
+            request = ToolRequest(
+                tool_name="read_file",
+                arguments={"path": path},
+                permission=tool_registry.get(
+                    "read_file"
+                ).permission,
+                cwd=None,
             )
-            return NextAction(
+            fingerprint = _fingerprint(request)
+            if (
+                fingerprint in read_fingerprints
+                or fingerprint in attempted_discoveries
+            ):
+                continue
+
+            action = NextAction(
                 action="tool",
                 reason=(
-                    "Mutation icin command evidence yok. "
-                    "Once bilinen proje scriptinin "
-                    "yetenekleri kesfediliyor."
+                    "package.json bin hedefleri "
+                    "icin dosya okunuyor."
                 ),
-                tool=probe_request,
+                tool=request,
                 evidence_refs=[],
             )
 
+            try:
+                validate_evidence_bound_action(
+                    action=action,
+                    evidence_store=evidence_store,
+                )
+            except EvidenceValidationError:
+                continue
+
+            attempted_discoveries.add(
+                fingerprint
+            )
+            return action
+
+    # Fallback filesystem reads for non-script unknowns
     files = sorted(
         (
             record.path
@@ -1212,6 +1366,54 @@ def _next_discovery_action(
         return action
 
     return None
+
+
+def _assess_read_for_capability(
+    *,
+    observation: Observation,
+    evidence_store: EvidenceStore,
+    capability_store: CapabilityCandidateStore,
+) -> None:
+    if (
+        not observation.success
+        or observation.tool_name != "read_file"
+    ):
+        return
+
+    data = observation.data
+    if not isinstance(data, dict):
+        return
+
+    path = data.get("path")
+    content = data.get("content")
+    if not isinstance(path, str) or not isinstance(
+        content,
+        str,
+    ):
+        return
+
+    path = _norm(path)
+    if PurePosixPath(path).name.casefold() == "package.json":
+        capability_store.note_package_json(
+            path=path,
+            content=content,
+        )
+        return
+
+    evidence_ref = ""
+    for record in evidence_store.records():
+        if (
+            record.kind == "file"
+            and record.path == path
+        ):
+            evidence_ref = record.evidence_id
+            break
+
+    capability_store.assess_file(
+        script_path=path,
+        content=content,
+        source_evidence_ref=evidence_ref,
+    )
 
 
 def _execute_read(
@@ -1319,6 +1521,11 @@ def run_agent_loop_preview(
     max_read_actions: int = 8,
     max_probe_actions: int = 4,
     max_decisions: int = 16,
+    max_capability_resolution_attempts: int = 3,
+    max_semantic_resolution_attempts: int = 2,
+    capability_resolver_model_role: str = (
+        "capability_resolver"
+    ),
 ) -> AgentLoopPreviewResult:
     if max_read_actions < 1:
         raise ValueError(
@@ -1333,6 +1540,16 @@ def run_agent_loop_preview(
     if max_decisions < 1:
         raise ValueError(
             "max_decisions en az 1 olmali."
+        )
+
+    if max_capability_resolution_attempts < 1:
+        raise ValueError(
+            "max_capability_resolution_attempts en az 1 olmali."
+        )
+
+    if max_semantic_resolution_attempts < 1:
+        raise ValueError(
+            "max_semantic_resolution_attempts en az 1 olmali."
         )
 
     try:
@@ -1360,6 +1577,10 @@ def run_agent_loop_preview(
     blocked_mutations: set[str] = set()
     forced_action: NextAction | None = None
     invalid_model_actions = 0
+    capability_resolution_attempts = 0
+    semantic_resolution_attempts = 0
+    prior_semantic_fail_reason: str | None = None
+    capability_store = CapabilityCandidateStore()
     read_count = 0
     probe_count = 0
     decisions = 0
@@ -1410,6 +1631,29 @@ def run_agent_loop_preview(
                 obs,
                 read_file_paths,
             )
+            _assess_read_for_capability(
+                observation=obs,
+                evidence_store=evidence_store,
+                capability_store=capability_store,
+            )
+            # Candidate oluştuysa model'e gitmeden CAPABILITY_PROBE.
+            forced_probe = _forced_capability_probe_action(
+                evidence_store=evidence_store,
+                tool_registry=tool_registry,
+                runtime_evidence_store=(
+                    runtime_evidence_store
+                ),
+                command_evidence_store=(
+                    command_evidence_store
+                ),
+                capability_store=capability_store,
+                attempted_discoveries=(
+                    attempted_discoveries
+                ),
+                attempted_probes=attempted_probes,
+            )
+            if forced_probe is not None:
+                forced_action = forced_probe
 
         break
 
@@ -1465,13 +1709,74 @@ def run_agent_loop_preview(
             stop_reason="invalid_model_action",
         )
 
+    def _capability_resolution_failed_result(
+        message: str | None = None,
+    ) -> AgentLoopPreviewResult:
+        answer = (
+            message
+            or (
+                "Command Evidence mevcut ancak model "
+                "gecerli grounded mutation uretemedi."
+            )
+        )
+        return AgentLoopPreviewResult(
+            plan=plan,
+            observations=observations,
+            evidence=evidence_store.records(),
+            command_evidence=(
+                command_evidence_store.records()
+            ),
+            runtime_evidence=(
+                runtime_evidence_store.records()
+            ),
+            pending_action=NextAction(
+                action="fail",
+                reason=answer,
+                answer=answer,
+            ),
+            completed=False,
+            final_answer=answer,
+            stop_reason="capability_resolution_failed",
+        )
+
+    def _capability_no_match_result(
+        message: str | None = None,
+    ) -> AgentLoopPreviewResult:
+        answer = (
+            message
+            or (
+                "Capability inventory mevcut ancak "
+                "kullanici hedefiyle eslesen capability "
+                "secilemedi."
+            )
+        )
+        return AgentLoopPreviewResult(
+            plan=plan,
+            observations=observations,
+            evidence=evidence_store.records(),
+            command_evidence=(
+                command_evidence_store.records()
+            ),
+            runtime_evidence=(
+                runtime_evidence_store.records()
+            ),
+            pending_action=NextAction(
+                action="fail",
+                reason=answer,
+                answer=answer,
+            ),
+            completed=False,
+            final_answer=answer,
+            stop_reason="capability_no_match",
+        )
+
     def _on_blocked_mutation(
         *,
         blocked_action: NextAction,
         error_code: str,
         message: str,
         data: dict[str, Any],
-    ) -> NextAction | None | Literal["fail"]:
+    ) -> NextAction | None | Literal["fail", "capability_fail"]:
         identity = _mutation_identity(
             blocked_action
         )
@@ -1487,6 +1792,38 @@ def run_agent_loop_preview(
             )
         )
 
+        # Invariant: usable CommandEvidence varken
+        # filesystem/capability discovery'ye donulmez.
+        if command_evidence_store.records():
+            capability_resolution_attempts += 1
+            if (
+                capability_resolution_attempts
+                >= max_capability_resolution_attempts
+            ):
+                observations.append(
+                    _control(
+                        len(observations) + 1,
+                        "REPEATED_UNGROUNDED_MUTATION",
+                        "Command Evidence varken bounded "
+                        "resolution tukendi. Filesystem "
+                        "discovery yapilmayacak.",
+                        data,
+                    )
+                )
+                return "capability_fail"
+            if repeated:
+                observations.append(
+                    _control(
+                        len(observations) + 1,
+                        "REPEATED_UNGROUNDED_MUTATION",
+                        "Command Evidence varken ayni "
+                        "mutation tekrar engellendi. "
+                        "Filesystem discovery yapilmayacak.",
+                        data,
+                    )
+                )
+            return None
+
         discovery = _next_discovery_action(
             evidence_store=evidence_store,
             tool_registry=tool_registry,
@@ -1501,6 +1838,7 @@ def run_agent_loop_preview(
             command_evidence_store=(
                 command_evidence_store
             ),
+            capability_store=capability_store,
             attempted_probes=attempted_probes,
         )
 
@@ -1567,7 +1905,103 @@ def run_agent_loop_preview(
             )
 
             try:
-                if deferred is not None:
+                has_command_evidence = bool(
+                    command_evidence_store.records()
+                )
+                if (
+                    deferred is not None
+                    and has_command_evidence
+                ):
+                    # RESOLVE_WITH_CAPABILITY:
+                    # inventory deterministic; model sadece ref secer.
+                    inventory = build_capability_inventory(
+                        command_evidence_store
+                    )
+                    if not inventory.options:
+                        return _capability_no_match_result(
+                            "Capability inventory bos; "
+                            "secilebilir command token yok."
+                        )
+
+                    resolution = resolve_capability_selection(
+                        goal=plan.goal,
+                        target_step=deferred,
+                        command_evidence_store=(
+                            command_evidence_store
+                        ),
+                        model_client=model_client,
+                        inventory=inventory,
+                        model_role=(
+                            capability_resolver_model_role
+                        ),
+                        prior_fail_reason=(
+                            prior_semantic_fail_reason
+                        ),
+                    )
+                    if resolution.decision == "fail":
+                        decisions += 1
+                        semantic_resolution_attempts += 1
+                        observations.append(
+                            _control(
+                                len(observations) + 1,
+                                "CAPABILITY_SEMANTIC_FAIL",
+                                resolution.reason,
+                                {
+                                    "attempt": (
+                                        semantic_resolution_attempts
+                                    ),
+                                    "max_attempts": (
+                                        max_semantic_resolution_attempts
+                                    ),
+                                    "inventory_size": len(
+                                        inventory.options
+                                    ),
+                                },
+                            )
+                        )
+                        prior_semantic_fail_reason = (
+                            resolution.reason
+                        )
+                        if (
+                            semantic_resolution_attempts
+                            >= max_semantic_resolution_attempts
+                        ):
+                            return _capability_no_match_result(
+                                resolution.reason
+                            )
+                        continue
+
+                    materialized = (
+                        materialize_grounded_action(
+                            resolution=resolution,
+                            command_evidence_store=(
+                                command_evidence_store
+                            ),
+                            evidence_store=evidence_store,
+                            tool_registry=tool_registry,
+                            inventory=inventory,
+                        )
+                    )
+                    if materialized is None:
+                        raise CapabilityResolverError(
+                            "Capability select materialize "
+                            "edilemedi."
+                        )
+                    action = NextAction(
+                        action="tool",
+                        reason=materialized.reason,
+                        tool=materialized.tool,
+                        evidence_refs=(
+                            materialized.evidence_refs
+                        ),
+                        command_evidence_refs=(
+                            materialized.command_evidence_refs
+                        ),
+                        runtime_ref=(
+                            materialized.runtime_ref
+                        ),
+                    )
+                elif deferred is not None:
                     action = resolve_deferred_step_action(
                         goal=plan.goal,
                         plan=plan,
@@ -1578,6 +2012,8 @@ def run_agent_loop_preview(
                         runtime_evidence_store=runtime_evidence_store,
                         model_client=model_client,
                         tool_registry=tool_registry,
+                        capability_store=capability_store,
+                        resolve_with_capability=False,
                     )
                 else:
                     action = decide_next_action(
@@ -1588,7 +2024,10 @@ def run_agent_loop_preview(
                         tool_registry=tool_registry,
                         evidence_store=evidence_store,
                     )
-            except AgentLoopError as exc:
+            except (
+                AgentLoopError,
+                CapabilityResolverError,
+            ) as exc:
                 decisions += 1
                 invalid_model_actions += 1
                 observations.append(
@@ -1598,9 +2037,25 @@ def run_agent_loop_preview(
                         str(exc),
                         {
                             "stage": decision_stage,
+                            "resolve_with_capability": bool(
+                                command_evidence_store.records()
+                            ),
                         },
                     )
                 )
+
+                # Invariant: CommandEvidence varken
+                # FILESYSTEM/CAPABILITY discovery'ye donme.
+                if command_evidence_store.records():
+                    capability_resolution_attempts += 1
+                    if (
+                        capability_resolution_attempts
+                        >= max_capability_resolution_attempts
+                    ):
+                        return _capability_resolution_failed_result(
+                            str(exc)
+                        )
+                    continue
 
                 discovery = _next_discovery_action(
                     evidence_store=evidence_store,
@@ -1616,6 +2071,7 @@ def run_agent_loop_preview(
                     command_evidence_store=(
                         command_evidence_store
                     ),
+                    capability_store=capability_store,
                     attempted_probes=attempted_probes,
                 )
 
@@ -1671,6 +2127,41 @@ def run_agent_loop_preview(
             raise AgentLoopError(
                 "tool action tool request icermiyor."
             )
+
+        # RESOLVE_WITH_CAPABILITY: CommandEvidence varken
+        # filesystem/capability discovery tool'larini reddet.
+        if command_evidence_store.records():
+            is_discovery_tool = (
+                action.tool.permission == Permission.READ
+                or (
+                    action.tool.tool_name == "run_process"
+                    and is_safe_capability_probe(
+                        request=action.tool,
+                        evidence_store=evidence_store,
+                    )
+                )
+            )
+            if is_discovery_tool:
+                capability_resolution_attempts += 1
+                observations.append(
+                    _control(
+                        len(observations) + 1,
+                        "CAPABILITY_RESOLUTION_BLOCKED",
+                        "Command Evidence varken filesystem "
+                        "veya capability discovery yapilamaz.",
+                        {
+                            "tool_name": action.tool.tool_name,
+                            "arguments": action.tool.arguments,
+                            "cwd": action.tool.cwd,
+                        },
+                    )
+                )
+                if (
+                    capability_resolution_attempts
+                    >= max_capability_resolution_attempts
+                ):
+                    return _capability_resolution_failed_result()
+                continue
 
         if action.tool.permission == Permission.READ:
             try:
@@ -1769,6 +2260,8 @@ def run_agent_loop_preview(
                             evidence_store=evidence_store,
                             runtime_ref=bound_probe_action.runtime_ref,
                         )
+                        # Basarili CommandEvidence → RESOLVE (model).
+                        continue
                     except CommandGroundingError as exc:
                         observations.append(
                             _control(
@@ -1779,6 +2272,26 @@ def run_agent_loop_preview(
                             )
                         )
 
+                # Probe basarisiz: sonraki discovery (varsa) deterministic.
+                next_discovery = _next_discovery_action(
+                    evidence_store=evidence_store,
+                    tool_registry=tool_registry,
+                    read_fingerprints=read_fingerprints,
+                    read_file_paths=read_file_paths,
+                    attempted_discoveries=(
+                        attempted_discoveries
+                    ),
+                    runtime_evidence_store=(
+                        runtime_evidence_store
+                    ),
+                    command_evidence_store=(
+                        command_evidence_store
+                    ),
+                    capability_store=capability_store,
+                    attempted_probes=attempted_probes,
+                )
+                if next_discovery is not None:
+                    forced_action = next_discovery
                 continue
 
             try:
@@ -1802,6 +2315,10 @@ def run_agent_loop_preview(
                 )
                 if outcome == "fail":
                     return _insufficient_evidence_result()
+                if outcome == "capability_fail":
+                    return _capability_resolution_failed_result(
+                        str(exc)
+                    )
                 if isinstance(outcome, NextAction):
                     forced_action = outcome
                 continue
@@ -1867,6 +2384,10 @@ def run_agent_loop_preview(
                     )
                     if outcome == "fail":
                         return _insufficient_evidence_result()
+                    if outcome == "capability_fail":
+                        return _capability_resolution_failed_result(
+                            str(exc)
+                        )
                     if isinstance(outcome, NextAction):
                         forced_action = outcome
                     continue
@@ -1935,3 +2456,49 @@ def run_agent_loop_preview(
                 obs,
                 read_file_paths,
             )
+            _assess_read_for_capability(
+                observation=obs,
+                evidence_store=evidence_store,
+                capability_store=capability_store,
+            )
+            # Classify sonrasi candidate varsa CAPABILITY_PROBE.
+            forced_probe = _forced_capability_probe_action(
+                evidence_store=evidence_store,
+                tool_registry=tool_registry,
+                runtime_evidence_store=(
+                    runtime_evidence_store
+                ),
+                command_evidence_store=(
+                    command_evidence_store
+                ),
+                capability_store=capability_store,
+                attempted_discoveries=(
+                    attempted_discoveries
+                ),
+                attempted_probes=attempted_probes,
+            )
+            if forced_probe is not None:
+                forced_action = forced_probe
+                continue
+
+            # Candidate yoksa sonraki discovery'yi model'siz surdur.
+            next_discovery = _next_discovery_action(
+                evidence_store=evidence_store,
+                tool_registry=tool_registry,
+                read_fingerprints=read_fingerprints,
+                read_file_paths=read_file_paths,
+                attempted_discoveries=(
+                    attempted_discoveries
+                ),
+                runtime_evidence_store=(
+                    runtime_evidence_store
+                ),
+                command_evidence_store=(
+                    command_evidence_store
+                ),
+                capability_store=capability_store,
+                attempted_probes=attempted_probes,
+            )
+            if next_discovery is not None:
+                forced_action = next_discovery
+                continue

@@ -266,11 +266,13 @@ def test_loop_forces_discovery_before_mutation(
         / "manage.py"
     ).write_text(
         "import sys\n"
-        "if len(sys.argv) > 1 and sys.argv[1] == 'help':\n"
-        "    print('Available subcommands:')\n"
-        "    print('  check')\n"
-        "    print('  startapp')\n"
-        "    print('  test')\n",
+        "if __name__ == '__main__':\n"
+        "    args = sys.argv[1:]\n"
+        "    if args and args[0] in {'help', '--help', '-h'}:\n"
+        "        print('Available subcommands:')\n"
+        "        print('  check')\n"
+        "        print('  startapp')\n"
+        "        print('  test')\n",
         encoding="utf-8",
     )
 
@@ -341,71 +343,22 @@ def test_loop_forces_discovery_before_mutation(
         prompt = kwargs[
             "user_prompt"
         ]
-
-        manage_ref = _extract_ref(
+        assert (
+            "CAPABILITY RESOLUTION STATE"
+            in prompt
+        )
+        cap_ref = _extract_capability_ref(
             prompt,
-            marker='"path": "okulprojesi/manage.py"',
-            key='"evidence_id": "',
+            "startapp",
         )
-
-        state_text = prompt.split(
-            "STEP RESOLUTION STATE:\n",
-            1,
-        )[1].split(
-            "\n\nBir sonraki tool JSON'unu dondur.",
-            1,
-        )[0]
-
-        state = json.loads(
-            state_text
-        )
-
-        matching = [
-            item
-            for item in state[
-                "command_evidence_store"
-            ]
-            if item.get("prefix")
-            == [
-                "python",
-                "manage.py",
-            ]
-        ]
-
-        assert len(matching) == 1
-
-        command_ref = matching[0][
-            "command_evidence_id"
-        ]
-
-        return {
-            "action": "execute",
-            "reason": (
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=["users"],
+            reason=(
                 "manage.py help ciktisinda startapp "
                 "gercekten mevcut."
             ),
-            "tool": {
-                "tool_name": "run_process",
-                "arguments": {
-                    "argv": [
-                        "python",
-                        "manage.py",
-                        "startapp",
-                        "users",
-                    ],
-                    "timeout_seconds": 30,
-                },
-                "permission": "read",
-                "cwd": "okulprojesi",
-            },
-            "evidence_refs": [
-                manage_ref
-            ],
-            "command_evidence_refs": [
-                command_ref
-            ],
-            "answer": None,
-        }
+        )
 
     client = SequenceModelClient(
         [
@@ -431,22 +384,6 @@ def test_loop_forces_discovery_before_mutation(
                 "command_evidence_refs": [],
                 "answer": None,
             },
-            {
-                "action": "read",
-                "reason": "alt klasoru inspect et",
-                "tool": {
-                    "tool_name": "list_files",
-                    "arguments": {
-                        "path": "okulprojesi",
-                    },
-                    "permission": "execute",
-                    "cwd": None,
-                },
-                "evidence_refs": [],
-                "command_evidence_refs": [],
-                "answer": None,
-            },
-            probe_action,
             grounded_mutation,
         ]
     )
@@ -606,13 +543,27 @@ def _extract_evidence_ref(prompt, path):
 
 
 def _extract_command_ref(prompt, prefix):
+    if "CAPABILITY RESOLUTION STATE:\n" in prompt:
+        # Inventory-based prompt no longer embeds raw
+        # command_evidence_store JSON; keep STEP path.
+        raise AssertionError(
+            "command_evidence_ref modelden gelmez; "
+            "capability_ref kullan."
+        )
     state_text = prompt.split(
         "STEP RESOLUTION STATE:\n",
         1,
-    )[1].split(
+    )[1]
+    for marker in (
         "\n\nBir sonraki tool JSON'unu dondur.",
-        1,
-    )[0]
+        "\n\nCommand Evidence mevcut.",
+    ):
+        if marker in state_text:
+            state_text = state_text.split(
+                marker,
+                1,
+            )[0]
+            break
     state = json.loads(state_text)
     matching = [
         item
@@ -625,16 +576,55 @@ def _extract_command_ref(prompt, prefix):
     return matching[0]["command_evidence_id"]
 
 
+def _extract_capability_ref(prompt, token):
+    assert "AVAILABLE CAPABILITIES:" in prompt
+    block = prompt.split(
+        "AVAILABLE CAPABILITIES:\n",
+        1,
+    )[1]
+    for marker in (
+        "\n\nONCEKI DENEME:",
+        "\n\nCapabilityResolution JSON'unu dondur.",
+    ):
+        if marker in block:
+            block = block.split(marker, 1)[0]
+            break
+    for line in block.splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 2:
+            continue
+        if parts[1] == token:
+            return parts[0]
+    raise AssertionError(
+        f"capability token bulunamadi: {token}"
+    )
+
+
+def _capability_use(
+    *,
+    capability_ref,
+    arguments,
+    reason="Kanitlanmis capability secildi.",
+):
+    return {
+        "decision": "select",
+        "capability_ref": capability_ref,
+        "arguments": list(arguments),
+        "reason": reason,
+    }
+
+
 def _python_help_script():
     return (
         "import sys\n"
-        "if any(a in {'--help', '-h', 'help'} for a in sys.argv[1:]):\n"
-        "    print('Available commands:')\n"
-        "    print('  build')\n"
-        "    print('  check')\n"
-        "    sys.exit(0)\n"
-        "print('unexpected')\n"
-        "sys.exit(1)\n"
+        "if __name__ == '__main__':\n"
+        "    if any(a in {'--help', '-h', 'help'} for a in sys.argv[1:]):\n"
+        "        print('Available commands:')\n"
+        "        print('  build')\n"
+        "        print('  check')\n"
+        "        sys.exit(0)\n"
+        "    print('unexpected')\n"
+        "    sys.exit(1)\n"
     )
 
 
@@ -655,7 +645,9 @@ def _node_help_script():
 def _python_fail_probe_script():
     return (
         "import sys\n"
-        "sys.exit(2)\n"
+        "if __name__ == '__main__':\n"
+        "    _ = sys.argv\n"
+        "    sys.exit(2)\n"
     )
 
 
@@ -943,34 +935,19 @@ def test_python_script_capability_probe_then_grounded_mutation(
 
     def grounded_mutation(kwargs):
         prompt = kwargs["user_prompt"]
-        evidence_ref = _extract_evidence_ref(
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
             prompt,
-            "pkg/tool.py",
+            "build",
         )
-        command_ref = _extract_command_ref(
-            prompt,
-            ["python", "tool.py"],
-        )
-        return _tool_action(
-            tool_name="run_process",
-            arguments={
-                "argv": [
-                    "python",
-                    "tool.py",
-                    "build",
-                ],
-                "timeout_seconds": 30,
-            },
-            cwd="pkg",
-            reason="probe ciktisinda build var",
-            evidence_refs=[evidence_ref],
-            command_evidence_refs=[command_ref],
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
         )
 
     client = SequenceModelClient(
         [
             _plan(),
-            wrong_write,
             wrong_write,
             grounded_mutation,
         ]
@@ -1055,34 +1032,19 @@ def test_node_script_capability_probe_then_grounded_mutation(
 
     def grounded_mutation(kwargs):
         prompt = kwargs["user_prompt"]
-        evidence_ref = _extract_evidence_ref(
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
             prompt,
-            "pkg/run.mjs",
+            "build",
         )
-        command_ref = _extract_command_ref(
-            prompt,
-            ["node", "run.mjs"],
-        )
-        return _tool_action(
-            tool_name="run_process",
-            arguments={
-                "argv": [
-                    "node",
-                    "run.mjs",
-                    "build",
-                ],
-                "timeout_seconds": 30,
-            },
-            cwd="pkg",
-            reason="probe ciktisinda build var",
-            evidence_refs=[evidence_ref],
-            command_evidence_refs=[command_ref],
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
         )
 
     client = SequenceModelClient(
         [
             _plan(),
-            wrong,
             wrong,
             grounded_mutation,
         ]
@@ -1150,34 +1112,19 @@ def test_invalid_empty_tool_name_recovers_via_discovery(
 
     def grounded_mutation(kwargs):
         prompt = kwargs["user_prompt"]
-        evidence_ref = _extract_evidence_ref(
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
             prompt,
-            "pkg/tool.py",
+            "build",
         )
-        command_ref = _extract_command_ref(
-            prompt,
-            ["python", "tool.py"],
-        )
-        return _tool_action(
-            tool_name="run_process",
-            arguments={
-                "argv": [
-                    "python",
-                    "tool.py",
-                    "build",
-                ],
-                "timeout_seconds": 30,
-            },
-            cwd="pkg",
-            reason="probe ciktisinda build var",
-            evidence_refs=[evidence_ref],
-            command_evidence_refs=[command_ref],
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
         )
 
     client = SequenceModelClient(
         [
             _plan(),
-            _empty_tool_action(),
             _empty_tool_action(),
             grounded_mutation,
         ]
@@ -1295,7 +1242,7 @@ def test_max_probe_actions_returns_runtime_evidence(
     package.mkdir()
     script = package / "tool.py"
     script.write_text(
-        _python_help_script(),
+        _python_fail_probe_script(),
         encoding="utf-8",
     )
 
@@ -1371,8 +1318,457 @@ def test_max_probe_actions_returns_runtime_evidence(
     )
     assert (
         script.read_text(encoding="utf-8")
-        == _python_help_script()
+        == _python_fail_probe_script()
     )
+    assert result.command_evidence == []
     assert not (
         package / "out.txt"
     ).exists()
+
+
+def test_successful_command_evidence_stops_further_auto_probes(
+    tmp_path,
+):
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (
+        package / "tool.py"
+    ).write_text(
+        _python_help_script(),
+        encoding="utf-8",
+    )
+    (
+        package / "__init__.py"
+    ).write_text(
+        "",
+        encoding="utf-8",
+    )
+    (
+        package / "settings.py"
+    ).write_text(
+        "DEBUG = True\n",
+        encoding="utf-8",
+    )
+    (
+        package / "asgi.py"
+    ).write_text(
+        "application = None\n",
+        encoding="utf-8",
+    )
+
+    wrong = _tool_action(
+        tool_name="write_file",
+        arguments={
+            "path": "pkg/out.txt",
+            "content": "x",
+        },
+        cwd="pkg",
+        reason="kanitsiz write",
+    )
+
+    def grounded_mutation(kwargs):
+        prompt = kwargs["user_prompt"]
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
+            prompt,
+            "build",
+        )
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
+        )
+
+    client = SequenceModelClient(
+        [
+            _plan(),
+            wrong,
+            grounded_mutation,
+        ]
+    )
+
+    result = run_agent_loop_preview(
+        prompt="paketi derle",
+        model_client=client,
+        tool_registry=(
+            build_full_project_tool_registry(
+                str(tmp_path)
+            )
+        ),
+        max_read_actions=8,
+        max_probe_actions=4,
+        max_decisions=12,
+    )
+
+    assert (
+        result.stop_reason
+        == "mutation_action_ready"
+    )
+    assert len(result.command_evidence) == 1
+    assert (
+        result.command_evidence[0].prefix
+        == ["python", "tool.py"]
+    )
+
+    probed_scripts = []
+    for item in result.observations:
+        if item.tool_name != "command_probe":
+            continue
+        request = item.data.get("request", {})
+        argv = request.get("arguments", {}).get(
+            "argv",
+            [],
+        )
+        if len(argv) >= 2:
+            probed_scripts.append(argv[1])
+
+    assert probed_scripts == ["tool.py"]
+    assert "settings.py" not in probed_scripts
+    assert "__init__.py" not in probed_scripts
+    assert "asgi.py" not in probed_scripts
+    assert not (
+        package / "out.txt"
+    ).exists()
+
+    # Library modules may be read for classification, but not probed.
+    read_paths = [
+        item.data.get("path")
+        for item in result.observations
+        if item.success
+        and item.tool_name == "read_file"
+    ]
+    assert "pkg/tool.py" in read_paths
+
+
+def test_candidate_read_forces_probe_before_more_script_reads(
+    tmp_path,
+):
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (
+        package / "cli.py"
+    ).write_text(
+        _python_help_script(),
+        encoding="utf-8",
+    )
+    (
+        package / "util.py"
+    ).write_text(
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+
+    wrong = _tool_action(
+        tool_name="write_file",
+        arguments={
+            "path": "pkg/out.txt",
+            "content": "x",
+        },
+        cwd="pkg",
+        reason="kanitsiz",
+    )
+
+    def grounded_mutation(kwargs):
+        prompt = kwargs["user_prompt"]
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
+            prompt,
+            "build",
+        )
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
+        )
+
+    client = SequenceModelClient(
+        [
+            _plan(),
+            wrong,
+            grounded_mutation,
+        ]
+    )
+
+    result = run_agent_loop_preview(
+        prompt="paketi derle",
+        model_client=client,
+        tool_registry=(
+            build_full_project_tool_registry(
+                str(tmp_path)
+            )
+        ),
+        max_read_actions=6,
+        max_probe_actions=2,
+        max_decisions=8,
+    )
+
+    assert (
+        result.stop_reason
+        == "mutation_action_ready"
+    )
+
+    # Observation order: ... read cli.py → command_probe
+    # (util.py must not be read between candidate and probe)
+    names = [
+        (
+            item.tool_name,
+            (
+                item.data.get("path")
+                if item.tool_name == "read_file"
+                else (
+                    item.data.get("request", {})
+                    .get("arguments", {})
+                    .get("argv", [None, None])[1]
+                    if item.tool_name == "command_probe"
+                    else None
+                )
+            ),
+        )
+        for item in result.observations
+        if item.tool_name
+        in {"read_file", "command_probe"}
+    ]
+
+    cli_read_index = next(
+        i
+        for i, (tool, path) in enumerate(names)
+        if tool == "read_file"
+        and path == "pkg/cli.py"
+    )
+    probe_index = next(
+        i
+        for i, (tool, path) in enumerate(names)
+        if tool == "command_probe"
+        and path == "cli.py"
+    )
+    assert probe_index == cli_read_index + 1
+
+    util_reads_before_probe = [
+        i
+        for i, (tool, path) in enumerate(names)
+        if tool == "read_file"
+        and path == "pkg/util.py"
+        and i < probe_index
+    ]
+    assert util_reads_before_probe == []
+    assert len(result.command_evidence) == 1
+    assert not (
+        package / "out.txt"
+    ).exists()
+
+
+def test_invalid_action_after_command_evidence_does_not_resume_filesystem_discovery(
+    tmp_path,
+):
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (
+        package / "tool.py"
+    ).write_text(
+        _python_help_script(),
+        encoding="utf-8",
+    )
+    (
+        package / "util.py"
+    ).write_text(
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+    (
+        package / "settings.py"
+    ).write_text(
+        "DEBUG = True\n",
+        encoding="utf-8",
+    )
+    (
+        package / "README.md"
+    ).write_text(
+        "docs\n",
+        encoding="utf-8",
+    )
+
+    wrong = _tool_action(
+        tool_name="write_file",
+        arguments={
+            "path": "pkg/out.txt",
+            "content": "x",
+        },
+        cwd="pkg",
+        reason="kanitsiz",
+    )
+
+    def grounded_mutation(kwargs):
+        prompt = kwargs["user_prompt"]
+        assert "CAPABILITY RESOLUTION STATE" in prompt
+        cap_ref = _extract_capability_ref(
+            prompt,
+            "build",
+        )
+        return _capability_use(
+            capability_ref=cap_ref,
+            arguments=[],
+        )
+
+    client = SequenceModelClient(
+        [
+            _plan(),
+            wrong,
+            _empty_tool_action(),
+            grounded_mutation,
+        ]
+    )
+
+    result = run_agent_loop_preview(
+        prompt="paketi derle",
+        model_client=client,
+        tool_registry=(
+            build_full_project_tool_registry(
+                str(tmp_path)
+            )
+        ),
+        max_read_actions=8,
+        max_probe_actions=2,
+        max_decisions=10,
+        max_capability_resolution_attempts=3,
+    )
+
+    assert (
+        result.stop_reason
+        == "mutation_action_ready"
+    )
+    assert any(
+        item.error == "MODEL_ACTION_INVALID"
+        and item.data.get(
+            "resolve_with_capability"
+        )
+        is True
+        for item in result.observations
+    )
+    assert len(result.command_evidence) == 1
+
+    read_paths_after_evidence = []
+    saw_command_evidence = False
+    for item in result.observations:
+        if (
+            item.tool_name == "command_probe"
+            and item.success
+        ):
+            saw_command_evidence = True
+            continue
+        if (
+            saw_command_evidence
+            and item.success
+            and item.tool_name == "read_file"
+        ):
+            read_paths_after_evidence.append(
+                item.data.get("path")
+            )
+
+    assert read_paths_after_evidence == []
+    assert "pkg/README.md" not in read_paths_after_evidence
+    assert not (
+        package / "out.txt"
+    ).exists()
+
+
+def test_capability_resolution_failure_stops_without_more_discovery(
+    tmp_path,
+):
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (
+        package / "tool.py"
+    ).write_text(
+        _python_help_script(),
+        encoding="utf-8",
+    )
+    (
+        package / "util.py"
+    ).write_text(
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+    (
+        package / "README.md"
+    ).write_text(
+        "docs\n",
+        encoding="utf-8",
+    )
+
+    wrong = _tool_action(
+        tool_name="write_file",
+        arguments={
+            "path": "pkg/out.txt",
+            "content": "x",
+        },
+        cwd="pkg",
+        reason="kanitsiz",
+    )
+
+    client = SequenceModelClient(
+        [
+            _plan(),
+            wrong,
+            _empty_tool_action(),
+            _empty_tool_action(),
+            _empty_tool_action(),
+        ]
+    )
+
+    result = run_agent_loop_preview(
+        prompt="paketi derle",
+        model_client=client,
+        tool_registry=(
+            build_full_project_tool_registry(
+                str(tmp_path)
+            )
+        ),
+        max_read_actions=8,
+        max_probe_actions=2,
+        max_decisions=10,
+        max_capability_resolution_attempts=2,
+    )
+
+    assert (
+        result.stop_reason
+        == "capability_resolution_failed"
+    )
+    assert len(result.command_evidence) == 1
+    assert result.completed is False
+    assert not any(
+        item.tool_name == "command_probe"
+        and item.success
+        and (
+            item.data.get("request", {})
+            .get("arguments", {})
+            .get("argv", [None, None])[1]
+            == "util.py"
+        )
+        for item in result.observations
+    )
+
+    read_after_evidence = []
+    saw_probe = False
+    for item in result.observations:
+        if (
+            item.tool_name == "command_probe"
+            and item.success
+        ):
+            saw_probe = True
+            continue
+        if (
+            saw_probe
+            and item.success
+            and item.tool_name == "read_file"
+        ):
+            read_after_evidence.append(
+                item.data.get("path")
+            )
+
+    assert read_after_evidence == []
+    assert not (
+        package / "out.txt"
+    ).exists()
+    assert sum(
+        1
+        for item in result.observations
+        if item.error == "MODEL_ACTION_INVALID"
+    ) >= 2

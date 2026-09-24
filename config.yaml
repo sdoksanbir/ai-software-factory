@@ -10,6 +10,13 @@ models:
     temperature: 0.1
     timeout_seconds: 120
 
+  capability_resolver:
+    provider: "ollama"
+    model: "qwen2.5-coder:14b"
+    api_base: "http://localhost:11434"
+    temperature: 0.1
+    timeout_seconds: 120
+
   heavy_local:
     provider: "ollama"
     model: "devstral-small-2"
@@ -33,6 +40,7 @@ routing:
   default_model: "fast_local"
   heavy_model: "heavy_local"
   cloud_model: "cloud_senior"
+  capability_resolver_model: "capability_resolver"
 
 generation:
   max_retries: 1

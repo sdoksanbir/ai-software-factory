@@ -262,6 +262,48 @@ def test_run_process_rejects_invalid_timeout(
         )
 
 
+def test_run_process_allows_absolute_path_safe_runtime(
+    tmp_path,
+):
+    import shutil
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node PATH'te yok")
+
+    script = tmp_path / "hello.mjs"
+    script.write_text(
+        "console.log('ok')\n",
+        encoding="utf-8",
+    )
+
+    registry = build_project_tool_registry(
+        str(tmp_path)
+    )
+
+    result = registry.execute(
+        ToolRequest(
+            tool_name="run_process",
+            arguments={
+                "argv": [
+                    str(
+                        Path(node)
+                        .expanduser()
+                        .resolve()
+                    ),
+                    "hello.mjs",
+                ],
+            },
+            permission=Permission.EXECUTE,
+        )
+    )
+
+    assert result["success"] is True
+    assert result["exit_code"] == 0
+    assert result["stdout"].strip() == "ok"
+
+
 def test_project_registry_keeps_filesystem_tools(
     tmp_path,
 ):

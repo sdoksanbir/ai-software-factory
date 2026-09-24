@@ -22,6 +22,34 @@ _SAFE_PROBE_MARKERS = {
     "--version",
 }
 
+_PROJECT_SCRIPT_SUFFIXES = {
+    ".py",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".sh",
+    ".ps1",
+    ".cmd",
+    ".bat",
+}
+
+# Only families with RuntimeEvidenceStore support.
+_SCRIPT_RUNTIME_BY_SUFFIX = {
+    ".py": "python",
+    ".js": "node",
+    ".mjs": "node",
+    ".cjs": "node",
+    ".ts": "node",
+}
+
+_LOGICAL_ARGV0_BY_FAMILY = {
+    "python": "python",
+    "node": "node",
+}
+
+_DEFAULT_PROBE_MARKER = "--help"
+
 
 def _norm(raw: str | None) -> str:
     value = str(raw or ".").strip().replace("\\", "/")
@@ -103,20 +131,82 @@ def _project_script_paths(
             continue
 
         suffix = PurePosixPath(value).suffix.casefold()
-        if suffix in {
-            ".py",
-            ".js",
-            ".mjs",
-            ".cjs",
-            ".ts",
-            ".sh",
-            ".ps1",
-            ".cmd",
-            ".bat",
-        }:
+        if suffix in _PROJECT_SCRIPT_SUFFIXES:
             result.append(_join(cwd, value))
 
     return result
+
+
+def logical_runtime_for_script_path(
+    script_path: str,
+) -> str | None:
+    path = _norm(script_path)
+    suffix = PurePosixPath(path).suffix.casefold()
+    return _SCRIPT_RUNTIME_BY_SUFFIX.get(suffix)
+
+
+def is_project_script_path(script_path: str) -> bool:
+    path = _norm(script_path)
+    suffix = PurePosixPath(path).suffix.casefold()
+    return suffix in _PROJECT_SCRIPT_SUFFIXES
+
+
+def build_safe_capability_probe_request(
+    *,
+    script_path: str,
+    evidence_store: Any,
+    permission: Any,
+) -> ToolRequest:
+    path = _norm(script_path)
+    family = logical_runtime_for_script_path(path)
+
+    if family is None:
+        raise CommandGroundingError(
+            "Script icin logical runtime family yok: "
+            f"{path}"
+        )
+
+    argv0 = _LOGICAL_ARGV0_BY_FAMILY.get(family)
+    if argv0 is None:
+        raise CommandGroundingError(
+            "Script icin logical argv0 yok: "
+            f"{path}"
+        )
+
+    if not evidence_store.known_file(path):
+        raise CommandGroundingError(
+            "Capability probe proje scripti EvidenceStore'da yok: "
+            f"{path}"
+        )
+
+    parent = str(PurePosixPath(path).parent)
+    cwd = "." if parent in {"", "."} else _norm(parent)
+
+    if not evidence_store.inspected_directory(cwd):
+        raise CommandGroundingError(
+            "Capability probe cwd bizzat inspect edilmis olmali: "
+            f"{cwd}"
+        )
+
+    relative_script = PurePosixPath(path).name
+    request = ToolRequest(
+        tool_name="run_process",
+        arguments={
+            "argv": [
+                argv0,
+                relative_script,
+                _DEFAULT_PROBE_MARKER,
+            ],
+        },
+        permission=permission,
+        cwd=cwd,
+    )
+
+    validate_safe_capability_probe(
+        request=request,
+        evidence_store=evidence_store,
+    )
+    return request
 
 
 def validate_safe_capability_probe(
@@ -306,6 +396,20 @@ class CommandEvidenceStore:
                 item.cwd,
                 item.prefix,
             ),
+        )
+
+    def has_prefix(
+        self,
+        *,
+        cwd: str,
+        prefix: list[str],
+    ) -> bool:
+        cwd = _norm(cwd)
+        wanted = list(prefix)
+        return any(
+            record.cwd == cwd
+            and record.prefix == wanted
+            for record in self._records.values()
         )
 
     def to_model_payload(self) -> list[dict[str, Any]]:

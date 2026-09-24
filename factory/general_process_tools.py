@@ -218,9 +218,32 @@ def _resolve_executable(
         ):
             return str(resolved)
 
+        name = resolved.name.casefold()
+        if (
+            name in SAFE_PATH_EXECUTABLES
+            and resolved.exists()
+            and resolved.is_file()
+        ):
+            aliases = {
+                name,
+                Path(name).stem.casefold(),
+            }
+            for alias in aliases:
+                located = shutil.which(alias)
+                if located is None:
+                    continue
+                if (
+                    Path(located)
+                    .expanduser()
+                    .resolve()
+                    == resolved
+                ):
+                    return str(resolved)
+
         raise UnsafeExecutableError(
             "Absolute executable yalnizca mevcut Python "
-            "yorumlayicisi veya proje venv'i icinden olabilir."
+            "yorumlayicisi, proje venv'i veya PATH'teki "
+            "izinli runtime olabilir."
         )
 
     if (

@@ -509,7 +509,11 @@ def build_general_task_plan(
         "5. READ/WRITE/EXECUTE tum gorevin turu DEGIL; "
         "her step'in permission degeridir.\n"
         "6. Action sonrasinda sonucu kanitlayacak "
-        "dogrulama adimi planla.\n"
+        "dogrulama adimi planla. success_criteria "
+        "discovery oncesi fiziksel path varsaymasin; "
+        "goal-level olsun (ornegin hedef artifact uygun "
+        "proje baglaminda olusturuldu). Kesin path/cwd "
+        "observation sonrasinda netlesir.\n"
         "7. Bir tool cwd'si onceki observation sonucuna "
         "bagliysa yol uydurma. O step'te tool=null birakabilir "
         "ve description icinde onceki observation'dan "
@@ -518,7 +522,11 @@ def build_general_task_plan(
         "bir model/sentez step'i kullanabilirsin.\n"
         "9. Destructive islem planlama; gerekiyorsa constraint "
         "olarak belirt.\n"
-        "10. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
+        "10. Step permission final effect / approval sinifidir; "
+        "tool emri degildir. tool=null deferred step'te "
+        "permission=write olsa bile Agent Loop tool'u "
+        "Registry ile secer.\n"
+        "11. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
         "Markdown ekleme.\n\n"
         "GECERLI JSON OUTPUT ORNEGI:\n"
         + json.dumps(
@@ -528,7 +536,10 @@ def build_general_task_plan(
                 "success_criteria": [
                     {
                         "criterion_id": "criterion-1",
-                        "description": "basari kosulu",
+                        "description": (
+                            "Hedef artifact uygun proje baglaminda "
+                            "olusturuldu ve dogrulandi."
+                        ),
                         "required": True,
                     }
                 ],

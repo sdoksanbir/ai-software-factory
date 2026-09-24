@@ -3,7 +3,9 @@ import pytest
 from factory.command_grounding import (
     CommandEvidenceStore,
     CommandGroundingError,
+    build_safe_capability_probe_request,
     is_safe_capability_probe,
+    logical_runtime_for_script_path,
 )
 from factory.general_agent_contracts import (
     Permission,
@@ -310,4 +312,54 @@ def test_command_evidence_runtime_ref_must_match():
             ],
             runtime_ref="runtime-python-other",
         )
+
+
+def test_build_safe_capability_probe_request_is_logical():
+    evidence = FakeEvidenceStore(
+        inspected_dirs={".", "pkg"},
+        files={"pkg/tool.py"},
+    )
+
+    request = build_safe_capability_probe_request(
+        script_path="pkg/tool.py",
+        evidence_store=evidence,
+        permission=Permission.EXECUTE,
+    )
+
+    assert request.tool_name == "run_process"
+    assert request.cwd == "pkg"
+    assert request.arguments["argv"] == [
+        "python",
+        "tool.py",
+        "--help",
+    ]
+    assert logical_runtime_for_script_path(
+        "pkg/tool.py"
+    ) == "python"
+    assert is_safe_capability_probe(
+        request=request,
+        evidence_store=evidence,
+    )
+
+
+def test_build_safe_capability_probe_request_for_node():
+    evidence = FakeEvidenceStore(
+        inspected_dirs={".", "pkg"},
+        files={"pkg/run.mjs"},
+    )
+
+    request = build_safe_capability_probe_request(
+        script_path="pkg/run.mjs",
+        evidence_store=evidence,
+        permission=Permission.EXECUTE,
+    )
+
+    assert request.arguments["argv"] == [
+        "node",
+        "run.mjs",
+        "--help",
+    ]
+    assert logical_runtime_for_script_path(
+        "pkg/run.mjs"
+    ) == "node"
 
