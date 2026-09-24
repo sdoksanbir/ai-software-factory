@@ -205,11 +205,13 @@ def _record_id(
     *,
     cwd: str,
     prefix: list[str],
+    runtime_ref: str | None,
 ) -> str:
     payload = json.dumps(
         {
             "cwd": cwd,
             "prefix": prefix,
+            "runtime_ref": runtime_ref,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -228,6 +230,7 @@ class CommandEvidenceRecord:
     probe_argv: list[str]
     output: str
     source_observation_id: str
+    runtime_ref: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -237,6 +240,7 @@ class CommandEvidenceRecord:
             "probe_argv": list(self.probe_argv),
             "output": self.output,
             "source_observation_id": self.source_observation_id,
+            "runtime_ref": self.runtime_ref,
         }
 
 
@@ -254,6 +258,7 @@ class CommandEvidenceStore:
         result: Any,
         source_observation_id: str,
         evidence_store: Any,
+        runtime_ref: str | None = None,
     ) -> CommandEvidenceRecord:
         prefix = validate_safe_capability_probe(
             request=request,
@@ -278,12 +283,14 @@ class CommandEvidenceStore:
             command_evidence_id=_record_id(
                 cwd=cwd,
                 prefix=prefix,
+                runtime_ref=runtime_ref,
             ),
             cwd=cwd,
             prefix=list(prefix),
             probe_argv=_argv(request),
             output=output[:50000],
             source_observation_id=source_observation_id,
+            runtime_ref=runtime_ref,
         )
 
         self._records[
@@ -345,6 +352,7 @@ class CommandEvidenceStore:
         *,
         request: ToolRequest,
         command_evidence_refs: list[str],
+        runtime_ref: str | None = None,
     ) -> CommandEvidenceRecord:
         if request.tool_name != "run_process":
             raise CommandGroundingError(
@@ -366,6 +374,12 @@ class CommandEvidenceStore:
             if record.cwd != cwd:
                 reasons.append(
                     f"{ref}: cwd eslesmiyor"
+                )
+                continue
+
+            if record.runtime_ref != runtime_ref:
+                reasons.append(
+                    f"{ref}: runtime_ref eslesmiyor"
                 )
                 continue
 
