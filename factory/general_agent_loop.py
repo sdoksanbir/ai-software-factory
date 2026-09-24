@@ -1227,8 +1227,10 @@ def run_agent_loop_preview(
                     evidence_store=evidence_store,
                 )
             ):
+                logical_probe_action = action
+
                 try:
-                    action = _bind_action_runtime(
+                    bound_probe_action = _bind_action_runtime(
                         action=action,
                         runtime_evidence_store=runtime_evidence_store,
                     )
@@ -1239,9 +1241,9 @@ def run_agent_loop_preview(
                             "RUNTIME_GROUNDING_BLOCKED",
                             str(exc),
                             {
-                                "arguments": action.tool.arguments,
-                                "cwd": action.tool.cwd,
-                                "runtime_ref": action.runtime_ref,
+                                "arguments": logical_probe_action.tool.arguments,
+                                "cwd": logical_probe_action.tool.cwd,
+                                "runtime_ref": logical_probe_action.runtime_ref,
                             },
                         )
                     )
@@ -1253,14 +1255,14 @@ def run_agent_loop_preview(
                         observations=observations,
                         evidence=evidence_store.records(),
                         command_evidence=command_evidence_store.records(),
-                        pending_action=action,
+                        pending_action=logical_probe_action,
                         completed=False,
                         final_answer=None,
                         stop_reason="max_probe_actions",
                     )
 
                 probe_observation = _execute_read(
-                    action.tool,
+                    bound_probe_action.tool,
                     tool_registry,
                     len(observations) + 1,
                 )
@@ -1269,9 +1271,10 @@ def run_agent_loop_preview(
                 probe_observation.tool_name = "command_probe"
                 probe_observation.data = {
                     "request": {
-                        "tool_name": action.tool.tool_name,
-                        "arguments": action.tool.arguments,
-                        "cwd": action.tool.cwd,
+                        "tool_name": logical_probe_action.tool.tool_name,
+                        "arguments": logical_probe_action.tool.arguments,
+                        "cwd": logical_probe_action.tool.cwd,
+                        "runtime_ref": bound_probe_action.runtime_ref,
                     },
                     "result": raw_result,
                 }
@@ -1284,10 +1287,11 @@ def run_agent_loop_preview(
                 if probe_observation.success:
                     try:
                         command_evidence_store.add_probe_result(
-                            request=action.tool,
+                            request=logical_probe_action.tool,
                             result=raw_result,
                             source_observation_id=probe_observation.step_id,
                             evidence_store=evidence_store,
+                            runtime_ref=bound_probe_action.runtime_ref,
                         )
                     except CommandGroundingError as exc:
                         observations.append(
@@ -1323,10 +1327,13 @@ def run_agent_loop_preview(
                 continue
 
             if action.tool.tool_name == "run_process":
+                logical_mutation_action = action
+
                 try:
-                    action = _bind_action_runtime(
-                        action=action,
-                        runtime_evidence_store=runtime_evidence_store,
+                    runtime_binding = bind_runtime_request(
+                        request=logical_mutation_action.tool,
+                        store=runtime_evidence_store,
+                        runtime_ref=logical_mutation_action.runtime_ref,
                     )
                 except RuntimeGroundingError as exc:
                     observations.append(
@@ -1335,20 +1342,27 @@ def run_agent_loop_preview(
                             "RUNTIME_GROUNDING_BLOCKED",
                             str(exc),
                             {
-                                "arguments": action.tool.arguments,
-                                "cwd": action.tool.cwd,
-                                "runtime_ref": action.runtime_ref,
+                                "arguments": logical_mutation_action.tool.arguments,
+                                "cwd": logical_mutation_action.tool.cwd,
+                                "runtime_ref": logical_mutation_action.runtime_ref,
                             },
                         )
                     )
                     continue
 
+                selected_runtime_ref = (
+                    runtime_binding.runtime.runtime_id
+                    if runtime_binding is not None
+                    else None
+                )
+
                 try:
                     command_evidence_store.validate_mutation_command(
-                        request=action.tool,
+                        request=logical_mutation_action.tool,
                         command_evidence_refs=(
-                            action.command_evidence_refs
+                            logical_mutation_action.command_evidence_refs
                         ),
+                        runtime_ref=selected_runtime_ref,
                     )
                 except CommandGroundingError as exc:
                     observations.append(
@@ -1357,16 +1371,25 @@ def run_agent_loop_preview(
                             "COMMAND_GROUNDING_BLOCKED",
                             str(exc),
                             {
-                                "tool_name": action.tool.tool_name,
-                                "arguments": action.tool.arguments,
-                                "cwd": action.tool.cwd,
+                                "tool_name": logical_mutation_action.tool.tool_name,
+                                "arguments": logical_mutation_action.tool.arguments,
+                                "cwd": logical_mutation_action.tool.cwd,
+                                "runtime_ref": selected_runtime_ref,
                                 "command_evidence_refs": (
-                                    action.command_evidence_refs
+                                    logical_mutation_action.command_evidence_refs
                                 ),
                             },
                         )
                     )
                     continue
+
+                if runtime_binding is not None:
+                    action = logical_mutation_action.model_copy(
+                        update={
+                            "tool": runtime_binding.request,
+                            "runtime_ref": selected_runtime_ref,
+                        }
+                    )
 
             return AgentLoopPreviewResult(
                 plan=plan,
