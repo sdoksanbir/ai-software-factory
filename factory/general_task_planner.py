@@ -517,37 +517,61 @@ def build_general_task_plan(
         "8. Kullanici sadece bilgi soruyorsa tool=null olan "
         "bir model/sentez step'i kullanabilirsin.\n"
         "9. Destructive islem planlama; gerekiyorsa constraint "
-        "olarak belirt.\n\n"
-        "JSON SEMASI:\n"
-        "{"
-        "\"goal\":\"asil hedef\","
-        "\"summary\":\"plan ozeti\","
-        "\"success_criteria\":["
-        "{\"criterion_id\":\"id\","
-        "\"description\":\"kosul\","
-        "\"required\":true}"
-        "],"
-        "\"constraints\":[\"kisit\"],"
-        "\"steps\":["
-        "{"
-        "\"step_id\":\"step-1\","
-        "\"title\":\"baslik\","
-        "\"description\":\"aciklama\","
-        "\"permission\":\"read|write|execute|destructive\","
-        "\"tool\":null veya {"
-        "\"tool_name\":\"tool\","
-        "\"arguments\":{},"
-        "\"permission\":\"read|write|execute|destructive\","
-        "\"cwd\":null veya \"proje-ici-yol\""
-        "},"
-        "\"depends_on\":[],"
-        "\"verification_criteria\":[],"
-        "\"status\":\"pending\","
-        "\"max_attempts\":2,"
-        "\"attempt\":0"
-        "}"
-        "]"
-        "}.\n\n"
+        "olarak belirt.\n"
+        "10. Cikti tek ve eksiksiz bir JSON object olmali; aciklama veya "
+        "Markdown ekleme.\n\n"
+        "GECERLI JSON OUTPUT ORNEGI:\n"
+        + json.dumps(
+            {
+                "goal": "asil hedef",
+                "summary": "plan ozeti",
+                "success_criteria": [
+                    {
+                        "criterion_id": "criterion-1",
+                        "description": "basari kosulu",
+                        "required": True,
+                    }
+                ],
+                "constraints": [],
+                "steps": [
+                    {
+                        "step_id": "step-1",
+                        "title": "Projeyi kesfet",
+                        "description": "Proje kokunu listele.",
+                        "permission": "read",
+                        "tool": {
+                            "tool_name": "list_files",
+                            "arguments": {"path": "."},
+                            "permission": "read",
+                            "cwd": None,
+                        },
+                        "depends_on": [],
+                        "verification_criteria": [],
+                        "status": "pending",
+                        "max_attempts": 2,
+                        "attempt": 0,
+                    },
+                    {
+                        "step_id": "step-2",
+                        "title": "Sonraki adimi uygula",
+                        "description": (
+                            "Onceki observation sonucuna gore tool "
+                            "Agent Loop tarafindan netlestirilecek."
+                        ),
+                        "permission": "execute",
+                        "tool": None,
+                        "depends_on": ["step-1"],
+                        "verification_criteria": ["criterion-1"],
+                        "status": "pending",
+                        "max_attempts": 2,
+                        "attempt": 0,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n\n"
         "MEVCUT TOOL KATALOGU:\n"
         + json.dumps(
             tools,
