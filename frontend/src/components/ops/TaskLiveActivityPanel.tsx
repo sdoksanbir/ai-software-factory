@@ -444,8 +444,8 @@ export function TaskLiveActivityPanel({
     >
       <header className="task-live-head">
         <div>
-          <span>GÖREV İZLEME</span>
-          <h2>Canlı İşlem Akışı</h2>
+          <span>CANLI GÖREV DURUMU</span>
+          <h2>Görev İzleme</h2>
           <p>
             {selectedTask.task_id}
             {" · "}
@@ -473,9 +473,11 @@ export function TaskLiveActivityPanel({
 
       <div className="task-live-now">
         <div className="task-live-now-copy">
-          <span>ŞU AN</span>
+          <span>
+            {isLive ? "ŞU AN" : "SON DURUM"}
+          </span>
           <strong>
-            {lastLog
+            {isLive && lastLog
               ? humanizeLog(lastLog)
               : taskStatusText(
                   selectedTask.state,
@@ -485,7 +487,9 @@ export function TaskLiveActivityPanel({
 
         {currentExecution && (
           <div className="task-live-agent">
-            <span>AKTİF AJAN</span>
+            <span>
+              {isLive ? "AKTİF AJAN" : "SON AJAN"}
+            </span>
             <strong>
               {currentExecution.agent_name}
             </strong>
@@ -527,46 +531,6 @@ export function TaskLiveActivityPanel({
         )}
       </div>
 
-      <details
-        className="task-live-technical"
-        open={isLive}
-      >
-        <summary>
-          <span>Teknik Loglar</span>
-          <small>
-            {liveLogs.length} kayıt
-          </small>
-        </summary>
-
-        <div
-          className="task-live-logbox"
-          ref={logBoxRef}
-        >
-          {liveLogs.length === 0 && (
-            <div className="task-live-no-log">
-              Henüz canlı log alınmadı.
-            </div>
-          )}
-
-          {liveLogs.map(
-            (message, index) => (
-              <div
-                className="task-live-log-row"
-                key={`${index}-${message}`}
-              >
-                <span>
-                  #
-                  {String(index + 1).padStart(
-                    2,
-                    "0",
-                  )}
-                </span>
-                <code>{message}</code>
-              </div>
-            ),
-          )}
-        </div>
-      </details>
     </section>
   )
 }

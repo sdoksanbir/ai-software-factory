@@ -2126,6 +2126,9 @@ function App() {
           liveLogs={liveLogs}
           agentExecutions={agentExecutions}
           availableModels={availableModels}
+          diff={diff}
+          loadingDiff={loadingDiff}
+          onLoadDiff={() => void handleDiff()}
           onSelectTask={setSelectedTaskId}
           onTasks={() => {
             setActiveMainView("dashboard")

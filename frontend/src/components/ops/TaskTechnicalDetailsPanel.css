@@ -1,0 +1,325 @@
+/* Task technical area: left observability + right diff */
+
+.task-tech-layout {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.task-tech-panel {
+  min-width: 0;
+  border: 1px solid rgba(68, 148, 218, 0.24);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(8, 35, 58, 0.95), rgba(5, 25, 43, 0.96));
+  color: #eaf5ff;
+}
+
+.task-tech-head {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(81, 145, 201, 0.14);
+}
+
+.task-tech-head > div:first-child {
+  min-width: 0;
+}
+
+.task-tech-head span,
+.task-tech-section-head span {
+  display: block;
+  color: #4bbcff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.task-tech-head h2 {
+  margin: 3px 0 2px;
+  color: #f1f8ff;
+  font-size: 17px;
+}
+
+.task-tech-head p {
+  margin: 0;
+  color: #7d9db8;
+  font-size: 10px;
+}
+
+.task-tech-count {
+  flex: 0 0 auto;
+  color: #8ca9c2;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.task-tech-summary {
+  display: grid;
+  grid-template-columns: .65fr .95fr 1.65fr;
+  gap: 1px;
+  background: rgba(87, 144, 196, 0.12);
+}
+
+.task-tech-summary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  background: rgba(5, 25, 43, 0.97);
+}
+
+.task-tech-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: #718fa9;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.task-tech-summary strong {
+  display: block;
+  color: #e8f5ff;
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+
+.task-tech-summary .fallback strong {
+  color: #ffcf71;
+}
+
+.task-tech-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+  gap: 10px;
+  padding: 12px;
+}
+
+.task-tech-section {
+  min-width: 0;
+  border: 1px solid rgba(82, 141, 192, 0.16);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(3, 18, 32, 0.54);
+}
+
+.task-tech-section-head {
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(82, 141, 192, 0.13);
+  background: rgba(9, 34, 56, 0.66);
+}
+
+.task-tech-section-head strong {
+  display: block;
+  margin-top: 2px;
+  color: #e8f5ff;
+  font-size: 10.5px;
+}
+
+.task-tech-section-head small {
+  color: #7898b2;
+  font-size: 9px;
+}
+
+.task-tech-execution-list,
+.task-tech-logbox {
+  height: 250px;
+  overflow: auto;
+  padding: 4px 10px 7px;
+}
+
+.task-tech-execution {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(91, 137, 176, 0.10);
+}
+
+.task-tech-execution:last-child {
+  border-bottom: 0;
+}
+
+.task-tech-execution > div {
+  min-width: 0;
+}
+
+.task-tech-execution strong {
+  display: block;
+  color: #e7f3ff;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.task-tech-execution span {
+  display: block;
+  margin-top: 2px;
+  color: #7898b2;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.task-tech-execution > small {
+  color: #8ba7bd;
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.task-tech-execution > small.status-failed {
+  color: #ff8593;
+}
+
+.task-tech-execution > small.status-completed {
+  color: #56dca5;
+}
+
+.task-tech-execution p {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  color: #ff9da9;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.task-tech-log-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 7px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(86, 128, 165, 0.08);
+}
+
+.task-tech-log-row > span {
+  color: #4e708c;
+  font-size: 8.5px;
+}
+
+.task-tech-log-row code {
+  color: #aac3d8;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-tech-diff-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-tech-diff-head {
+  flex: 0 0 auto;
+}
+
+.task-tech-diff-button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(71, 175, 244, 0.36);
+  border-radius: 7px;
+  background: rgba(25, 104, 161, 0.28);
+  color: #d9efff;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.task-tech-diff-button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.task-tech-diff {
+  min-height: 342px;
+  max-height: 342px;
+  overflow: auto;
+  background: rgba(2, 14, 26, 0.48);
+}
+
+.task-tech-diff pre {
+  margin: 0;
+  padding: 12px;
+  color: #d8eaff;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 9.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.task-tech-empty {
+  padding: 22px 14px;
+  color: #6f8ca5;
+  font-size: 10px;
+  text-align: center;
+}
+
+@media (max-width: 1250px) {
+  .task-tech-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .task-tech-diff {
+    min-height: 260px;
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 900px) {
+  .task-tech-summary,
+  .task-tech-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-tech-execution-list,
+  .task-tech-logbox {
+    height: 220px;
+  }
+}
+
+
+/* TASK_TECH_FULL_WIDTH_V4
+   Teknik Ayrintilar + Diff, ustteki iki ana panel gibi
+   tum satiri kullanir ve sola/saga yaslanir. */
+.task-tech-layout {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: none !important;
+  justify-self: stretch !important;
+  align-self: stretch !important;
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 1fr) !important;
+  gap: 14px !important;
+}
+
+.task-tech-main,
+.task-tech-diff-panel {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.task-tech-main {
+  justify-self: start !important;
+}
+
+.task-tech-diff-panel {
+  justify-self: end !important;
+}
+
+@media (max-width: 1250px) {
+  .task-tech-layout {
+    grid-template-columns: 1fr !important;
+  }
+}

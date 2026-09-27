@@ -11,15 +11,14 @@ import type {
   PipelineStationState,
 } from "./components/ops/FactoryPipeline"
 
-import { DashboardHeader } from "./components/ops/DashboardHeader"
 import { ControlPanelOverview } from "./components/ops/ControlPanelOverview"
 import { ControlPanelSystemRail } from "./components/ops/ControlPanelSystemRail"
 import {
   TeddyFactoryPipeline,
 } from "./components/factory/TeddyFactoryPipeline"
 import { OpsIcon, type OpsIconName } from "./components/ops/opsIcons"
-import { TaskHistoryPanel } from "./components/ops/TaskHistoryPanel"
 import { TaskLiveActivityPanel } from "./components/ops/TaskLiveActivityPanel"
+import { TaskTechnicalDetailsPanel } from "./components/ops/TaskTechnicalDetailsPanel"
 import { WorldControlPanels } from "./components/world/WorldControlPanels"
 import { WorldRightRail } from "./components/world/WorldRightRail"
 import "./components/factory/FactoryVisuals.css"
@@ -46,6 +45,9 @@ type Props = {
   liveLogs: string[]
   agentExecutions: AgentExecution[]
   availableModels: string[]
+  diff: string
+  loadingDiff: boolean
+  onLoadDiff: () => void
   onSelectTask: (taskId: string) => void
   onTasks: () => void
   onSettings: () => void
@@ -161,6 +163,9 @@ export function ReferenceDashboard({
   liveLogs,
     agentExecutions,
   availableModels,
+  diff,
+  loadingDiff,
+  onLoadDiff,
   onSelectTask,
   onTasks,
   onSettings,
@@ -197,7 +202,6 @@ export function ReferenceDashboard({
   void onModels
 
   const [activeNav, setActiveNav] = useState<NavKey>("overview")
-  const [composerRequestId, setComposerRequestId] = useState(0)
   const [clock, setClock] = useState(() =>
     new Intl.DateTimeFormat("tr-TR", {
       hour: "2-digit",
@@ -591,10 +595,6 @@ export function ReferenceDashboard({
     })
   }
 
-  const openNewTask = () => {
-    setComposerRequestId((value) => value + 1)
-    handleNav("tasks", "world-tasks")
-  }
 
   return (
     <section
@@ -651,61 +651,6 @@ export function ReferenceDashboard({
 
       <main className="reference-workspace">
 
-        {/* GLOBAL_PROJECT_TASKBAR_V1 */}
-        <div className="reference-global-taskbar">
-          <div className="reference-global-project">
-            <div className="reference-global-project-label">
-              <span>AKTİF PROJE</span>
-              <strong>
-                {selectedProject?.name ?? "Proje seçilmedi"}
-              </strong>
-            </div>
-
-            <select
-              value={selectedProjectId ?? ""}
-              onChange={(event) =>
-                onSelectProject(event.target.value)
-              }
-              disabled={projects.length === 0}
-              aria-label="Aktif proje"
-            >
-              {projects.length === 0 ? (
-                <option value="">
-                  Henüz proje yok
-                </option>
-              ) : (
-                projects.map((project) => (
-                  <option
-                    key={project.project_id}
-                    value={project.project_id}
-                  >
-                    {project.name}
-                  </option>
-                ))
-              )}
-            </select>
-
-            <small title={selectedProject?.path ?? ""}>
-              {selectedProject?.path ??
-                "Görev oluşturmak için önce bir proje oluştur."}
-            </small>
-          </div>
-
-          <button
-            type="button"
-            className="reference-global-new-task"
-            onClick={openNewTask}
-            disabled={!selectedProjectId}
-          >
-            + Yeni Görev
-          </button>
-        </div>
-
-        <DashboardHeader
-          runningCount={runningTasks.length}
-          onNewTask={openNewTask}
-          onNotifyClick={() => handleNav("tasks", "world-tasks")}
-        />
 
         {activeNav === "overview" && (
           <div className="control-panel-dashboard-layout">
@@ -754,58 +699,9 @@ export function ReferenceDashboard({
             Boolean(taskReadResult)
           }
         />
-        {/* TASK_LIVE_ACTIVITY_PANEL_V1 */}
-                <div className="task-operations-row">
-          <div className="task-operations-live">
-<TaskLiveActivityPanel
-          selectedTask={selectedTask}
-          pipeline={pipeline}
-          liveLogs={liveLogs}
-          agentExecutions={agentExecutions}
-        />
-          </div>
-
-          <div className="task-operations-center">
-<WorldControlPanels
-          activePanel={activeNav}
-          tasks={tasks}
-          projects={projects}
-          selectedTaskId={selectedTaskId}
-          selectedProjectId={selectedProjectId}
-          availableModels={availableModels}
-          agentExecutions={agentExecutions}
-          controlCenter={controlCenter}
-          prompt={prompt}
-          maxAttempts={maxAttempts}
-          taskModelChoice={taskModelChoice}
-          submitting={submitting}
-          newProjectName={newProjectName}
-          newProjectPath={newProjectPath}
-          projectSubmitting={projectSubmitting}
-          projectCreateError={projectCreateError}
-          projectSettingsName={projectSettingsName}
-          projectSettingsPath={projectSettingsPath}
-          projectSettingsSaving={projectSettingsSaving}
-          composerRequestId={composerRequestId}
-          onSelectTask={onSelectTask}
-          onSelectProject={onSelectProject}
-          onPromptChange={onPromptChange}
-          onMaxAttemptsChange={onMaxAttemptsChange}
-          onTaskModelChoiceChange={onTaskModelChoiceChange}
-          onCreateTask={onCreateTask}
-          onNewProjectNameChange={onNewProjectNameChange}
-          onNewProjectPathChange={onNewProjectPathChange}
-          onCreateProject={onCreateProject}
-          onCreateNewProject={onCreateNewProject}
-          onProjectSettingsNameChange={onProjectSettingsNameChange}
-          onProjectSettingsPathChange={onProjectSettingsPathChange}
-          onSaveProjectSettings={onSaveProjectSettings}
-        />
-          </div>
-        </div>
-        {/* TASK_APPROVAL_ACTIONS_V1 */}
+        {/* TASK_STATUS_ACTIONS_UNDER_PIPELINE_V1 */}
         {selectedTask?.state === "ready_for_approval" && (
-          <section className="task-approval-panel">
+          <section className="task-approval-panel task-status-under-pipeline">
             <div className="task-approval-copy">
               <span>İNSAN ONAYI GEREKİYOR</span>
               <h2>Değişiklikler onayınızı bekliyor</h2>
@@ -838,7 +734,102 @@ export function ReferenceDashboard({
           </section>
         )}
 
+        {selectedTask?.state === "failed" && (
+          <section className="task-approval-panel task-retry-panel task-status-under-pipeline">
+            <div className="task-approval-copy">
+              <span>GÖREV BAŞARISIZ</span>
+              <h2>Görev tamamlanamadı</h2>
+              <p>
+                {agentExecutions
+                  .slice()
+                  .reverse()
+                  .find(
+                    (execution) =>
+                      execution.status === "failed" &&
+                      !!execution.error,
+                  )?.error ??
+                  liveLogs
+                    .slice()
+                    .reverse()
+                    .find((message) =>
+                      /hata|failed|error|başarısız|basarisiz/i.test(
+                        message,
+                      ),
+                    ) ??
+                  "Görev başarısız oldu. Ayrıntılar için Teknik Ayrıntılar bölümünü kontrol edin."}
+              </p>
+            </div>
 
+            <div className="task-approval-actions">
+              <button
+                type="button"
+                className="approve-action"
+                disabled={actionLoading}
+                onClick={onRetryTask}
+              >
+                {actionLoading ? "Yeniden başlatılıyor..." : "Tekrar Dene"}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* TASK_LIVE_ACTIVITY_PANEL_V1 */}
+                <div className="task-operations-row">
+          <div className="task-operations-live">
+<TaskLiveActivityPanel
+          selectedTask={selectedTask}
+          pipeline={pipeline}
+          liveLogs={liveLogs}
+          agentExecutions={agentExecutions}
+        />
+          </div>
+
+          <div className="task-operations-center">
+<WorldControlPanels
+          activePanel={activeNav}
+          tasks={tasks}
+          projects={projects}
+          selectedTaskId={selectedTaskId}
+          selectedProjectId={selectedProjectId}
+          availableModels={availableModels}
+          agentExecutions={agentExecutions}
+          controlCenter={controlCenter}
+          prompt={prompt}
+          maxAttempts={maxAttempts}
+          taskModelChoice={taskModelChoice}
+          submitting={submitting}
+          newProjectName={newProjectName}
+          newProjectPath={newProjectPath}
+          projectSubmitting={projectSubmitting}
+          projectCreateError={projectCreateError}
+          projectSettingsName={projectSettingsName}
+          projectSettingsPath={projectSettingsPath}
+          projectSettingsSaving={projectSettingsSaving}
+          onSelectTask={onSelectTask}
+          onSelectProject={onSelectProject}
+          onPromptChange={onPromptChange}
+          onMaxAttemptsChange={onMaxAttemptsChange}
+          onTaskModelChoiceChange={onTaskModelChoiceChange}
+          onCreateTask={onCreateTask}
+          onNewProjectNameChange={onNewProjectNameChange}
+          onNewProjectPathChange={onNewProjectPathChange}
+          onCreateProject={onCreateProject}
+          onCreateNewProject={onCreateNewProject}
+          onProjectSettingsNameChange={onProjectSettingsNameChange}
+          onProjectSettingsPathChange={onProjectSettingsPathChange}
+          onSaveProjectSettings={onSaveProjectSettings}
+        />
+          </div>
+        </div>
+
+        <TaskTechnicalDetailsPanel
+          selectedTask={selectedTask}
+          agentExecutions={agentExecutions}
+          liveLogs={liveLogs}
+          diff={diff}
+          loadingDiff={loadingDiff}
+          onLoadDiff={onLoadDiff}
+        />
 
         {/* TASK_RESULT_PANEL_V2 */}
         {(
@@ -885,36 +876,6 @@ export function ReferenceDashboard({
 
 
 
-            {/* TASK_RETRY_ACTION_V1 */}
-            {selectedTask?.state === "failed" && (
-              <section className="task-approval-panel task-retry-panel">
-                <div className="task-approval-copy">
-                  <span>GÖREV BAŞARISIZ</span>
-                  <strong>Görevi yeniden çalıştır</strong>
-                  <p>
-                    Mevcut backend retry akışı kullanılarak aynı görev
-                    tekrar denenecek.
-                  </p>
-                </div>
-
-                <div className="task-approval-actions">
-                  <button
-                    type="button"
-                    className="approve-action"
-                    disabled={actionLoading}
-                    onClick={onRetryTask}
-                  >
-                    {actionLoading ? "Yeniden başlatılıyor..." : "Tekrar Dene"}
-                  </button>
-                </div>
-              </section>
-            )}
-            <TaskHistoryPanel
-              selectedTask={selectedTask}
-              pipelineStages={pipelineStages}
-              agentExecutions={agentExecutions}
-              liveLogs={liveLogs}
-            />
           </div>
         )}
 
@@ -982,7 +943,6 @@ export function ReferenceDashboard({
           projectSettingsName={projectSettingsName}
           projectSettingsPath={projectSettingsPath}
           projectSettingsSaving={projectSettingsSaving}
-          composerRequestId={composerRequestId}
           onSelectTask={onSelectTask}
           onSelectProject={onSelectProject}
           onPromptChange={onPromptChange}

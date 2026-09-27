@@ -478,3 +478,136 @@
   font-size: 10px !important;
   line-height: 1.5 !important;
 }
+
+
+/* TARGETED_TASK_MONITOR_CLEANUP_V1 */
+.task-live-technical {
+  margin-top: 12px;
+  border: 1px solid rgba(74, 162, 232, 0.24);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(5, 22, 38, 0.72);
+}
+
+.task-live-technical > summary {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  border-top: 1px solid rgba(104, 158, 211, 0.08);
+  background: rgba(9, 34, 57, 0.76);
+}
+
+.task-live-technical > summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-live-technical > summary::after {
+  content: "⌄";
+  flex: 0 0 auto;
+  color: #7fc9ff;
+  font-size: 18px;
+  font-weight: 800;
+  transition: transform 0.16s ease;
+}
+
+.task-live-technical[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.task-live-technical-summary-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-live-technical-summary-copy strong {
+  color: #e9f5ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-live-technical-summary-copy span {
+  color: #7898b3;
+  font-size: 10px;
+}
+
+.task-live-technical > summary > small {
+  margin-left: auto;
+  color: #7f9db7;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.task-live-executions,
+.task-live-raw-logs {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(103, 153, 201, 0.12);
+}
+
+.task-live-subhead {
+  margin-bottom: 8px;
+  color: #7fc9ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.task-live-execution-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(107, 149, 187, 0.10);
+}
+
+.task-live-execution-row:last-child {
+  border-bottom: 0;
+}
+
+.task-live-execution-row > div {
+  min-width: 0;
+}
+
+.task-live-execution-row strong {
+  display: block;
+  color: #e9f5ff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.task-live-execution-row span {
+  display: block;
+  margin-top: 2px;
+  color: #7898b3;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.task-live-execution-row > small {
+  color: #86a6c0;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.task-live-execution-row p {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(116, 28, 40, 0.20);
+  color: #ff9aa7;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.task-live-raw-logs .task-live-logbox {
+  max-height: 240px;
+}

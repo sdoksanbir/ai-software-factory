@@ -234,7 +234,10 @@ export function WorldControlPanels({
           {showTaskComposer && (
             <form
               className="world-form world-task-form"
-              onSubmit={onCreateTask}
+              onSubmit={(event) => {
+              onCreateTask(event)
+              setShowTaskComposer(false)
+            }}
             >
                 <label className="world-task-project-field world-form-wide">
                   <span>Proje</span>
