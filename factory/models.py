@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from litellm import completion
 import litellm
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
@@ -73,6 +76,146 @@ class ModelClient:
             "timeout": role_cfg.get("timeout_seconds", 120)
         }
 
+    def _resolve_fallback_params(
+        self,
+        model_role: str,
+    ) -> Optional[Dict[str, Any]]:
+        models_config = self.config.get("models", {})
+        role_cfg = models_config.get(model_role, {})
+        fallback_cfg = role_cfg.get("fallback")
+
+        if not isinstance(fallback_cfg, dict):
+            return None
+
+        provider = fallback_cfg.get("provider")
+        model_name = fallback_cfg.get("model")
+        api_base = fallback_cfg.get("api_base")
+
+        if not provider or not model_name:
+            return None
+
+        if provider == "ollama":
+            litellm_model = f"ollama/{model_name}"
+        elif provider == "openrouter":
+            litellm_model = f"openrouter/{model_name}"
+        else:
+            litellm_model = model_name
+
+        if provider != "ollama":
+            cloud_cfg = self.config.get("cloud", {})
+            if not cloud_cfg.get("enabled", False):
+                return None
+
+        return {
+            "litellm_model": litellm_model,
+            "provider": provider,
+            "api_base": api_base,
+            "temperature": fallback_cfg.get(
+                "temperature",
+                role_cfg.get("temperature", 0.1),
+            ),
+            "timeout": fallback_cfg.get(
+                "timeout_seconds",
+                role_cfg.get("timeout_seconds", 120),
+            ),
+        }
+
+    @staticmethod
+    def _should_use_fallback(exc: Exception) -> bool:
+        err = str(exc).lower()
+        fallback_signals = (
+            "rate limit",
+            "ratelimit",
+            "429",
+            "free-models-per-day",
+            "timeout",
+            "timed out",
+            "connection",
+            "connect",
+            "refused",
+            "service unavailable",
+            "502",
+            "503",
+            "504",
+            "api key",
+            "openrouter_api_key",
+            "ortam degiskeni bulunamadi",
+            "unauthorized",
+            "401",
+            "403",
+        )
+        return any(
+            signal in err
+            for signal in fallback_signals
+        )
+
+    def _call_provider(
+        self,
+        *,
+        params: Dict[str, Any],
+        messages: list[Dict[str, str]],
+        temperature: float,
+        timeout: int,
+        max_retries: int,
+    ) -> ModelResponse:
+        kwargs = {
+            "model": params["litellm_model"],
+            "messages": messages,
+            "temperature": temperature,
+            "timeout": timeout,
+        }
+
+        if (
+            params["provider"] == "ollama"
+            and params.get("api_base")
+        ):
+            kwargs["api_base"] = params["api_base"]
+
+        if params["provider"] == "openrouter":
+            openrouter_api_key = os.getenv(
+                "OPENROUTER_API_KEY",
+                "",
+            ).strip()
+
+            if not openrouter_api_key:
+                raise RuntimeError(
+                    "OPENROUTER_API_KEY ortam degiskeni bulunamadi."
+                )
+
+            kwargs["api_key"] = openrouter_api_key
+
+        last_exception = None
+
+        for _attempt in range(max_retries + 1):
+            try:
+                response = completion(**kwargs)
+
+                content = response.choices[0].message.content
+                usage = (
+                    dict(response.usage)
+                    if hasattr(response, "usage")
+                    and response.usage
+                    else None
+                )
+
+                actual_model = (
+                    getattr(response, "model", None)
+                    or params["litellm_model"]
+                )
+
+                return ModelResponse(
+                    content=content,
+                    model=actual_model,
+                    provider=params["provider"],
+                    usage=usage,
+                )
+
+            except Exception as exc:
+                last_exception = exc
+
+        assert last_exception is not None
+        raise last_exception
+
     def complete(
         self,
         model_role: str,
@@ -92,89 +235,128 @@ class ModelClient:
                     f"ollama/{model_name_override}"
                 )
             elif params["provider"] == "openrouter":
-                # Test modunda eski local model override degerlerini yok say.
                 pass
             else:
                 raise ValueError(
                     "model_name_override bu provider icin desteklenmiyor: "
                     + str(params["provider"])
                 )
-        
-        # Parametre override imkanı
-        temp = temperature if temperature is not None else params["temperature"]
-        to = timeout if timeout is not None else params["timeout"]
-        
+
+        temp = (
+            temperature
+            if temperature is not None
+            else params["temperature"]
+        )
+        to = (
+            timeout
+            if timeout is not None
+            else params["timeout"]
+        )
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
-        
-        # LiteLLM çağrı argümanları
-        kwargs = {
-            "model": params["litellm_model"],
-            "messages": messages,
-            "temperature": temp,
-            "timeout": to,
-        }
-        
-        if params["provider"] == "ollama" and params["api_base"]:
-            kwargs["api_base"] = params["api_base"]
 
         gen_cfg = self.config.get("generation", {})
-        max_retries = gen_cfg.get("max_retries", 1)
-        
-        last_exception = None
-        attempt = 0
-        
-        while attempt <= max_retries:
-            try:
-                if params.get("provider") == "openrouter":
-                    openrouter_api_key = os.getenv(
-                        "OPENROUTER_API_KEY",
-                        "",
-                    ).strip()
-                    if not openrouter_api_key:
-                        raise RuntimeError(
-                            "OPENROUTER_API_KEY ortam degiskeni bulunamadi."
-                        )
-                    kwargs["api_key"] = openrouter_api_key
+        max_retries = int(
+            gen_cfg.get("max_retries", 1)
+        )
 
-                response = completion(**kwargs)
-                
-                content = response.choices[0].message.content
-                usage = dict(response.usage) if hasattr(response, "usage") and response.usage else None
-                
-                return ModelResponse(
-                    content=content,
-                    model=params["litellm_model"],
-                    provider=params["provider"],
-                    usage=usage
+        try:
+            return self._call_provider(
+                params=params,
+                messages=messages,
+                temperature=temp,
+                timeout=to,
+                max_retries=max_retries,
+            )
+
+        except Exception as primary_exception:
+            fallback_params = self._resolve_fallback_params(
+                model_role
+            )
+
+            if (
+                fallback_params is not None
+                and self._should_use_fallback(
+                    primary_exception
                 )
-                
-            except Exception as e:
-                last_exception = e
-                attempt += 1
-                if attempt > max_retries:
-                    break
+            ):
+                print(
+                    "[MODEL FALLBACK] "
+                    f"{params['provider']} "
+                    f"{params['litellm_model']} -> "
+                    f"{fallback_params['provider']} "
+                    f"{fallback_params['litellm_model']}"
+                )
 
-        # Anlamlı hata yönetimi ve yönlendirme
-        err_msg = str(last_exception).lower()
-        
-        if params["provider"] == "ollama":
-            api_base = params.get("api_base", "http://localhost:11434")
-            if "connect" in err_msg or "refused" in err_msg or "nodename" in err_msg:
-                raise ConnectionError(
-                    f"\n[HATA] '{model_role}' çağrısı başarısız:\n"
-                    f"Ollama server'a ({api_base}) üzerinden ulaşılamadı. "
-                    f"Lütfen Ollama'nın arka planda açık olduğundan emin olun."
-                ) from last_exception
-            elif "not found" in err_msg or "pull" in err_msg or "does not exist" in err_msg:
-                raise ValueError(
-                    f"\n[HATA] '{model_role}' çağrısı başarısız:\n"
-                    f"Ollama üzerinde '{params['litellm_model']}' modeli bulunamadı. "
-                    f"Lütfen terminalde 'ollama run {params['litellm_model'].split('/')}' komutunu çalıştırarak modeli indirin."
-                ) from last_exception
+                fallback_temp = (
+                    temperature
+                    if temperature is not None
+                    else fallback_params["temperature"]
+                )
+                fallback_timeout = (
+                    timeout
+                    if timeout is not None
+                    else fallback_params["timeout"]
+                )
 
-        raise RuntimeError(
-            f"\n[HATA] '{model_role}' modeli çağrılırken beklenmeyen bir hata oluştu: {last_exception}"
-        ) from last_exception
+                try:
+                    return self._call_provider(
+                        params=fallback_params,
+                        messages=messages,
+                        temperature=fallback_temp,
+                        timeout=fallback_timeout,
+                        max_retries=max_retries,
+                    )
+
+                except Exception as fallback_exception:
+                    raise RuntimeError(
+                        "\n[HATA] Primary ve fallback model "
+                        "cagrilari basarisiz oldu.\n"
+                        f"Primary ({params['provider']}): "
+                        f"{primary_exception}\n"
+                        f"Fallback "
+                        f"({fallback_params['provider']}): "
+                        f"{fallback_exception}"
+                    ) from fallback_exception
+
+            err_msg = str(primary_exception).lower()
+
+            if params["provider"] == "ollama":
+                api_base = params.get(
+                    "api_base",
+                    "http://127.0.0.1:11434",
+                )
+
+                if (
+                    "connect" in err_msg
+                    or "refused" in err_msg
+                    or "nodename" in err_msg
+                ):
+                    raise ConnectionError(
+                        f"\n[HATA] '{model_role}' cagrisi "
+                        f"basarisiz:\n"
+                        f"Ollama server'a ({api_base}) "
+                        "ulasilamadi."
+                    ) from primary_exception
+
+                if (
+                    "not found" in err_msg
+                    or "pull" in err_msg
+                    or "does not exist" in err_msg
+                ):
+                    raise ValueError(
+                        f"\n[HATA] '{model_role}' cagrisi "
+                        f"basarisiz:\n"
+                        f"Ollama uzerinde "
+                        f"'{params['litellm_model']}' "
+                        "modeli bulunamadi."
+                    ) from primary_exception
+
+            raise RuntimeError(
+                f"\n[HATA] '{model_role}' modeli "
+                "cagrilirken beklenmeyen bir hata olustu: "
+                f"{primary_exception}"
+            ) from primary_exception

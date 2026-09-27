@@ -9,6 +9,11 @@ models:
     api_base: null
     temperature: 0.1
     timeout_seconds: 120
+    fallback:
+      provider: "ollama"
+      model: "qwen2.5-coder:14b"
+      api_base: "http://127.0.0.1:11434"
+      timeout_seconds: 180
 
   capability_resolver:
     provider: "openrouter"
@@ -16,6 +21,11 @@ models:
     api_base: null
     temperature: 0.1
     timeout_seconds: 120
+    fallback:
+      provider: "ollama"
+      model: "qwen3:14b"
+      api_base: "http://127.0.0.1:11434"
+      timeout_seconds: 180
 
   heavy_local:
     provider: "openrouter"
@@ -23,6 +33,11 @@ models:
     api_base: null
     temperature: 0.1
     timeout_seconds: 180
+    fallback:
+      provider: "ollama"
+      model: "qwen2.5-coder:14b"
+      api_base: "http://127.0.0.1:11434"
+      timeout_seconds: 180
 
   cloud_senior:
     provider: "openai" # Gelecekte env variable ile desteklenecek
