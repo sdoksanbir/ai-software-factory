@@ -384,12 +384,12 @@ def _create_framework_scaffold(
     *,
     framework: str | None,
     target: str | None,
+    prompt: str = "",
 ) -> str:
-    framework_name = (
+    framework_name = normalize_text(
         framework or ""
-    ).strip().casefold()
-
-    project_name = _validate_project_name(
+    )
+    scaffold_name = _validate_project_name(
         target
     )
 
@@ -399,8 +399,144 @@ def _create_framework_scaffold(
             f"{framework_name or 'belirsiz'}"
         )
 
+    normalized_prompt = normalize_text(prompt)
+
+    # Django project ve app iki farkli scaffold turudur.
+    # "edutrack projesinin icine users app olustur" gibi
+    # bir istekte APP istegi onceliklidir.
+    is_app_request = any(
+        marker in normalized_prompt
+        for marker in (
+            " app ",
+            " appi ",
+            " app'i ",
+            "uygulama",
+            "startapp",
+        )
+    )
+
+    if is_app_request:
+        ignored_parts = {
+            ".git",
+            ".venv",
+            "venv",
+            "env",
+            "node_modules",
+            "__pycache__",
+        }
+
+        manage_candidates = []
+
+        for candidate in project_root.rglob("manage.py"):
+            relative_parts = set(
+                candidate.relative_to(project_root).parts
+            )
+
+            if relative_parts & ignored_parts:
+                continue
+
+            manage_candidates.append(
+                candidate.resolve()
+            )
+
+        if not manage_candidates:
+            raise ExecuteTaskError(
+                "Django app olusturulamadi: proje icinde "
+                "manage.py bulunamadi."
+            )
+
+        if len(manage_candidates) > 1:
+            candidate_list = ", ".join(
+                str(
+                    path.parent.relative_to(
+                        project_root
+                    )
+                )
+                for path in manage_candidates
+            )
+
+            raise ExecuteTaskError(
+                "Birden fazla Django projesi bulundu. "
+                "App hedefi belirsiz: "
+                + candidate_list
+            )
+
+        manage_py = manage_candidates[0]
+        django_root = manage_py.parent
+
+        app_dir = (
+            django_root / scaffold_name
+        ).resolve()
+
+        if app_dir.parent != django_root:
+            raise ExecuteTaskError(
+                "Django app proje kokunun disina "
+                "olusturulamaz."
+            )
+
+        if app_dir.exists():
+            raise ExecuteTaskError(
+                f"Hedef app klasoru zaten mevcut: {scaffold_name}"
+            )
+
+        python_exe = _find_project_python(
+            project_root
+        )
+
+        completed = subprocess.run(
+            [
+                str(python_exe),
+                str(manage_py),
+                "startapp",
+                scaffold_name,
+            ],
+            cwd=django_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "bilinmeyen hata"
+            )
+
+            raise ExecuteTaskError(
+                "Django app olusturulamadi: "
+                + detail
+            )
+
+        apps_py = app_dir / "apps.py"
+        models_py = app_dir / "models.py"
+
+        if not apps_py.exists() or not models_py.exists():
+            raise ExecuteTaskError(
+                "Django startapp tamamlandi ancak "
+                "beklenen app dosyalari bulunamadi."
+            )
+
+        relative_root = django_root.relative_to(
+            project_root
+        )
+
+        root_label = (
+            "."
+            if str(relative_root) == "."
+            else str(relative_root)
+        )
+
+        return (
+            "Django app olusturuldu: "
+            f"{scaffold_name} "
+            f"(proje: {root_label})"
+        )
+
+    # APP istegi degilse mevcut project davranisi korunur.
     target_dir = (
-        project_root / project_name
+        project_root / scaffold_name
     ).resolve()
 
     if target_dir.parent != project_root:
@@ -411,7 +547,7 @@ def _create_framework_scaffold(
 
     if target_dir.exists():
         raise ExecuteTaskError(
-            f"Hedef klasor zaten mevcut: {project_name}"
+            f"Hedef klasor zaten mevcut: {scaffold_name}"
         )
 
     python_exe = _find_project_python(
@@ -424,7 +560,7 @@ def _create_framework_scaffold(
             "-m",
             "django",
             "startproject",
-            project_name,
+            scaffold_name,
         ],
         cwd=project_root,
         capture_output=True,
@@ -439,6 +575,7 @@ def _create_framework_scaffold(
             or completed.stdout.strip()
             or "bilinmeyen hata"
         )
+
         raise ExecuteTaskError(
             "Django projesi olusturulamadi: "
             + detail
@@ -447,7 +584,7 @@ def _create_framework_scaffold(
     manage_py = target_dir / "manage.py"
     settings_py = (
         target_dir
-        / project_name
+        / scaffold_name
         / "settings.py"
     )
 
@@ -465,8 +602,9 @@ def _create_framework_scaffold(
 
     return (
         "Django projesi olusturuldu: "
-        f"{project_name}"
+        f"{scaffold_name}"
     )
+
 
 def run_execute_task(
     *,
@@ -498,6 +636,7 @@ def run_execute_task(
             project_root,
             framework=framework,
             target=target,
+            prompt=prompt,
         )
 
     if intent == "create_virtualenv":
