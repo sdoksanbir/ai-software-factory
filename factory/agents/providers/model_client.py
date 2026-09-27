@@ -336,11 +336,40 @@ class ModelClientProvider:
             model_name_override=request.model_name,
         )
 
+        configured_model = None
+        config = getattr(
+            self.model_client,
+            "config",
+            None,
+        )
+
+        if isinstance(config, dict):
+            models = config.get("models", {})
+            if isinstance(models, dict):
+                role_config = models.get(
+                    request.model_role,
+                    {},
+                )
+                if isinstance(role_config, dict):
+                    raw_model = role_config.get("model")
+                    if raw_model is not None:
+                        configured_model = str(
+                            raw_model
+                        ).strip() or None
+
         return AgentResult(
             content=response.content,
-            provider=self.provider_name,
-            model=request.model_name,
+            provider=response.provider,
+            model=response.model,
             metadata={
                 "model_role": request.model_role,
+                "configured_provider": configured_provider,
+                "configured_model": configured_model,
+                "actual_provider": response.provider,
+                "actual_model": response.model,
+                "fallback_used": (
+                    bool(configured_provider)
+                    and response.provider != configured_provider
+                ),
             },
         )

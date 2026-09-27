@@ -899,18 +899,48 @@ def execute_task_plan(
                         db_path=db_path,
                     )
 
+                internal_fallback = bool(
+                    checkpoint_payload.get(
+                        "fallback_used",
+                        False,
+                    )
+                )
+
                 success_metadata = {
                     "attempt": current_attempt,
                     "step_kind": kind,
-                    "fallback": bool(
-                        fallback_attempts
+                    "fallback": (
+                        bool(fallback_attempts)
+                        or internal_fallback
                     ),
                     "provider_attempt": (
                         len(fallback_attempts)
                         + 1
                     ),
-                    "fallback_count": len(
-                        fallback_attempts
+                    "fallback_count": (
+                        len(fallback_attempts)
+                        + (1 if internal_fallback else 0)
+                    ),
+                    "configured_provider": (
+                        checkpoint_payload.get(
+                            "configured_provider"
+                        )
+                    ),
+                    "configured_model": (
+                        checkpoint_payload.get(
+                            "configured_model"
+                        )
+                    ),
+                    "actual_provider": (
+                        checkpoint_payload.get(
+                            "actual_provider"
+                        )
+                        or provider_name
+                    ),
+                    "actual_model": (
+                        checkpoint_payload.get(
+                            "model"
+                        )
                     ),
                 }
 

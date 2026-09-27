@@ -613,7 +613,12 @@ class TaskStepHandlers:
             output=output,
             agent_name=agent_route.agent.name,
             provider_name=(
-                agent_route
+                getattr(
+                    response,
+                    "provider",
+                    None,
+                )
+                or agent_route
                 .provider
                 .provider_name
             ),
@@ -625,6 +630,41 @@ class TaskStepHandlers:
                         None,
                     )
                     or selected_model
+                ),
+                "actual_provider": (
+                    getattr(
+                        response,
+                        "provider",
+                        None,
+                    )
+                ),
+                "configured_provider": (
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "configured_provider"
+                    )
+                ),
+                "configured_model": (
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "configured_model"
+                    )
+                ),
+                "fallback_used": bool(
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "fallback_used",
+                        False,
+                    )
                 ),
                 "files": [
                     str(item)
