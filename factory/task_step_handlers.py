@@ -521,10 +521,19 @@ class TaskStepHandlers:
                 ],
             ) from exc
 
+        raw_model_content = response.content or ""
+
+        print(
+            "[DEBUG RAW WRITE MODEL RESPONSE] "
+            f"type={type(response.content).__name__} "
+            f"length={len(raw_model_content)}"
+        )
+        print(repr(raw_model_content[:4000]))
+
         patch = (
             PatchTool
             .parse_multi_file_response(
-                response.content
+                raw_model_content
             )
         )
 
