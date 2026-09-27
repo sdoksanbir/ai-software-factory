@@ -4,23 +4,23 @@ factory:
 
 models:
   fast_local:
-    provider: "ollama"
-    model: "qwen2.5-coder:14b"
-    api_base: "http://localhost:11434"
+    provider: "openrouter"
+    model: "openrouter/free"
+    api_base: null
     temperature: 0.1
     timeout_seconds: 120
 
   capability_resolver:
-    provider: "ollama"
-    model: "qwen2.5-coder:14b"
-    api_base: "http://localhost:11434"
+    provider: "openrouter"
+    model: "openrouter/free"
+    api_base: null
     temperature: 0.1
     timeout_seconds: 120
 
   heavy_local:
-    provider: "ollama"
-    model: "devstral-small-2"
-    api_base: "http://localhost:11434"
+    provider: "openrouter"
+    model: "openrouter/free"
+    api_base: null
     temperature: 0.1
     timeout_seconds: 180
 
@@ -32,9 +32,9 @@ models:
     timeout_seconds: 60
 
 cloud:
-  enabled: false
-  max_cost_per_task_usd: 0.50
-  max_daily_cost_usd: 3.00
+  enabled: true
+  max_cost_per_task_usd: 0.00
+  max_daily_cost_usd: 0.00
 
 routing:
   default_model: "fast_local"

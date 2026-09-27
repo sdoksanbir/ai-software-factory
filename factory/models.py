@@ -51,6 +51,8 @@ class ModelClient:
         # LiteLLM için provider/model formatı (Örn: ollama/qwen2.5-coder:14b)
         if provider == "ollama":
             litellm_model = f"ollama/{model_name}"
+        elif provider == "openrouter":
+            litellm_model = f"openrouter/{model_name}"
         else:
             litellm_model = model_name
 
@@ -84,16 +86,19 @@ class ModelClient:
         params = self._resolve_model_params(model_role)
 
         if model_name_override:
-            if params["provider"] != "ollama":
-                raise ValueError(
-                    "model_name_override yalnizca Ollama "
-                    "modellerinde kullanilabilir."
+            if params["provider"] == "ollama":
+                params = dict(params)
+                params["litellm_model"] = (
+                    f"ollama/{model_name_override}"
                 )
-
-            params = dict(params)
-            params["litellm_model"] = (
-                f"ollama/{model_name_override}"
-            )
+            elif params["provider"] == "openrouter":
+                # Test modunda eski local model override degerlerini yok say.
+                pass
+            else:
+                raise ValueError(
+                    "model_name_override bu provider icin desteklenmiyor: "
+                    + str(params["provider"])
+                )
         
         # Parametre override imkanı
         temp = temperature if temperature is not None else params["temperature"]
