@@ -1332,10 +1332,13 @@ def run_task_for_api(task_id: str):
                 f"{execution_plan.get('planner_mode', 'single_step')}"
             ),
         )
-    except Exception:
+    except Exception as exc:
         append_task_log(
             task_id,
-            "Görev beklenmeyen bir hata nedeniyle başarısız oldu.",
+            (
+                "Görev beklenmeyen bir hata nedeniyle başarısız oldu: "
+                f"{type(exc).__name__}: {exc}"
+            ),
         )
 
         cleanup_failed_task_for_api(
