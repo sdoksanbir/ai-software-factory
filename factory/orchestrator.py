@@ -416,9 +416,10 @@ class Orchestrator:
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
                         temperature=0.2,
-                        model_name=(
-                            selected_model_route.model
-                        ),
+                        # Provider/model secimini config.yaml'daki
+                        # fast_local rolu belirlesin. Model Router'in
+                        # hard-coded Qwen adini zorla gecirmiyoruz.
+                        model_name=None,
                     )
                 )
                 state_machine.transition(TaskStatus.MODEL_COMPLETED)
