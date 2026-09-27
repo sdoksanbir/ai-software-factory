@@ -128,6 +128,17 @@ class ModelClient:
         
         while attempt <= max_retries:
             try:
+                if params.get("provider") == "openrouter":
+                    openrouter_api_key = os.getenv(
+                        "OPENROUTER_API_KEY",
+                        "",
+                    ).strip()
+                    if not openrouter_api_key:
+                        raise RuntimeError(
+                            "OPENROUTER_API_KEY ortam degiskeni bulunamadi."
+                        )
+                    kwargs["api_key"] = openrouter_api_key
+
                 response = completion(**kwargs)
                 
                 content = response.choices[0].message.content
