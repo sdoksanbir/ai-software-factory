@@ -213,10 +213,31 @@ class Orchestrator:
             else route_model(prompt)
         )
 
+        runtime_model_cfg = (
+            self.model_client.config
+            .get("models", {})
+            .get("fast_local", {})
+        )
+        runtime_provider = runtime_model_cfg.get(
+            "provider",
+            "unknown",
+        )
+        runtime_model = runtime_model_cfg.get(
+            "model",
+            "unknown",
+        )
+
         print(
-            "[*] Model Router: "
-            f"{selected_model_route.model} "
+            "[*] Model Router: fast_local "
             f"({selected_model_route.profile})"
+        )
+        print(
+            "[*] Runtime Provider: "
+            f"{runtime_provider}"
+        )
+        print(
+            "[*] Runtime Model: "
+            f"{runtime_model}"
         )
         print(
             "[*] Model Secim Nedeni: "
@@ -227,9 +248,10 @@ class Orchestrator:
             progress_handler(
                 task_id,
                 message=(
-                    "Model Router: "
-                    f"{selected_model_route.model} - "
-                    f"{selected_model_route.reason}"
+                    "Model Router: fast_local"
+                    f" | Provider: {runtime_provider}"
+                    f" | Model: {runtime_model}"
+                    f" - {selected_model_route.reason}"
                 ),
             )
 
