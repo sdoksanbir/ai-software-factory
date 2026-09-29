@@ -81,6 +81,7 @@ def test_single_step_uses_agent_pipeline(
 
     assert result == "ready_for_approval"
     assert len(multi_calls) == 1
+    assert orchestrator.legacy_calls == []
     assert [
         step["kind"]
         for step in plan["steps"]
@@ -425,3 +426,64 @@ def test_failed_multi_step_resumes_existing_worktree(
     assert captured["resume_branch"] == (
         f"agent/{task_id.lower()}"
     )
+
+
+def test_invalid_planner_mode_raises_without_legacy(
+    monkeypatch,
+):
+    import pytest
+
+    orchestrator = FakeOrchestrator()
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "build_task_plan",
+        lambda *args, **kwargs: {
+            "summary": "Broken",
+            "planner_mode": "legacy_cli",
+            "steps": [
+                {
+                    "title": "Write",
+                    "instruction": "Write",
+                    "kind": "write",
+                    "status": "pending",
+                    "attempt": 0,
+                }
+            ],
+        },
+    )
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "save_task_plan",
+        lambda *args, **kwargs: None,
+    )
+
+    multi_calls = []
+
+    monkeypatch.setattr(
+        "factory.task_execution_dispatcher."
+        "run_multi_step_task",
+        lambda **kwargs: (
+            multi_calls.append(kwargs)
+            or "should-not-run"
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Unsupported planner mode: "
+            "legacy_cli"
+        ),
+    ):
+        execute_write_task(
+            orchestrator=orchestrator,
+            prompt="Invalid mode",
+            task_id="TASK-3205",
+            max_attempts=2,
+            model_route=_model_route(),
+        )
+
+    assert orchestrator.legacy_calls == []
+    assert multi_calls == []

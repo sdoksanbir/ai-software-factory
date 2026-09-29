@@ -171,36 +171,33 @@ def execute_write_task(
             ),
         )
 
-    if planner_mode in {"multi_step", "single_step"}:
-        result = run_multi_step_task(
-            orchestrator=orchestrator,
-            prompt=prompt,
-            task_id=task_id,
-            max_attempts=max_attempts,
-            approval_handler=approval_handler,
-            progress_handler=progress_handler,
-            model_name=model_route.model,
-            resume_worktree_path=(
-                worktree_path
-                if resume_multi_step
-                else None
-            ),
-            resume_branch=(
-                branch_name
-                if resume_multi_step
-                else None
-            ),
+    if planner_mode not in {
+        "multi_step",
+        "single_step",
+    }:
+        raise ValueError(
+            "Unsupported planner mode: "
+            f"{planner_mode}"
         )
 
-        return result, plan
-
-    result = orchestrator.run_task(
-        prompt,
+    result = run_multi_step_task(
+        orchestrator=orchestrator,
+        prompt=prompt,
         task_id=task_id,
         max_attempts=max_attempts,
         approval_handler=approval_handler,
         progress_handler=progress_handler,
-        model_route=model_route,
+        model_name=model_route.model,
+        resume_worktree_path=(
+            worktree_path
+            if resume_multi_step
+            else None
+        ),
+        resume_branch=(
+            branch_name
+            if resume_multi_step
+            else None
+        ),
     )
 
     return result, plan
