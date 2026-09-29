@@ -322,7 +322,7 @@ function humanizeLog(
 
   const router =
     normalized.match(
-      /Task Router:\s*(READ|WRITE)/i,
+      /Task Router:\s*(READ|WRITE|EXECUTE)/i,
     )
 
   if (router) {
@@ -343,6 +343,22 @@ function humanizeLog(
     )
   ) {
     return "WRITE görevi çalıştırılıyor."
+  }
+
+  if (
+    /EXECUTE gorevi calistiriliyor/i.test(
+      normalized,
+    )
+  ) {
+    return "EXECUTE görevi çalıştırılıyor."
+  }
+
+  if (
+    /EXECUTE gorevi tamamlandi/i.test(
+      normalized,
+    )
+  ) {
+    return "EXECUTE görevi tamamlandı."
   }
 
   if (

@@ -1442,6 +1442,13 @@ function App() {
   async function handleDiff() {
     if (!selectedTask) return
 
+    const effectiveTaskKind =
+      pipeline?.task_kind ??
+      selectedTask.task_kind ??
+      null
+
+    if (effectiveTaskKind !== "write") return
+
     setLoadingDiff(true)
     setError(null)
 
@@ -1569,8 +1576,10 @@ function App() {
           status: "pending" as const,
         }))
 
-  const isReadPipeline =
-    selectedTask?.task_kind === "read"
+  const supportsDiff =
+    (pipeline?.task_kind ??
+      selectedTask?.task_kind ??
+      null) === "write"
 
   const systemHealthy =
     backendOnline &&
@@ -3305,7 +3314,7 @@ function App() {
             </div>
 
             <div className="result-actions">
-              {!isReadPipeline && (
+              {supportsDiff && (
                 <button
                 className="diff-action"
                 onClick={() =>

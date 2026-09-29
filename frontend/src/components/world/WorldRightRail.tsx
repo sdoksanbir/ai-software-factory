@@ -323,7 +323,9 @@ export function WorldRightRail({
       ? "READ"
       : taskKind === "write"
         ? "WRITE"
-        : "—"
+        : taskKind === "execute"
+          ? "EXECUTE"
+          : "—"
 
   const checklist = buildChecklist(
     selectedTask,

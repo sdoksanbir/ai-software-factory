@@ -1,6 +1,7 @@
 import type {
   AgentExecution,
   Task,
+  TaskKind,
 } from "../../api"
 
 import "./TaskTechnicalDetailsPanel.css"
@@ -12,6 +13,7 @@ type Props = {
   diff: string
   loadingDiff: boolean
   onLoadDiff: () => void
+  taskKind: TaskKind | null
 }
 
 function cleanModelName(
@@ -72,6 +74,7 @@ export function TaskTechnicalDetailsPanel({
   diff,
   loadingDiff,
   onLoadDiff,
+  taskKind,
 }: Props) {
   if (!selectedTask) return null
 
@@ -309,40 +312,42 @@ export function TaskTechnicalDetailsPanel({
         </div>
       </section>
 
-      <section className="task-tech-panel task-tech-diff-panel">
-        <header className="task-tech-head task-tech-diff-head">
-          <div>
-            <span>DEĞİŞİKLİKLER</span>
-            <h2>Diff</h2>
-            <p>
-              Görev tarafından yapılan dosya değişiklikleri.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="task-tech-diff-button"
-            onClick={onLoadDiff}
-            disabled={loadingDiff}
-          >
-            {loadingDiff
-              ? "Yükleniyor..."
-              : diff
-                ? "Yenile"
-                : "Diff'i Göster"}
-          </button>
-        </header>
-
-        <div className="task-tech-diff">
-          {diff ? (
-            <pre>{diff}</pre>
-          ) : (
-            <div className="task-tech-empty">
-              Diff henüz yüklenmedi.
+      {taskKind === "write" && (
+        <section className="task-tech-panel task-tech-diff-panel">
+          <header className="task-tech-head task-tech-diff-head">
+            <div>
+              <span>DEĞİŞİKLİKLER</span>
+              <h2>Diff</h2>
+              <p>
+                Görev tarafından yapılan dosya değişiklikleri.
+              </p>
             </div>
-          )}
-        </div>
-      </section>
+
+            <button
+              type="button"
+              className="task-tech-diff-button"
+              onClick={onLoadDiff}
+              disabled={loadingDiff}
+            >
+              {loadingDiff
+                ? "Yükleniyor..."
+                : diff
+                  ? "Yenile"
+                  : "Diff'i Göster"}
+            </button>
+          </header>
+
+          <div className="task-tech-diff">
+            {diff ? (
+              <pre>{diff}</pre>
+            ) : (
+              <div className="task-tech-empty">
+                Diff henüz yüklenmedi.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

@@ -1,3 +1,8 @@
+export type TaskKind =
+  | "read"
+  | "write"
+  | "execute"
+
 export type Task = {
   task_id: string
   status: string
@@ -9,7 +14,7 @@ export type Task = {
   attempt: number
   test_result: string | null
   started_at: string | null
-  task_kind?: "read" | "write" | null
+  task_kind?: TaskKind | null
 }
 
 export type Project = {
@@ -47,7 +52,7 @@ export type PipelineStage = {
 export type TaskPipeline = {
   task_id: string
   task_state: string
-  task_kind: "read" | "write" | string | null
+  task_kind: TaskKind | null
   current_stage: string
   progress_percent: number
   stages: PipelineStage[]
@@ -136,7 +141,7 @@ export type TaskPlan = {
 export type TaskPlanResponse = {
   task_id: string
   state: string
-  task_kind: string | null
+  task_kind: TaskKind | null
   plan: TaskPlan | null
 }
 

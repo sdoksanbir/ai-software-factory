@@ -829,6 +829,7 @@ export function ReferenceDashboard({
           diff={diff}
           loadingDiff={loadingDiff}
           onLoadDiff={onLoadDiff}
+          taskKind={taskKind}
         />
 
         {/* TASK_RESULT_PANEL_V2 */}
