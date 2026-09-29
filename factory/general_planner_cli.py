@@ -1,3 +1,11 @@
+"""EXPERIMENTAL — General agent CLI.
+
+NOT USED BY PRODUCTION API.
+Standalone preview entrypoint for the experimental
+general task planner. Do not wire into structured
+WRITE / READ / EXECUTE production paths.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -60,6 +68,7 @@ def build_plan_preview(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
+            "EXPERIMENTAL / NOT USED BY PRODUCTION API. "
             "General Agent Planner dry-run. "
             "Plan uretir; HICBIR tool calistirmaz."
         )

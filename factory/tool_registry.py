@@ -1,3 +1,9 @@
+"""EXPERIMENTAL — General agent tool registry.
+
+Part of the experimental general agent subsystem.
+Not used by the production API structured execution path.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

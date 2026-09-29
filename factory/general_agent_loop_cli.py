@@ -1,3 +1,11 @@
+"""EXPERIMENTAL — General agent CLI.
+
+NOT USED BY PRODUCTION API.
+Standalone preview entrypoint for the experimental
+general agent loop. Do not wire into structured
+WRITE / READ / EXECUTE production paths.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -16,6 +24,7 @@ from factory.models import ModelClient
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
+            "EXPERIMENTAL / NOT USED BY PRODUCTION API. "
             "Evidence-bound General Agent preview. "
             "READ tool'lari calisir; mutation sadece "
             "kanit dogrulamasi sonrasi pending_action olur."

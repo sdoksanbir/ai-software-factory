@@ -1,3 +1,9 @@
+"""EXPERIMENTAL — General agent prototype.
+
+Not used by the production API structured execution path.
+Do not import from production modules.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
