@@ -1,5 +1,5 @@
 ﻿from types import SimpleNamespace
-
+import factory.task_execution_service as execution_service_module
 import api.app as app_module
 
 
@@ -79,8 +79,8 @@ def test_api_runner_stops_blocked_graph_task(
         )
 
     monkeypatch.setattr(
-        app_module,
-        "route_task",
+        execution_service_module,
+        "route_task_semantic",
         fail_if_routed,
     )
 
@@ -105,9 +105,10 @@ def test_api_runner_stops_blocked_graph_task(
 
         assert logs
 
-        assert (
-            "TASK-1001"
-            in logs[0][1]
+        assert any(
+            "Beklenen dependency: TASK-1001"
+            in message
+            for _, message in logs
         )
 
     finally:
@@ -184,8 +185,8 @@ def test_api_runner_stops_failure_blocked_task(
         )
 
     monkeypatch.setattr(
-        app_module,
-        "route_task",
+        execution_service_module,
+        "route_task_semantic",
         fail_if_routed,
     )
 
@@ -210,9 +211,10 @@ def test_api_runner_stops_failure_blocked_task(
 
         assert logs
 
-        assert (
-            "TASK-1001"
-            in logs[0][1]
+        assert any(
+            "Basarisiz dependency: TASK-1001"
+            in message
+            for _, message in logs
         )
 
     finally:
