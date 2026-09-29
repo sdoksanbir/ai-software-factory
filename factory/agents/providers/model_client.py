@@ -357,19 +357,73 @@ class ModelClientProvider:
                             raw_model
                         ).strip() or None
 
+        # Normalize transport responses into the
+        # canonical AgentResult contract. Minimal
+        # compatibility clients may only expose
+        # content; provider/model are filled from
+        # request/config/adapter identity.
+        raw_provider = getattr(
+            response,
+            "provider",
+            None,
+        )
+
+        if raw_provider is None:
+            actual_provider = (
+                self.provider_name
+            )
+        else:
+            actual_provider = (
+                str(raw_provider)
+                .strip()
+                or self.provider_name
+            )
+
+        raw_model = getattr(
+            response,
+            "model",
+            None,
+        )
+
+        if raw_model is None:
+            actual_model = (
+                request.model_name
+                or configured_model
+            )
+        else:
+            actual_model = (
+                str(raw_model).strip()
+                or None
+            )
+
+            if actual_model is None:
+                actual_model = (
+                    request.model_name
+                    or configured_model
+                )
+
         return AgentResult(
             content=response.content,
-            provider=response.provider,
-            model=response.model,
+            provider=actual_provider,
+            model=actual_model,
             metadata={
                 "model_role": request.model_role,
-                "configured_provider": configured_provider,
-                "configured_model": configured_model,
-                "actual_provider": response.provider,
-                "actual_model": response.model,
+                "configured_provider": (
+                    configured_provider
+                ),
+                "configured_model": (
+                    configured_model
+                ),
+                "actual_provider": (
+                    actual_provider
+                ),
+                "actual_model": (
+                    actual_model
+                ),
                 "fallback_used": (
                     bool(configured_provider)
-                    and response.provider != configured_provider
+                    and actual_provider
+                    != configured_provider
                 ),
             },
         )

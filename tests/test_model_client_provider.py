@@ -34,9 +34,17 @@ def test_model_client_provider_maps_request():
     result = provider.complete(request)
 
     assert result.content == "provider-ok"
+    # Content-only transport: adapter identity.
     assert result.provider == "model_client"
+    # Model falls back to request.model_name.
     assert result.model == "qwen2.5-coder:14b"
     assert result.metadata["model_role"] == "fast_local"
+    assert result.metadata["actual_provider"] == (
+        "model_client"
+    )
+    assert result.metadata["actual_model"] == (
+        "qwen2.5-coder:14b"
+    )
 
     assert client.calls == [
         {
@@ -50,6 +58,44 @@ def test_model_client_provider_maps_request():
             ),
         }
     ]
+
+
+def test_model_client_provider_preserves_transport_metadata():
+    class FullResponseClient:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, **kwargs):
+            self.calls.append(kwargs)
+
+            return SimpleNamespace(
+                content="full-ok",
+                provider="openrouter",
+                model="openrouter/auto",
+            )
+
+    client = FullResponseClient()
+    provider = ModelClientProvider(client)
+
+    result = provider.complete(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="user",
+            model_role="cloud_senior",
+            model_name="ignored-override",
+        )
+    )
+
+    assert result.content == "full-ok"
+    # Transport provider wins over adapter identity.
+    assert result.provider == "openrouter"
+    assert result.model == "openrouter/auto"
+    assert result.metadata["actual_provider"] == (
+        "openrouter"
+    )
+    assert result.metadata["actual_model"] == (
+        "openrouter/auto"
+    )
 
 
 def test_model_client_provider_routes_ollama(
@@ -141,6 +187,18 @@ def test_model_client_provider_keeps_legacy_fallback():
 
     assert result.content == "provider-ok"
     assert len(client.calls) == 1
+    # Unregistered configured provider falls through
+    # to ModelClient; content-only response uses
+    # adapter identity + configured model.
+    assert result.provider == "model_client"
+    assert result.model == "cloud-model"
+    assert result.metadata["configured_provider"] == (
+        "openai"
+    )
+    assert result.metadata["configured_model"] == (
+        "cloud-model"
+    )
+    assert result.metadata["fallback_used"] is True
 
 
 def test_model_client_provider_uses_custom_registry():
