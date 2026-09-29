@@ -1,6 +1,12 @@
 import sys
 from factory.orchestrator import Orchestrator
 
+# LEGACY CLI entrypoint.
+# Production API uses structured execution
+# (execute_write_task / run_multi_step_task) and does
+# not call Orchestrator.run_task().
+# This path remains for direct CLI usage only.
+
 def main():
     if len(sys.argv) < 2:
         print("[-] Hata: Lütfen bir görev belirtin.")
@@ -9,8 +15,8 @@ def main():
         sys.exit(1)
 
     prompt = sys.argv[1]
-    
-    # Fabrikayı başlat ve görevi çalıştır
+
+    # LEGACY: CLI still drives the old run_task loop.
     orchestrator = Orchestrator()
     worktree_path = orchestrator.run_task(prompt)
     

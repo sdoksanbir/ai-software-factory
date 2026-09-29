@@ -23,6 +23,17 @@ from factory.tools.sandbox import DockerSandbox
 
 
 class Orchestrator:
+    """Shared runtime bag + legacy CLI execution engine.
+
+    Production API structured WRITE/READ/EXECUTE paths
+    construct an Orchestrator only as a dependency bag
+    (project_path, worktree_root, model_client,
+    git_manager, sandbox). They do not call run_task().
+
+    run_task() remains the legacy CLI execution loop
+    used by main.py.
+    """
+
     def __init__(
         self,
         project_path: str = ".",
@@ -200,6 +211,13 @@ class Orchestrator:
         progress_handler=None,
         model_route: Optional[ModelRoute] = None,
     ) -> Optional[str]:
+        """LEGACY CLI execution engine.
+
+        Called only from main.py. Not part of the
+        production API structured WRITE path, which
+        uses execute_write_task / run_multi_step_task
+        instead. Do not treat this as an API fallback.
+        """
         if not task_id:
             rand_num = random.randint(1000, 9999)
             task_id = f"TASK-{rand_num}"

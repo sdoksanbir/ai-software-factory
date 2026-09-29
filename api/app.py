@@ -562,6 +562,11 @@ def persist_task(
 def build_orchestrator_for_task(
     task: TaskCreateResponse,
 ) -> Orchestrator:
+    # Structured execution dependency bag for the
+    # production API — not the legacy CLI execution
+    # engine. Callers use project_path, worktree_root,
+    # model_client, git_manager, and sandbox. They do
+    # not invoke Orchestrator.run_task().
     if task.project_id is None:
         # Eski, FAZ 13 ?ncesi g?revler i?in uyumluluk.
         return Orchestrator(
