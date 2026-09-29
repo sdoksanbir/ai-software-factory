@@ -942,6 +942,21 @@ def execute_task_plan(
                             "model"
                         )
                     ),
+                    "router_fallback_used": bool(
+                        checkpoint_payload.get(
+                            "router_fallback_used",
+                            False,
+                        )
+                    ),
+                    "transport_fallback_used": bool(
+                        checkpoint_payload.get(
+                            "transport_fallback_used",
+                            checkpoint_payload.get(
+                                "fallback_used",
+                                False,
+                            ),
+                        )
+                    ),
                 }
 
                 execution = create_agent_execution(

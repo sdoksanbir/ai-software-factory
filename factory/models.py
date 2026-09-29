@@ -15,6 +15,11 @@ class ModelResponse:
     model: str
     provider: str
     usage: Optional[Dict[str, Any]] = None
+    # True when complete() served config
+    # role fallback after primary failure.
+    # Distinct from AgentExecutionRouter
+    # provider/agent fallback.
+    fallback_used: bool = False
 
 
 class ModelClient:
@@ -303,12 +308,34 @@ class ModelClient:
                 )
 
                 try:
-                    return self._call_provider(
-                        params=fallback_params,
-                        messages=messages,
-                        temperature=fallback_temp,
-                        timeout=fallback_timeout,
-                        max_retries=max_retries,
+                    fallback_response = (
+                        self._call_provider(
+                            params=fallback_params,
+                            messages=messages,
+                            temperature=fallback_temp,
+                            timeout=fallback_timeout,
+                            max_retries=max_retries,
+                        )
+                    )
+
+                    return ModelResponse(
+                        content=(
+                            fallback_response
+                            .content
+                        ),
+                        model=(
+                            fallback_response
+                            .model
+                        ),
+                        provider=(
+                            fallback_response
+                            .provider
+                        ),
+                        usage=(
+                            fallback_response
+                            .usage
+                        ),
+                        fallback_used=True,
                     )
 
                 except Exception as fallback_exception:

@@ -422,6 +422,35 @@ class ModelClientProvider:
                     or configured_model
                 )
 
+        # Transport fallback requires evidence from
+        # the underlying response. Adapter identity
+        # fill-in (missing .provider) is NOT a
+        # transport fallback.
+        explicit_transport_fallback = bool(
+            getattr(
+                response,
+                "fallback_used",
+                False,
+            )
+        )
+
+        has_raw_provider = (
+            raw_provider is not None
+            and str(raw_provider).strip() != ""
+        )
+
+        inferred_transport_fallback = (
+            has_raw_provider
+            and bool(configured_provider)
+            and actual_provider
+            != configured_provider
+        )
+
+        transport_fallback_used = (
+            explicit_transport_fallback
+            or inferred_transport_fallback
+        )
+
         return AgentResult(
             content=response.content,
             provider=actual_provider,
@@ -440,10 +469,14 @@ class ModelClientProvider:
                 "actual_model": (
                     actual_model
                 ),
+                # Backward-compatible alias for
+                # ModelClient/config transport
+                # fallback (not router fallback).
                 "fallback_used": (
-                    bool(configured_provider)
-                    and actual_provider
-                    != configured_provider
+                    transport_fallback_used
+                ),
+                "transport_fallback_used": (
+                    transport_fallback_used
                 ),
             },
         )

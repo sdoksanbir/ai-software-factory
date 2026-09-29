@@ -198,7 +198,52 @@ def test_model_client_provider_keeps_legacy_fallback():
     assert result.metadata["configured_model"] == (
         "cloud-model"
     )
+    # Missing response.provider is adapter fill-in,
+    # not evidence of ModelClient transport fallback.
+    assert result.metadata["fallback_used"] is False
+    assert result.metadata[
+        "transport_fallback_used"
+    ] is False
+
+
+def test_model_client_provider_marks_real_transport_provider_mismatch():
+    class FullResponseClient:
+        config = {
+            "models": {
+                "cloud_senior": {
+                    "provider": "openrouter",
+                    "model": "primary-model",
+                }
+            }
+        }
+
+        def complete(self, **kwargs):
+            return SimpleNamespace(
+                content="fallback-ok",
+                provider="ollama",
+                model="fallback-model",
+            )
+
+    provider = ModelClientProvider(
+        FullResponseClient()
+    )
+
+    result = provider.complete(
+        AgentRequest(
+            system_prompt="system",
+            user_prompt="user",
+            model_role="cloud_senior",
+        )
+    )
+
+    assert result.provider == "ollama"
+    assert result.metadata["configured_provider"] == (
+        "openrouter"
+    )
     assert result.metadata["fallback_used"] is True
+    assert result.metadata[
+        "transport_fallback_used"
+    ] is True
 
 
 def test_model_client_provider_uses_custom_registry():

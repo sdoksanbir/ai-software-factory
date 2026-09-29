@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from factory.agents.capabilities import (
@@ -160,6 +160,11 @@ class AgentExecutionRouter:
 
         failed_providers: set[str] = set()
 
+        primary_provider = (
+            candidates[0]
+            .provider_name
+        )
+
         for agent in candidates:
             provider_name = (
                 agent.provider_name
@@ -192,7 +197,20 @@ class AgentExecutionRouter:
 
                 return AgentFallbackExecution(
                     route=route,
-                    result=result,
+                    result=(
+                        self._annotate_router_fallback(
+                            result,
+                            primary_provider=(
+                                primary_provider
+                            ),
+                            final_provider=(
+                                agent.provider_name
+                            ),
+                            failures=tuple(
+                                failures
+                            ),
+                        )
+                    ),
                     failures=tuple(failures),
                 )
 
@@ -231,6 +249,56 @@ class AgentExecutionRouter:
         raise RuntimeError(
             "All fallback agent attempts "
             f"failed: {details}"
+        )
+
+    @staticmethod
+    def _annotate_router_fallback(
+        result: AgentResult,
+        *,
+        primary_provider: str,
+        final_provider: str,
+        failures: tuple[
+            AgentFallbackFailure,
+            ...,
+        ],
+    ) -> AgentResult:
+        metadata = dict(
+            result.metadata or {}
+        )
+
+        metadata[
+            "router_fallback_used"
+        ] = bool(failures)
+
+        metadata[
+            "router_primary_provider"
+        ] = primary_provider
+
+        metadata[
+            "router_final_provider"
+        ] = final_provider
+
+        # Preserve transport/model-client signal
+        # when present; otherwise default false so
+        # callers can distinguish layers.
+        if (
+            "transport_fallback_used"
+            not in metadata
+        ):
+            if "fallback_used" in metadata:
+                metadata[
+                    "transport_fallback_used"
+                ] = bool(
+                    metadata["fallback_used"]
+                )
+            else:
+                metadata[
+                    "transport_fallback_used"
+                ] = False
+
+        return replace(
+            result,
+            metadata=metadata,
         )
 
     def complete_with_fallback(

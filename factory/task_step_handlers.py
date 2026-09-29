@@ -666,6 +666,51 @@ class TaskStepHandlers:
                         False,
                     )
                 ),
+                "transport_fallback_used": bool(
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "transport_fallback_used",
+                        getattr(
+                            response,
+                            "metadata",
+                            {},
+                        ).get(
+                            "fallback_used",
+                            False,
+                        ),
+                    )
+                ),
+                "router_fallback_used": bool(
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "router_fallback_used",
+                        False,
+                    )
+                ),
+                "router_primary_provider": (
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "router_primary_provider"
+                    )
+                ),
+                "router_final_provider": (
+                    getattr(
+                        response,
+                        "metadata",
+                        {},
+                    ).get(
+                        "router_final_provider"
+                    )
+                ),
                 "files": [
                     str(item)
                     for item in written_files
