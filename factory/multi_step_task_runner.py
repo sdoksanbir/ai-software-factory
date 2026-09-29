@@ -15,6 +15,45 @@ from factory.task_step_handlers import (
 )
 
 
+def _derive_test_result(
+    plan_result: dict[str, Any] | None,
+) -> str:
+    """Map verify step outcomes to test_result.
+
+    Returns:
+      - "passed" when every verify step completed
+      - "failed" when a verify step did not complete
+      - "not_required" when the plan has no verify step
+    """
+    steps = (
+        (plan_result or {}).get("steps")
+        or []
+    )
+
+    verify_steps = [
+        step
+        for step in steps
+        if str(step.get("kind", ""))
+        .strip()
+        .lower()
+        == "verify"
+    ]
+
+    if not verify_steps:
+        return "not_required"
+
+    if all(
+        str(step.get("status", ""))
+        .strip()
+        .lower()
+        == "completed"
+        for step in verify_steps
+    ):
+        return "passed"
+
+    return "failed"
+
+
 def run_multi_step_task(
     *,
     orchestrator: Any,
@@ -81,18 +120,9 @@ def run_multi_step_task(
                 message=worktree_message,
             )
 
-        # Legacy state machine gorevin genel
-        # pipeline durumunu izler.
-        # Alt adim durumlari task_plan_store
-        # tarafindan kalici olarak tutulur.
-        state_machine.transition(
-            TaskStatus.CONTEXT_BUILDING
-        )
-
-        state_machine.transition(
-            TaskStatus.CONTEXT_READY
-        )
-
+        # Step progress lives in task_plan_store.
+        # TaskStateMachine only tracks coarse
+        # worktree → plan execution → approval.
         persisted_task = get_task(
             task_id
         )
@@ -130,7 +160,7 @@ def run_multi_step_task(
                 ),
             )
 
-        execute_task_plan(
+        plan_result = execute_task_plan(
             task_id,
             wt_result.path,
             read_handler=handlers.read,
@@ -144,30 +174,6 @@ def run_multi_step_task(
             TaskStatus.MODEL_COMPLETED
         )
 
-        state_machine.transition(
-            TaskStatus.PATCH_VALIDATING
-        )
-
-        state_machine.transition(
-            TaskStatus.PATCH_READY
-        )
-
-        state_machine.transition(
-            TaskStatus.PATCH_APPLIED
-        )
-
-        state_machine.transition(
-            TaskStatus.TESTING
-        )
-
-        state_machine.transition(
-            TaskStatus.TEST_PASSED
-        )
-
-        state_machine.transition(
-            TaskStatus.READY_FOR_APPROVAL
-        )
-
         diff_output = (
             orchestrator
             .git_manager
@@ -176,10 +182,18 @@ def run_multi_step_task(
             )
         )
 
+        state_machine.transition(
+            TaskStatus.READY_FOR_APPROVAL
+        )
+
+        test_result = _derive_test_result(
+            plan_result
+        )
+
         if progress_handler is not None:
             progress_handler(
                 task_id,
-                test_result="passed",
+                test_result=test_result,
                 message=(
                     "Multi-step gorev "
                     "tamamlandi. Onay bekleniyor."

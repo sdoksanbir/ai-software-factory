@@ -720,7 +720,6 @@ def api_approval_handler(
         task_id,
         status="waiting_approval",
         state="ready_for_approval",
-        test_result="passed",
     )
 
     TASK_CONTEXTS[task_id] = {

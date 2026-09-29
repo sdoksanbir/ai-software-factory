@@ -36,6 +36,9 @@ class TaskStateMachine:
 
             TaskStatus.WORKTREE_READY: {
                 TaskStatus.CONTEXT_BUILDING,
+                # Structured multi-step skips the
+                # unused CONTEXT_* bridge states.
+                TaskStatus.MODEL_RUNNING,
                 TaskStatus.FAILED,
             },
 
@@ -56,6 +59,10 @@ class TaskStateMachine:
 
             TaskStatus.MODEL_COMPLETED: {
                 TaskStatus.PATCH_VALIDATING,
+                # Structured multi-step reaches
+                # approval after plan + diff, without
+                # synthetic PATCH_*/TEST_* states.
+                TaskStatus.READY_FOR_APPROVAL,
                 TaskStatus.FAILED,
             },
 
