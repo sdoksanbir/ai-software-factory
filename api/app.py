@@ -62,6 +62,9 @@ from factory.agent_checkpoint_store import (
 from factory.agent_execution_store import (
     list_agent_executions,
 )
+from factory.task_command_store import (
+    list_task_commands,
+)
 from factory.agent_handoff_store import (
     list_agent_handoffs,
 )
@@ -2329,6 +2332,31 @@ def get_task_agent_executions_endpoint(
         "task_id": task_id,
         "state": task.state,
         "executions": list_agent_executions(
+            task_id
+        ),
+    }
+
+
+@app.get("/tasks/{task_id}/commands")
+def get_task_commands_endpoint(
+    task_id: str,
+):
+    """Read-only command history for Terminal UI.
+
+    No public command execution endpoint in Step 1.
+    """
+    task = TASKS.get(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+        )
+
+    return {
+        "task_id": task_id,
+        "state": task.state,
+        "commands": list_task_commands(
             task_id
         ),
     }
