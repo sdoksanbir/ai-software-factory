@@ -302,3 +302,248 @@ def test_full_six_step_plan_makes_room_for_read():
     assert "Frontend formunu yaz." in combined_instructions
     assert "Test kodlarini yaz." in combined_instructions
     assert "Tum testleri calistir." in combined_instructions
+
+
+COMPLEX_PROMPT = (
+    "Backend API ekle, frontend'i bagla "
+    "ve testlerini yaz."
+)
+
+VALID_PLAN_JSON = """
+{
+  "summary": "Entegrasyon",
+  "steps": [
+    {
+      "title": "Incele",
+      "instruction": "Yapiyi incele.",
+      "kind": "read"
+    },
+    {
+      "title": "Yaz",
+      "instruction": "Kodu yaz.",
+      "kind": "write"
+    },
+    {
+      "title": "Dogrula",
+      "instruction": "Testleri calistir.",
+      "kind": "verify"
+    }
+  ]
+}
+"""
+
+
+def test_build_task_plan_keeps_domain_contract():
+    client = FakeModelClient(VALID_PLAN_JSON)
+
+    result = build_task_plan(
+        COMPLEX_PROMPT,
+        model_client=client,
+        model_name="fake-model",
+    )
+
+    assert result["planner_mode"] == "multi_step"
+    assert "summary" in result
+    assert "steps" in result
+    assert "provider" not in result
+    assert "model" not in result
+    assert "configured_provider" not in result
+    assert "actual_provider" not in result
+    assert "transport_fallback_used" not in result
+    assert "fallback_used" not in result
+    assert "router_fallback_used" not in result
+
+
+def test_complete_planner_returns_agent_result():
+    from factory.agents.contracts import (
+        AgentResult,
+    )
+    from factory.task_planner import (
+        PLANNER_MODEL_ROLE,
+        _complete_planner,
+    )
+
+    client = FakeModelClient(VALID_PLAN_JSON)
+
+    result = _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="fake-model",
+    )
+
+    assert isinstance(result, AgentResult)
+    assert result.content == VALID_PLAN_JSON
+    assert result.provider == "model_client"
+    assert result.model == "fake-model"
+    assert result.metadata[
+        "actual_provider"
+    ] == "model_client"
+    assert result.metadata[
+        "actual_model"
+    ] == "fake-model"
+    assert "router_fallback_used" not in (
+        result.metadata
+    )
+
+    assert client.calls[0]["model_role"] == (
+        PLANNER_MODEL_ROLE
+    )
+
+
+def test_complete_planner_preserves_explicit_timeout():
+    from factory.task_planner import (
+        _complete_planner,
+    )
+
+    client = FakeModelClient(VALID_PLAN_JSON)
+
+    _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="fake-model",
+        timeout=30,
+    )
+
+    assert client.calls[0]["timeout"] == 30
+
+
+def test_complete_planner_uses_role_config_timeout():
+    from factory.task_planner import (
+        _complete_planner,
+    )
+
+    client = FakeModelClient(VALID_PLAN_JSON)
+    client.config = {
+        "models": {
+            "fast_local": {
+                "provider": "openai",
+                "model": "cloud-model",
+                "timeout_seconds": 75,
+            }
+        }
+    }
+
+    _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="fake-model",
+    )
+
+    assert client.calls[0]["timeout"] == 75
+
+
+def test_complete_planner_uses_default_timeout():
+    from factory.agents.timeout_policy import (
+        DEFAULT_AGENT_TIMEOUT,
+    )
+    from factory.task_planner import (
+        _complete_planner,
+    )
+
+    client = FakeModelClient(VALID_PLAN_JSON)
+
+    _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="fake-model",
+    )
+
+    assert client.calls[0]["timeout"] == (
+        DEFAULT_AGENT_TIMEOUT
+    )
+
+
+def test_complete_planner_keeps_transport_fallback_metadata():
+    from factory.models import ModelResponse
+    from factory.task_planner import (
+        _complete_planner,
+    )
+
+    class FallbackClient:
+        config = {
+            "models": {
+                "fast_local": {
+                    "provider": "openrouter",
+                    "model": "primary-model",
+                    "timeout_seconds": 40,
+                }
+            }
+        }
+        calls = []
+
+        def complete(self, **kwargs):
+            self.calls.append(kwargs)
+
+            return ModelResponse(
+                content=VALID_PLAN_JSON,
+                model="fallback-model",
+                provider="ollama",
+                fallback_used=True,
+            )
+
+    client = FallbackClient()
+
+    result = _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="ignored",
+    )
+
+    assert result.provider == "ollama"
+    assert result.model == "fallback-model"
+    assert result.metadata[
+        "configured_provider"
+    ] == "openrouter"
+    assert result.metadata[
+        "transport_fallback_used"
+    ] is True
+    assert result.metadata[
+        "fallback_used"
+    ] is True
+    assert "router_fallback_used" not in (
+        result.metadata
+    )
+
+
+def test_complete_planner_normalizes_content_only_response():
+    from factory.agents.contracts import (
+        AgentResult,
+    )
+    from factory.task_planner import (
+        _complete_planner,
+    )
+
+    client = FakeModelClient(VALID_PLAN_JSON)
+
+    result = _complete_planner(
+        client,
+        system_prompt="system",
+        user_prompt="user",
+        model_name="fake-model",
+    )
+
+    assert isinstance(result, AgentResult)
+    assert result.provider == "model_client"
+    assert result.model == "fake-model"
+    assert result.metadata[
+        "transport_fallback_used"
+    ] is False
+
+    plan = build_task_plan(
+        COMPLEX_PROMPT,
+        model_client=FakeModelClient(
+            VALID_PLAN_JSON
+        ),
+        model_name="fake-model",
+    )
+
+    assert [
+        step["kind"]
+        for step in plan["steps"]
+    ] == ["read", "write", "verify"]
+    assert "transport_fallback_used" not in plan

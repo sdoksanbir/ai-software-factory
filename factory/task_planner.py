@@ -2,7 +2,10 @@ import json
 import re
 from typing import Any
 
-from factory.agents.contracts import AgentRequest
+from factory.agents.contracts import (
+    AgentRequest,
+    AgentResult,
+)
 from factory.agents.providers.model_client import (
     ModelClientProvider,
 )
@@ -12,6 +15,7 @@ from factory.task_router import route_task
 
 
 MAX_PLAN_STEPS = 6
+PLANNER_MODEL_ROLE = "fast_local"
 
 
 _TURKISH_TRANSLATION = str.maketrans({
@@ -501,12 +505,42 @@ def _ensure_read_first(
     return result
 
 
+def _complete_planner(
+    model_client: Any,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    model_name: str | None = None,
+    timeout: int | None = None,
+) -> AgentResult:
+    """Invoke planner via AgentProvider boundary.
+
+    Uses ModelClientProvider (not AgentExecutionRouter).
+    Timeout resolution and AgentResult normalization
+    happen inside the provider adapter.
+    """
+    provider = ModelClientProvider(
+        model_client
+    )
+
+    return provider.complete(
+        AgentRequest(
+            model_role=PLANNER_MODEL_ROLE,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.0,
+            timeout=timeout,
+            model_name=model_name,
+        )
+    )
+
 
 def build_task_plan(
     prompt: str,
     *,
     model_client: Any,
     model_name: str | None = None,
+    timeout: int | None = None,
 ) -> dict[str, Any]:
     clean_prompt = str(
         prompt or ""
@@ -535,65 +569,62 @@ def build_task_plan(
         ).model
     )
 
-    provider = ModelClientProvider(
-        model_client
+    response = _complete_planner(
+        model_client,
+        system_prompt=(
+            "Sen bir yazilim gorev "
+            "planlayicisisin. "
+            "Kod yazma veya dosya degistirme. "
+            "Yalnizca uygulanabilir bir gorev "
+            "plani uret. "
+            "Yanitin sadece gecerli JSON olmali. "
+            "Markdown kullanma. "
+            "En az 2, en fazla 6 adim uret. "
+            "Tercihen 3-5 adim kullan. "
+            "Her adim tek bir net amaca "
+            "sahip olmali. "
+            "kind sadece read, write veya "
+            "verify olabilir. "
+            "Mevcut bir repository degisecekse "
+            "ilk adim genellikle read olmali. "
+            "read yalnizca mevcut sistemi "
+            "incelemek icindir. "
+            "write dosya veya kod olusturma, "
+            "degistirme ve test kodu yazma "
+            "isleri icindir. "
+            "Test yazmak verify degil write'tir. "
+            "verify dosya degistirmez; yalnizca "
+            "testleri calistirir ve sonucu "
+            "dogrular. "
+            "Ayni mantiksal ozellige ait kod ve "
+            "testleri mumkunse ayni write "
+            "adiminda tut. "
+            "Frontend formu ile onun API "
+            "baglantisini gereksiz yere ayri "
+            "write adimlarina bolme. "
+            "Gereksiz adim olusturma. "
+            "Ayni isi birden fazla adima bolme. "
+            "JSON semasi: "
+            '{"summary":"kisa ozet",'
+            '"steps":['
+            '{"title":"kisa baslik",'
+            '"instruction":"net gorev",'
+            '"kind":"read|write|verify"}'
+            "]}"
+        ),
+        user_prompt=(
+            "KULLANICI GOREVI:\n"
+            f"{clean_prompt}\n\n"
+            "Bu gorevi uygulanabilir ve "
+            "sirali adimlara ayir."
+        ),
+        model_name=selected_model,
+        timeout=timeout,
     )
 
-    response = provider.complete(
-        AgentRequest(
-            model_role="fast_local",
-            system_prompt=(
-                "Sen bir yazilim gorev "
-                "planlayicisisin. "
-                "Kod yazma veya dosya degistirme. "
-                "Yalnizca uygulanabilir bir gorev "
-                "plani uret. "
-                "Yanitin sadece gecerli JSON olmali. "
-                "Markdown kullanma. "
-                "En az 2, en fazla 6 adim uret. "
-                "Tercihen 3-5 adim kullan. "
-                "Her adim tek bir net amaca "
-                "sahip olmali. "
-                "kind sadece read, write veya "
-                "verify olabilir. "
-                "Mevcut bir repository degisecekse "
-                "ilk adim genellikle read olmali. "
-                "read yalnizca mevcut sistemi "
-                "incelemek icindir. "
-                "write dosya veya kod olusturma, "
-                "degistirme ve test kodu yazma "
-                "isleri icindir. "
-                "Test yazmak verify degil write'tir. "
-                "verify dosya degistirmez; yalnizca "
-                "testleri calistirir ve sonucu "
-                "dogrular. "
-                "Ayni mantiksal ozellige ait kod ve "
-                "testleri mumkunse ayni write "
-                "adiminda tut. "
-                "Frontend formu ile onun API "
-                "baglantisini gereksiz yere ayri "
-                "write adimlarina bolme. "
-                "Gereksiz adim olusturma. "
-                "Ayni isi birden fazla adima bolme. "
-                "JSON semasi: "
-                '{"summary":"kisa ozet",'
-                '"steps":['
-                '{"title":"kisa baslik",'
-                '"instruction":"net gorev",'
-                '"kind":"read|write|verify"}'
-                "]}"
-            ),
-            user_prompt=(
-                "KULLANICI GOREVI:\n"
-                f"{clean_prompt}\n\n"
-                "Bu gorevi uygulanabilir ve "
-                "sirali adimlara ayir."
-            ),
-            temperature=0.0,
-            model_name=selected_model,
-        )
-    )
-
+    # Plan parsing consumes only AgentResult.content.
+    # Execution metadata stays on AgentResult and
+    # is not mixed into the domain plan dict.
     payload = _extract_json_object(
         response.content
     )
@@ -622,12 +653,14 @@ def create_and_save_task_plan(
     *,
     model_client: Any,
     model_name: str | None = None,
+    timeout: int | None = None,
     db_path=None,
 ) -> dict[str, Any]:
     plan = build_task_plan(
         prompt,
         model_client=model_client,
         model_name=model_name,
+        timeout=timeout,
     )
 
     save_kwargs = {}

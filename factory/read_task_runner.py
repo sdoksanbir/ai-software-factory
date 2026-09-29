@@ -7,7 +7,10 @@ from typing import Any
 from factory.agents.capabilities import (
     AgentCapability,
 )
-from factory.agents.contracts import AgentRequest
+from factory.agents.contracts import (
+    AgentRequest,
+    AgentResult,
+)
 from factory.agents.runtime import (
     build_default_agent_execution_router,
     resolve_provider_for_role,
@@ -40,7 +43,13 @@ def _complete_agent(
     timeout: int | None = None,
     model_name_override: str | None = None,
     execution_observer=None,
-):
+) -> AgentResult:
+    """READ model call via AgentExecutionRouter.
+
+    Shares AgentRequest/AgentResult contracts with
+    the planner path. Unlike the planner, READ uses
+    capability routing and provider fallback.
+    """
     runtime = (
         build_default_agent_execution_router(
             model_client
