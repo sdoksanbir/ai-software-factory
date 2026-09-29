@@ -7,6 +7,9 @@ from factory.agents.contracts import (
 from factory.agents.provider_registry import (
     AgentProviderRegistry,
 )
+from factory.agents.timeout_policy import (
+    ensure_agent_request_timeout,
+)
 from factory.agents.providers.antigravity import (
     AntigravityCliProvider,
 )
@@ -305,6 +308,23 @@ class ModelClientProvider:
         self,
         request: AgentRequest,
     ) -> AgentResult:
+        config = getattr(
+            self.model_client,
+            "config",
+            None,
+        )
+
+        if not isinstance(config, dict):
+            config = None
+
+        # Resolve timeout before routing so
+        # delegated providers and ModelClient
+        # receive an explicit value.
+        request = ensure_agent_request_timeout(
+            request,
+            config=config,
+        )
+
         configured_provider = (
             self._configured_provider(
                 request.model_role

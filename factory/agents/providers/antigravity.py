@@ -23,6 +23,14 @@ from factory.agents.provider_errors import (
 class AntigravityCliProvider:
     provider_name = "antigravity_cli"
 
+    # Extra seconds for subprocess.run only.
+    # Not part of the logical AgentRequest
+    # timeout; gives the CLI process a short
+    # cleanup/grace window after the requested
+    # deadline before Python raises
+    # TimeoutExpired.
+    SUBPROCESS_GRACE_SECONDS = 10
+
     def __init__(
         self,
         *,
@@ -348,7 +356,15 @@ class AntigravityCliProvider:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=timeout + 10,
+                # Logical timeout is `timeout`.
+                # Grace buffer is only for
+                # subprocess cleanup, not a
+                # change to request timeout
+                # policy.
+                timeout=(
+                    timeout
+                    + self.SUBPROCESS_GRACE_SECONDS
+                ),
                 check=False,
             )
 

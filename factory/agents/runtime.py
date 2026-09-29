@@ -138,11 +138,21 @@ def build_default_agent_execution_router(
             ]
         )
 
+    config = getattr(
+        model_client,
+        "config",
+        None,
+    )
+
+    if not isinstance(config, dict):
+        config = None
+
     return AgentExecutionRouter(
         agent_router=AgentRouter(
             agents
         ),
         provider_registry=registry,
+        config=config,
     )
 
 

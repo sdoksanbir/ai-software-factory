@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 from factory.agents.capabilities import (
     AgentCapability,
@@ -20,6 +21,9 @@ from factory.agents.provider_registry import (
     AgentProviderRegistry,
 )
 from factory.agents.router import AgentRouter
+from factory.agents.timeout_policy import (
+    ensure_agent_request_timeout,
+)
 
 
 @dataclass(frozen=True)
@@ -49,9 +53,23 @@ class AgentExecutionRouter:
         *,
         agent_router: AgentRouter,
         provider_registry: AgentProviderRegistry,
+        config: Mapping[str, Any] | None = None,
     ) -> None:
         self.agent_router = agent_router
         self.provider_registry = provider_registry
+        self.config = config
+
+    def _prepare_request(
+        self,
+        request: AgentRequest,
+    ) -> AgentRequest:
+        # Resolve timeout for the request. Do not
+        # enforce wall-clock here; providers apply
+        # the transport timeout themselves.
+        return ensure_agent_request_timeout(
+            request,
+            config=self.config,
+        )
 
     def route(
         self,
@@ -88,7 +106,7 @@ class AgentExecutionRouter:
         )
 
         return route.provider.complete(
-            request
+            self._prepare_request(request)
         )
 
 
@@ -104,6 +122,10 @@ class AgentExecutionRouter:
         policy = (
             policy
             or AgentFallbackPolicy()
+        )
+
+        request = self._prepare_request(
+            request
         )
 
         candidates = (
