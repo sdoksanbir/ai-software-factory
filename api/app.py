@@ -72,20 +72,14 @@ from factory.agent_telemetry import (
 from factory.review_quality import (
     build_review_quality_report,
 )
-from factory.model_router import ModelRoute, route_model
 from factory.task_router import route_task
-from factory.semantic_task_router import (
-    route_task_semantic,
-)
 from factory.task_route_store import (
     get_task_route,
-    save_task_route,
 )
-from factory.read_task_runner import run_read_task
-from factory.execute_task_runner import (
-    run_execute_task,
+from factory.task_execution_service import (
+    TaskExecutionDeps,
+    TaskExecutionService,
 )
-from factory.task_execution_dispatcher import execute_write_task
 from factory.task_graph_execution import (
     evaluate_task_execution_gate,
     list_newly_runnable_dependents,
@@ -102,10 +96,8 @@ from factory.task_graph_store import (
 )
 from factory.task_read_results import (
     get_task_read_result,
-    save_task_read_result,
 )
 from factory.task_model_preferences import (
-    get_task_model_preference,
     set_task_model_preference,
 )
 from factory.schemas import TaskSpec, TaskStatus
@@ -952,429 +944,37 @@ def release_runnable_graph_dependents(
 
 
 def run_task_for_api(task_id: str):
-    task = TASKS.get(task_id)
-
-    if task is None:
-        raise KeyError(f"Unknown task: {task_id}")
-
-    append_task_log(
-        task_id,
-        "Task worker baslatildi.",
-    )
-
-    # Task Graph: dependency kontrolu
-    # planner/model/worktree baslamadan once
-    # yapilir.
-    task_states = {}
-
-    for (
-        known_task_id,
-        known_task,
-    ) in TASKS.items():
-        known_state = (
-            getattr(
-                known_task,
-                "state",
-                None,
-            )
-            or getattr(
-                known_task,
-                "status",
-                None,
-            )
-            or ""
-        )
-
-        task_states[
-            known_task_id
-        ] = str(known_state)
-
-    try:
-        graph_gate = (
-            evaluate_task_execution_gate(
-                task_id,
-                task_states,
-            )
-        )
-    except Exception as exc:
-        append_task_log(
-            task_id,
-            (
-                "Task Graph baslangic hatasi: "
-                f"{type(exc).__name__}: {exc}"
+    # Thin API worker entrypoint. Orchestration
+    # lives in TaskExecutionService.
+    service = TaskExecutionService(
+        TaskExecutionDeps(
+            get_task=lambda tid: TASKS.get(
+                tid
+            ),
+            iter_tasks=lambda: TASKS.items(),
+            append_log=append_task_log,
+            update_runtime=update_task_runtime,
+            evaluate_gate=(
+                evaluate_task_execution_gate
+            ),
+            build_orchestrator=(
+                build_orchestrator_for_task
+            ),
+            approval_handler=(
+                api_approval_handler
+            ),
+            progress_handler=(
+                api_progress_handler
+            ),
+            cleanup_failed=(
+                cleanup_failed_task_for_api
+            ),
+            release_dependents=(
+                release_runnable_graph_dependents
             ),
         )
-
-        update_task_runtime(
-            task_id,
-            status="failed",
-            state="failed",
-        )
-
-        return None
-
-    if graph_gate["state"] == "blocked":
-        pending = (
-            graph_gate[
-                "pending_dependencies"
-            ]
-        )
-
-        dependency_text = (
-            ", ".join(pending)
-            if pending
-            else "unknown"
-        )
-
-        update_task_runtime(
-            task_id,
-            status="queued",
-            state="blocked",
-        )
-
-        append_task_log(
-            task_id,
-            (
-                "Task Graph: gorev bekletildi. "
-                "Beklenen dependency: "
-                f"{dependency_text}"
-            ),
-        )
-
-        return None
-
-    if graph_gate["state"] == "failed":
-        failed_dependencies = (
-            graph_gate[
-                "failed_dependencies"
-            ]
-        )
-
-        dependency_text = (
-            ", ".join(
-                failed_dependencies
-            )
-            if failed_dependencies
-            else "unknown"
-        )
-
-        update_task_runtime(
-            task_id,
-            status="failed",
-            state="failed",
-        )
-
-        append_task_log(
-            task_id,
-            (
-                "Task Graph: dependency "
-                "basarisizligi nedeniyle "
-                "gorev calistirilmadi. "
-                "Basarisiz dependency: "
-                f"{dependency_text}"
-            ),
-        )
-
-        return None
-
-    # SEMANTIC_TASK_ROUTER_V1
-    task_route = route_task_semantic(
-        task.prompt,
-        model_client=ModelClient(),
     )
-
-    save_task_route(
-        task_id,
-        task_route.kind,
-        task_route.reason,
-    )
-
-    task.task_kind = task_route.kind
-
-    append_task_log(
-        task_id,
-        (
-            "Task Router: "
-            f"{task_route.kind.upper()} - "
-            f"{task_route.reason} "
-            f"[intent={task_route.intent}; "
-            f"target={task_route.target}; "
-            f"framework={task_route.framework}; "
-            f"confidence={task_route.confidence:.2f}; "
-            f"source={task_route.source}]"
-        ),
-    )
-
-    requested_model = (
-        get_task_model_preference(
-            task_id,
-        )
-    )
-
-    if task_route.kind == "execute":
-        model_route = ModelRoute(
-            model="local-executor",
-            profile="execute",
-            reason=(
-                "Deterministik yerel eylem "
-                "calistiricisi secildi."
-            ),
-            code_score=0,
-        )
-
-        selection_log = (
-            "Execution Router: local-executor - "
-            "Model cagrisi gerekmiyor."
-        )
-
-    elif requested_model:
-        model_route = ModelRoute(
-            model=requested_model,
-            profile="manual",
-            reason=(
-                "Kullan\u0131c\u0131 taraf\u0131ndan "
-                "manuel olarak se\u00e7ildi."
-            ),
-            code_score=0,
-        )
-
-        selection_log = (
-            "Manuel Model: "
-            f"{model_route.model}"
-        )
-    else:
-        model_route = route_model(
-            task.prompt,
-        )
-
-        selection_log = (
-            "Model Router: "
-            f"{model_route.model} - "
-            f"{model_route.reason}"
-        )
-
-    update_task_runtime(
-        task_id,
-        status="running",
-        state="running",
-        model=model_route.model,
-    )
-
-    append_task_log(
-        task_id,
-        selection_log,
-    )
-
-    append_task_log(
-        task_id,
-        "Görev çalıştırılıyor.",
-    )
-
-    try:
-        orchestrator = build_orchestrator_for_task(
-            task
-        )
-    except KeyError:
-        append_task_log(
-            task_id,
-            "G?revin ba?l? oldu?u proje bulunamad?.",
-        )
-        update_task_runtime(
-            task_id,
-            status="failed",
-            state="failed",
-        )
-        return None
-
-    if task_route.kind == "execute":
-        try:
-            append_task_log(
-                task_id,
-                "EXECUTE gorevi calistiriliyor.",
-            )
-
-            execute_result = run_execute_task(
-                project_path=orchestrator.project_path,
-                prompt=task.prompt,
-                intent=task_route.intent,
-                target=task_route.target,
-                framework=task_route.framework,
-            )
-
-            save_task_read_result(
-                task_id,
-                execute_result,
-            )
-
-            update_task_runtime(
-                task_id,
-                status="completed",
-                state="completed",
-                test_result="not_required",
-            )
-
-            append_task_log(
-                task_id,
-                execute_result,
-            )
-
-            append_task_log(
-                task_id,
-                "EXECUTE gorevi tamamlandi.",
-            )
-
-            released_dependents = (
-                release_runnable_graph_dependents(
-                    task_id
-                )
-            )
-
-            for dependent_task_id in (
-                released_dependents
-            ):
-                run_task_for_api(
-                    dependent_task_id
-                )
-
-            return
-
-        except Exception as exc:
-            append_task_log(
-                task_id,
-                (
-                    "EXECUTE gorevi basarisiz: "
-                    f"{exc}"
-                ),
-            )
-
-            update_task_runtime(
-                task_id,
-                status="failed",
-                state="failed",
-            )
-
-            return
-
-    if task_route.kind == "read":
-        try:
-            append_task_log(
-                task_id,
-                "READ gorevi calistiriliyor.",
-            )
-
-            read_result = run_read_task(
-                project_path=orchestrator.project_path,
-                prompt=task.prompt,
-                model_route=model_route,
-                model_client=orchestrator.model_client,
-            )
-
-            save_task_read_result(
-                task_id,
-                read_result,
-            )
-
-            update_task_runtime(
-                task_id,
-                status="completed",
-                state="completed",
-                test_result="not_required",
-            )
-
-            append_task_log(
-                task_id,
-                "READ gorevi tamamlandi.",
-            )
-
-            released_dependents = (
-                release_runnable_graph_dependents(
-                    task_id
-                )
-            )
-
-            for dependent_task_id in (
-                released_dependents
-            ):
-                run_task_for_api(
-                    dependent_task_id
-                )
-
-            return
-
-        except Exception as exc:
-            append_task_log(
-                task_id,
-                (
-                    "READ gorevi basarisiz: "
-                    f"{exc}"
-                ),
-            )
-
-            update_task_runtime(
-                task_id,
-                status="failed",
-                state="failed",
-            )
-
-            return
-
-    try:
-        result, execution_plan = execute_write_task(
-            orchestrator=orchestrator,
-            prompt=task.prompt,
-            task_id=task_id,
-            max_attempts=task.max_attempts,
-            model_route=model_route,
-            approval_handler=api_approval_handler,
-            progress_handler=api_progress_handler,
-        )
-
-        append_task_log(
-            task_id,
-            (
-                "Planner modu: "
-                f"{execution_plan.get('planner_mode', 'single_step')}"
-            ),
-        )
-    except Exception as exc:
-        append_task_log(
-            task_id,
-            (
-                "Görev beklenmeyen bir hata nedeniyle başarısız oldu: "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        )
-
-        cleanup_failed_task_for_api(
-            orchestrator,
-            task_id,
-        )
-
-        update_task_runtime(
-            task_id,
-            status="failed",
-            state="failed",
-        )
-        return None
-
-    if result != "ready_for_approval":
-        append_task_log(
-            task_id,
-            "Görev başarısız oldu.",
-        )
-
-        cleanup_failed_task_for_api(
-            orchestrator,
-            task_id,
-        )
-
-        update_task_runtime(
-            task_id,
-            status="failed",
-            state="failed",
-        )
-
-    return result
+    return service.run(task_id)
 
 
 
