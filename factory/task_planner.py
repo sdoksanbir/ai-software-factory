@@ -147,7 +147,27 @@ def should_create_multi_step_plan(
 
 def _single_step_kind(
     prompt: str,
+    *,
+    task_kind: str | None = None,
 ) -> str:
+    """Resolve single-step kind.
+
+    When the task-level route already decided
+    READ/WRITE, reuse that decision instead of
+    re-classifying the prompt. EXECUTE never
+    reaches the planner on the production path;
+    if somehow supplied, fall back to heuristics.
+    """
+    normalized = str(
+        task_kind or ""
+    ).strip().casefold()
+
+    if normalized == "write":
+        return "write"
+
+    if normalized == "read":
+        return "read"
+
     tokens = _prompt_tokens(prompt)
 
     if tokens & _WRITE_INTENT_WORDS:
@@ -158,13 +178,16 @@ def _single_step_kind(
 
 def _single_step_plan(
     prompt: str,
+    *,
+    task_kind: str | None = None,
 ) -> list[dict[str, Any]]:
     return [
         {
             "title": "Gorevi tamamla",
             "instruction": prompt.strip(),
             "kind": _single_step_kind(
-                prompt
+                prompt,
+                task_kind=task_kind,
             ),
             "status": "pending",
             "attempt": 0,
@@ -541,6 +564,7 @@ def build_task_plan(
     model_client: Any,
     model_name: str | None = None,
     timeout: int | None = None,
+    task_kind: str | None = None,
 ) -> dict[str, Any]:
     clean_prompt = str(
         prompt or ""
@@ -557,7 +581,8 @@ def build_task_plan(
         return {
             "summary": "Tek adimli gorev",
             "steps": _single_step_plan(
-                clean_prompt
+                clean_prompt,
+                task_kind=task_kind,
             ),
             "planner_mode": "single_step",
         }
@@ -654,6 +679,7 @@ def create_and_save_task_plan(
     model_client: Any,
     model_name: str | None = None,
     timeout: int | None = None,
+    task_kind: str | None = None,
     db_path=None,
 ) -> dict[str, Any]:
     plan = build_task_plan(
@@ -661,6 +687,7 @@ def create_and_save_task_plan(
         model_client=model_client,
         model_name=model_name,
         timeout=timeout,
+        task_kind=task_kind,
     )
 
     save_kwargs = {}

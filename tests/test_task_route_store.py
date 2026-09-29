@@ -35,6 +35,7 @@ def test_save_and_get_read_route(
         "TASK-1001",
         "read",
         "Salt-okuma gorevi.",
+        source="semantic",
     )
 
     result = (
@@ -49,6 +50,7 @@ def test_save_and_get_read_route(
     assert result["reason"] == (
         "Salt-okuma gorevi."
     )
+    assert result["source"] == "semantic"
 
 
 def test_save_and_get_write_route(
@@ -126,3 +128,33 @@ def test_delete_route(
         )
         is None
     )
+
+
+def test_unknown_source_is_rejected(
+    isolated_store,
+):
+    with pytest.raises(ValueError):
+        isolated_store.save_task_route(
+            "TASK-1006",
+            "write",
+            "x",
+            source="mystery",
+        )
+
+
+def test_none_source_is_accepted(
+    isolated_store,
+):
+    isolated_store.save_task_route(
+        "TASK-1007",
+        "read",
+        "legacy",
+        source=None,
+    )
+
+    result = isolated_store.get_task_route(
+        "TASK-1007"
+    )
+
+    assert result is not None
+    assert result["source"] is None

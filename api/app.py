@@ -18,7 +18,6 @@ from fastapi.responses import StreamingResponse
 from factory.database import (
     DEFAULT_DB_PATH,
     append_task_log as db_append_task_log,
-    clear_task_logs as db_clear_task_logs,
     delete_task_diff as db_delete_task_diff,
     get_task_diff as db_get_task_diff,
     init_database,
@@ -72,7 +71,6 @@ from factory.agent_telemetry import (
 from factory.review_quality import (
     build_review_quality_report,
 )
-from factory.task_router import route_task
 from factory.task_route_store import (
     get_task_route,
 )
@@ -1895,11 +1893,72 @@ def retry_task(
             detail="Only failed tasks can be retried",
         )
 
+    # Capture failure evidence before active
+    # step state is reset. task_logs keep the
+    # historical record; task_steps become the
+    # fresh retry state.
+    existing_plan = get_task_plan(task_id)
+    failure_evidence = []
+
+    if existing_plan is not None:
+        for step in existing_plan.get(
+            "steps",
+            [],
+        ):
+            status_value = str(
+                step.get("status", "")
+            ).strip().casefold()
+
+            if status_value not in {
+                "failed",
+                "running",
+            }:
+                continue
+
+            error_text = str(
+                step.get("error") or ""
+            ).strip()
+
+            if not error_text:
+                continue
+
+            failure_evidence.append(
+                {
+                    "step_index": step.get(
+                        "step_index"
+                    ),
+                    "kind": step.get("kind"),
+                    "attempt": step.get(
+                        "attempt"
+                    ),
+                    "error": error_text,
+                }
+            )
+
     TASK_CONTEXTS.pop(task_id, None)
     TASK_DIFFS.pop(task_id, None)
 
     db_delete_task_diff(task_id)
-    db_clear_task_logs(task_id)
+
+    append_task_log(
+        task_id,
+        (
+            "Retry baslatildi. Onceki basarisiz "
+            "calisma korunuyor."
+        ),
+    )
+
+    for evidence in failure_evidence:
+        append_task_log(
+            task_id,
+            (
+                "Onceki run failure evidence: "
+                f"step={evidence['step_index']} "
+                f"kind={evidence['kind']} "
+                f"attempt={evidence['attempt']} "
+                f"error={evidence['error']}"
+            ),
+        )
 
     reset_retryable_task_steps(task_id)
 
@@ -1911,8 +1970,6 @@ def retry_task(
     task.started_at = datetime.now(
         timezone.utc
     ).isoformat()
-
-    TASK_LOGS[task_id] = []
 
     persist_task(task)
 

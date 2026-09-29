@@ -215,6 +215,7 @@ class TaskExecutionService:
             task_id,
             task_route.kind,
             task_route.reason,
+            source=task_route.source,
         )
 
         task.task_kind = task_route.kind
@@ -337,6 +338,7 @@ class TaskExecutionService:
             task,
             model_route,
             orchestrator,
+            task_route=task_route,
         )
 
     def _run_execute(
@@ -471,6 +473,8 @@ class TaskExecutionService:
         task: Any,
         model_route: Any,
         orchestrator: Any,
+        *,
+        task_route: Any = None,
     ):
         try:
             result, execution_plan = (
@@ -485,6 +489,18 @@ class TaskExecutionService:
                     ),
                     progress_handler=(
                         self._deps.progress_handler
+                    ),
+                    task_kind=(
+                        getattr(
+                            task_route,
+                            "kind",
+                            None,
+                        )
+                        or getattr(
+                            task,
+                            "task_kind",
+                            None,
+                        )
                     ),
                 )
             )

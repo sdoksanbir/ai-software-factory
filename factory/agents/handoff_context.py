@@ -272,6 +272,42 @@ def build_handoff_context(
     # Keep the original top-level fields for
     # backward compatibility with existing
     # handoff consumers.
+    attempt = payload.get("attempt")
+    original_prompt = payload.get(
+        "original_task"
+    )
+    failure_reason = payload.get(
+        "failure_reason"
+    )
+
+    if failure_reason in (
+        None,
+        "",
+    ):
+        # Preserve provider-fallback evidence when
+        # a dedicated failure_reason was not set.
+        fallback_attempts = payload.get(
+            "fallback_attempts"
+        )
+
+        if (
+            isinstance(
+                fallback_attempts,
+                (
+                    list,
+                    tuple,
+                ),
+            )
+            and fallback_attempts
+        ):
+            last = fallback_attempts[-1]
+
+            if isinstance(last, dict):
+                failure_reason = (
+                    last.get("error_type")
+                    or last.get("error")
+                )
+
     return {
         "schema": HANDOFF_CONTEXT_SCHEMA,
         "task_id": checkpoint["task_id"],
@@ -291,6 +327,7 @@ def build_handoff_context(
             "summary"
         ),
         "payload": payload,
+        "attempt": attempt,
 
         # Stable structured context for future
         # multi-agent consumers.
@@ -301,6 +338,18 @@ def build_handoff_context(
             "step_index": checkpoint[
                 "step_index"
             ],
+            "attempt": attempt,
+            "original_prompt": (
+                original_prompt
+            ),
+            "project_path": payload.get(
+                "project_path"
+            ),
+            "plan_step_instruction": (
+                payload.get(
+                    "write_instruction"
+                )
+            ),
         },
         "source": {
             "checkpoint_id": (
@@ -317,6 +366,7 @@ def build_handoff_context(
             "status": checkpoint.get(
                 "status"
             ),
+            "model": payload.get("model"),
         },
         "target": {
             "agent_name": (
@@ -333,6 +383,17 @@ def build_handoff_context(
             "required_capabilities": (
                 capability_names
             ),
+        },
+        "failure": {
+            "reason": (
+                str(failure_reason).strip()
+                if failure_reason
+                not in (None, "")
+                else None
+            ),
+            "handoff_reason": str(
+                reason
+            ).strip(),
         },
         "artifacts": _build_artifacts(
             payload

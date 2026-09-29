@@ -19,6 +19,11 @@ from factory.agents.step_capabilities import (
     capabilities_for_step,
 )
 from factory.database import DEFAULT_DB_PATH
+from factory.failure_taxonomy import (
+    EXECUTION_FAILED,
+    classify_failure,
+    format_failure_message,
+)
 from factory.review_quality import (
     evaluate_review_checkpoint_quality_gate,
 )
@@ -383,9 +388,12 @@ class StepExecutionError(RuntimeError):
         task_id: str,
         step_index: int,
         message: str,
+        *,
+        failure_reason: str | None = None,
     ):
         self.task_id = task_id
         self.step_index = step_index
+        self.failure_reason = failure_reason
 
         super().__init__(
             f"{task_id} step {step_index}: "
@@ -512,8 +520,13 @@ def execute_task_plan(
             and recovery_kind == "write"
         ):
             interruption_error = (
-                "Interrupted WRITE has no completed "
-                "checkpoint; explicit retry required"
+                format_failure_message(
+                    EXECUTION_FAILED,
+                    (
+                        "Interrupted WRITE has no completed "
+                        "checkpoint; explicit retry required"
+                    ),
+                )
             )
 
             update_task_step(
@@ -535,6 +548,7 @@ def execute_task_plan(
                 task_id,
                 step_index,
                 interruption_error,
+                failure_reason=EXECUTION_FAILED,
             )
 
         if (
@@ -550,10 +564,14 @@ def execute_task_plan(
             raise StepExecutionError(
                 task_id,
                 step_index,
-                (
-                    "maximum step attempts "
-                    "already reached"
+                format_failure_message(
+                    EXECUTION_FAILED,
+                    (
+                        "maximum step attempts "
+                        "already reached"
+                    ),
                 ),
+                failure_reason=EXECUTION_FAILED,
             )
 
         kind = str(
@@ -663,12 +681,24 @@ def execute_task_plan(
                     # original agent failure.
                     pass
 
+            failure_reason = classify_failure(
+                exc,
+                step_kind=kind,
+            )
+
+            failure_error = (
+                format_failure_message(
+                    failure_reason,
+                    str(exc),
+                )
+            )
+
             update_task_step(
                 task_id,
                 step_index,
                 status="failed",
                 attempt=current_attempt,
-                error=str(exc),
+                error=failure_error,
                 db_path=db_path,
             )
 
@@ -681,7 +711,8 @@ def execute_task_plan(
             raise StepExecutionError(
                 task_id,
                 step_index,
-                str(exc),
+                failure_error,
+                failure_reason=failure_reason,
             ) from exc
 
         checkpoint_result = (
@@ -1096,12 +1127,32 @@ def execute_task_plan(
             )
 
         except Exception as exc:
+            failure_reason = classify_failure(
+                exc,
+                step_kind=kind,
+                context=(
+                    "review"
+                    if (
+                        "quality gate"
+                        in str(exc).casefold()
+                    )
+                    else kind
+                ),
+            )
+
+            failure_error = (
+                format_failure_message(
+                    failure_reason,
+                    str(exc),
+                )
+            )
+
             update_task_step(
                 task_id,
                 step_index,
                 status="failed",
                 attempt=current_attempt,
-                error=str(exc),
+                error=failure_error,
                 db_path=db_path,
             )
 
@@ -1114,7 +1165,8 @@ def execute_task_plan(
             raise StepExecutionError(
                 task_id,
                 step_index,
-                str(exc),
+                failure_error,
+                failure_reason=failure_reason,
             ) from exc
 
     update_task_plan_status(

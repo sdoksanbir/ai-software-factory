@@ -637,6 +637,40 @@ def execute_prepared_handoff(
         ]
     )
 
+    source_payload = (
+        prepared.source_checkpoint.get(
+            "payload"
+        )
+    )
+
+    if not isinstance(
+        source_payload,
+        dict,
+    ):
+        source_payload = {}
+
+    # Prefer explicit attempt on the source
+    # checkpoint; fall back to structured
+    # handoff context task.attempt.
+    source_attempt = source_payload.get(
+        "attempt"
+    )
+
+    if source_attempt is None:
+        context_task = prepared.context.get(
+            "task"
+        )
+
+        if isinstance(context_task, dict):
+            source_attempt = context_task.get(
+                "attempt"
+            )
+
+    if source_attempt is None:
+        source_attempt = prepared.context.get(
+            "attempt"
+        )
+
     source_checkpoint_id = str(
         prepared.source_checkpoint[
             "checkpoint_id"
@@ -856,6 +890,12 @@ def execute_prepared_handoff(
                         .source_checkpoint[
                             "provider_name"
                         ]
+                    ),
+                    "attempt": source_attempt,
+                    "step_kind": (
+                        source_payload.get(
+                            "step_kind"
+                        )
                     ),
                     "handoff_context_schema": (
                         prepared.context.get(

@@ -43,7 +43,15 @@ def execute_write_task(
     model_route: Any,
     approval_handler: Callable | None = None,
     progress_handler: Callable | None = None,
+    task_kind: str | None = None,
 ) -> tuple[str | None, dict[str, Any]]:
+    """Run the production WRITE path.
+
+    ``task_kind`` is the authoritative task-level
+    route decision from TaskExecutionService. It is
+    reused by the planner for single-step kind so
+    the prompt is not re-classified.
+    """
     existing_plan = get_task_plan(
         task_id
     )
@@ -107,6 +115,7 @@ def execute_write_task(
                 orchestrator.model_client
             ),
             model_name=model_route.model,
+            task_kind=task_kind,
         )
 
         save_task_plan(

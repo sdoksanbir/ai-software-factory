@@ -721,6 +721,14 @@ class TaskStepHandlers:
                 ),
                 "write_instruction": instruction,
                 "diff": review_evidence,
+                "project_path": (
+                    getattr(
+                        self.orchestrator,
+                        "project_path",
+                        None,
+                    )
+                    or worktree_path
+                ),
             },
             handoff_request=StepHandoffRequest(
                 required_capabilities=frozenset(

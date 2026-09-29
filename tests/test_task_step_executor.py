@@ -175,7 +175,7 @@ def test_failure_is_persisted(
 
     assert (
         loaded["steps"][1]["error"]
-        == "write failed"
+        == "execution_failed: write failed"
     )
 
     assert (
