@@ -29,38 +29,14 @@ MODEL_AGENT_CAPABILITIES = frozenset(
 def build_default_agent_descriptors(
     registry: AgentProviderRegistry,
 ) -> tuple[AgentDescriptor, ...]:
-    agents = list(
-        build_default_agent_descriptors(
-            registry
-        )
-    )
+    """Build role descriptors for registered providers.
 
-    return tuple(
-        agents
-    )
-
-
-def build_default_agent_execution_router(
-    model_client: Any,
-) -> AgentExecutionRouter:
-    compatibility_provider = (
-        ModelClientProvider(
-            model_client
-        )
-    )
-
-    registry = (
-        compatibility_provider.registry
-    )
-
-    if not registry.has(
-        compatibility_provider.provider_name
-    ):
-        registry.register(
-            compatibility_provider
-        )
-
-    agents = []
+    Deterministic: uses registry.names() order
+    (sorted) and a fixed per-provider role
+    sequence. Does not mutate the registry or
+    perform network/model calls.
+    """
+    agents: list[AgentDescriptor] = []
 
     for provider_name in registry.names():
         # Role-specific agents are registered
@@ -137,6 +113,33 @@ def build_default_agent_execution_router(
                 ),
             ]
         )
+
+    return tuple(agents)
+
+
+def build_default_agent_execution_router(
+    model_client: Any,
+) -> AgentExecutionRouter:
+    compatibility_provider = (
+        ModelClientProvider(
+            model_client
+        )
+    )
+
+    registry = (
+        compatibility_provider.registry
+    )
+
+    if not registry.has(
+        compatibility_provider.provider_name
+    ):
+        registry.register(
+            compatibility_provider
+        )
+
+    agents = build_default_agent_descriptors(
+        registry
+    )
 
     config = getattr(
         model_client,

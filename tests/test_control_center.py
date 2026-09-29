@@ -328,6 +328,60 @@ def test_agent_descriptor_failure_does_not_break_control_center(
     )
 
 
+def test_agent_summary_uses_real_default_descriptors():
+    from factory.agents.contracts import (
+        AgentResult,
+    )
+    from factory.agents.provider_registry import (
+        AgentProviderRegistry,
+    )
+    from factory.control_center import (
+        _agent_summary,
+    )
+
+    class StubProvider:
+        provider_name = "ollama"
+
+        def complete(self, request):
+            return AgentResult(
+                content="ok",
+                provider=self.provider_name,
+            )
+
+    registry = AgentProviderRegistry()
+    registry.register(StubProvider())
+
+    result = _agent_summary(
+        registry,
+        {
+            "items": [
+                {
+                    "provider_name": "ollama",
+                    "status": "available",
+                }
+            ],
+        },
+    )
+
+    assert result["available"] is True
+    assert result["total"] == 5
+    assert result["ready"] == 5
+    assert "error" not in result
+
+    names = [
+        item["name"]
+        for item in result["items"]
+    ]
+
+    assert names == [
+        "ollama-analyst",
+        "ollama-coder",
+        "ollama-reviewer",
+        "ollama-verifier",
+        "ollama-agent",
+    ]
+
+
 def test_task_graph_summary_finds_runnable_and_blocked_tasks(
     tmp_path,
 ):

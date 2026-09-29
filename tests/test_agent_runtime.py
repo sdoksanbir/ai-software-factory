@@ -513,3 +513,153 @@ def test_runtime_can_configure_codex_provider():
         ]
         is False
     )
+
+
+def test_default_agent_descriptors_do_not_recurse():
+    from factory.agents.contracts import (
+        AgentResult,
+    )
+    from factory.agents.provider_registry import (
+        AgentProviderRegistry,
+    )
+    from factory.agents.runtime import (
+        build_default_agent_descriptors,
+    )
+
+    class StubProvider:
+        provider_name = "ollama"
+
+        def complete(self, request):
+            return AgentResult(
+                content="ok",
+                provider=self.provider_name,
+            )
+
+    registry = AgentProviderRegistry()
+    registry.register(StubProvider())
+
+    descriptors = (
+        build_default_agent_descriptors(
+            registry
+        )
+    )
+
+    assert descriptors
+    assert len(descriptors) == 5
+
+    names = [
+        item.name
+        for item in descriptors
+    ]
+
+    assert len(names) == len(set(names))
+    assert names == [
+        "ollama-analyst",
+        "ollama-coder",
+        "ollama-reviewer",
+        "ollama-verifier",
+        "ollama-agent",
+    ]
+
+
+def test_default_agent_descriptors_are_deterministic():
+    from factory.agents.contracts import (
+        AgentResult,
+    )
+    from factory.agents.provider_registry import (
+        AgentProviderRegistry,
+    )
+    from factory.agents.runtime import (
+        build_default_agent_descriptors,
+    )
+
+    class StubA:
+        provider_name = "ollama"
+
+        def complete(self, request):
+            return AgentResult(
+                content="a",
+                provider=self.provider_name,
+            )
+
+    class StubB:
+        provider_name = "model_client"
+
+        def complete(self, request):
+            return AgentResult(
+                content="b",
+                provider=self.provider_name,
+            )
+
+    registry = AgentProviderRegistry()
+    registry.register(StubA())
+    registry.register(StubB())
+
+    first = build_default_agent_descriptors(
+        registry
+    )
+    second = build_default_agent_descriptors(
+        registry
+    )
+
+    assert first == second
+    assert [
+        item.provider_name
+        for item in first
+    ] == [
+        "model_client",
+        "model_client",
+        "model_client",
+        "model_client",
+        "model_client",
+        "ollama",
+        "ollama",
+        "ollama",
+        "ollama",
+        "ollama",
+    ]
+
+
+def test_runtime_descriptors_match_registry_providers():
+    client = FakeModelClient(
+        {
+            "models": {
+                "fast_local": {
+                    "provider": "ollama",
+                    "model": "llama3.1:8b",
+                }
+            }
+        }
+    )
+
+    runtime = (
+        build_default_agent_execution_router(
+            client
+        )
+    )
+
+    from factory.agents.runtime import (
+        build_default_agent_descriptors,
+    )
+
+    descriptors = (
+        build_default_agent_descriptors(
+            runtime.provider_registry
+        )
+    )
+
+    registry_names = set(
+        runtime.provider_registry.names()
+    )
+    descriptor_providers = {
+        item.provider_name
+        for item in descriptors
+    }
+
+    assert descriptor_providers == (
+        registry_names
+    )
+    assert "ollama" in descriptor_providers
+    assert "model_client" in (
+        descriptor_providers
+    )
