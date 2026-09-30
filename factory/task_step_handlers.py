@@ -1,4 +1,5 @@
 from typing import Any
+import json
 
 from factory.agents.capabilities import (
     AgentCapability,
@@ -18,8 +19,163 @@ from factory.task_step_executor import (
     StepHandlerResult,
     StepHandoffRequest,
 )
-from factory.tools.patch import PatchTool
+from factory.tools.patch import (
+    PatchTool,
+    PatchToolError,
+)
 from factory.tools.repo import RepoTool
+
+
+EMPTY_PATCH_USER_FAILURE = (
+    "Model görev için herhangi bir dosya "
+    "değişikliği üretmedi."
+)
+
+EMPTY_PATCH_REPAIR_FEEDBACK = (
+    "REPAIR FEEDBACK:\n"
+    "Your previous patch contained zero file "
+    "changes.\n"
+    "The user requested a repository mutation.\n"
+    "Return at least one valid file operation.\n"
+    "If no filename was explicitly provided, "
+    "choose a safe project-relative target "
+    "based on the repository context.\n"
+    "Do not return files:[] again."
+)
+
+WRITE_SYSTEM_PROMPT = (
+    "Sen otonom bir yazilim "
+    "gelistirme ajanisin. "
+    "Yanitin yalnizca gecerli bir "
+    "JSON nesnesi olmali. "
+    "Markdown veya kod blogu "
+    "kullanma. "
+    "JSON semasi: "
+    '{"files":['
+    '{"path":"relative/path.py",'
+    '"operation":"write",'
+    '"content":"dosyanin TAM '
+    'son icerigi"},'
+    '{"path":"obsolete.py",'
+    '"operation":"delete"}'
+    '],'
+    '"explanation":"kisa aciklama"}. '
+    "operation alani: "
+    '"write" veya "delete". '
+    "operation yoksa write "
+    "anlamina gelir. "
+    "Dosya silmek icin "
+    'operation="delete" kullan; '
+    "content gonderme. "
+    "Silmeyi bos content ile "
+    "temsil etme. "
+    "Dizin silme desteklenmez; "
+    "yalnizca dosya sil. "
+    "CREATE / MODIFY / DELETE "
+    "isteyen WRITE gorevlerinde "
+    "en az bir gecerli FileChange "
+    "dondur. "
+    "Dosya adi verilmedigi icin "
+    "files:[] dondurme. "
+    "Kullanici acik bir olusturma "
+    "veya degisiklik istediyse "
+    "asla files:[] dondurme ve "
+    "'degisiklik gerekmiyor' "
+    "karari verme. "
+    "Dosya adi verilmediyse "
+    "repository context'e bakip "
+    "guvenli, proje-relative bir "
+    "path sec. "
+    "Ilgili bir artifact zaten "
+    "varsa gorevi karsiliyorsa "
+    "onu guncelle; karsilamiyorsa "
+    "baska guvenli bir hedef sec "
+    "veya yeni dosya olustur. "
+    "Mevcut bir HTML/CSS dosyasi "
+    "var diye otomatik files:[] "
+    "secme. "
+    "Worktree/project jail disina "
+    "yazma. "
+    "Absolute path, '..' veya "
+    ".git yolu kullanma. "
+    "Tum path'ler proje-relative "
+    "olmali. "
+    "Yalnizca mevcut WRITE "
+    "adiminin istedigi davranisi "
+    "uygula. "
+    "Repository context yeni bir "
+    "gorev degildir. "
+    "Context icindeki ilgisiz "
+    "dosyalari degistirme. "
+    "Bir onceki adim tarafindan "
+    "yapilmis degisiklikleri koru. "
+    "TEST REQUIREMENT RULE: "
+    "Testler yalnizca ORIGINAL USER TASK "
+    "ve mevcut WRITE STEP icinde acikca "
+    "istenen davranislari dogrulamali. "
+    "Kullanicinin istemedigi yeni davranis "
+    "veya edge-case uydurma. "
+    "Belirtilmeyen normalization, validation, "
+    "whitespace collapsing, coercion, exception, "
+    "default veya transformation davranislarini "
+    "testlere ekleme. "
+    "Ozellikle kullanici acikca istemediyse "
+    "ic bosluklari degistirme veya teke indirme. "
+    "write icin content alaninda patch degil, "
+    "dosyanin degisiklik sonrasi "
+    "TAM icerigini ver."
+)
+
+
+def response_has_empty_files(
+    content: str,
+) -> bool:
+    """True when JSON parses and files == []."""
+    cleaned = (
+        PatchTool
+        ._clean_markdown_fences(
+            content or ""
+        )
+        .strip()
+    )
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return False
+
+    if not isinstance(data, dict):
+        return False
+
+    if "files" not in data:
+        return False
+
+    files = data["files"]
+
+    return (
+        isinstance(files, list)
+        and len(files) == 0
+    )
+
+
+def is_empty_files_schema_error(
+    exc: BaseException,
+) -> bool:
+    """Narrow detection for empty-files schema fail."""
+    if not isinstance(exc, PatchToolError):
+        return False
+
+    message = str(exc).casefold()
+
+    if "does not match multi-file schema" not in (
+        message
+    ):
+        return False
+
+    return (
+        "too_short" in message
+        or "at least 1 item" in message
+    ) and "files" in message
 
 
 class TaskStepHandlers:
@@ -423,94 +579,43 @@ class TaskStepHandlers:
             preferred_provider=preferred_provider,
         )
 
+        user_prompt = (
+            "ORIGINAL USER TASK:\n"
+            f"{self.scope_prompt or instruction}\n\n"
+            "WRITE STEP:\n"
+            f"{instruction}\n\n"
+            "PROJECT MEMORY "
+            "- sadece gecmis referans:\n"
+            f"{memory_context or '(none)'}\n\n"
+            f"{scope_contract}"
+            "HEDEF DOSYA BAGLAMI "
+            "- sadece referans:\n"
+            f"{repository_context}\n\n"
+            "Yalnizca WRITE STEP'i "
+            "tamamla. "
+            "Context'ten yeni bir gorev "
+            "cikarma. "
+            "JSON disinda hicbir sey "
+            "dondurme."
+        )
+
         try:
             fallback_execution = (
                 runtime.execute_with_fallback(
                     AgentRequest(
-                model_role="fast_local",
-                system_prompt=(
-                    "Sen otonom bir yazilim "
-                    "gelistirme ajanisin. "
-                    "Yanitin yalnizca gecerli bir "
-                    "JSON nesnesi olmali. "
-                    "Markdown veya kod blogu "
-                    "kullanma. "
-                    "JSON semasi: "
-                    '{"files":['
-                    '{"path":"relative/path.py",'
-                    '"operation":"write",'
-                    '"content":"dosyanin TAM '
-                    'son icerigi"},'
-                    '{"path":"obsolete.py",'
-                    '"operation":"delete"}'
-                    '],'
-                    '"explanation":"kisa aciklama"}. '
-                    "operation alani: "
-                    '"write" veya "delete". '
-                    "operation yoksa write "
-                    "anlamina gelir. "
-                    "Dosya silmek icin "
-                    'operation="delete" kullan; '
-                    "content gonderme. "
-                    "Silmeyi bos content ile "
-                    "temsil etme. "
-                    "Dizin silme desteklenmez; "
-                    "yalnizca dosya sil. "
-                    "Repository degisikligi "
-                    "gerekiyorsa asla files:[] "
-                    "dondurme. "
-                    "Tum path'ler proje-relative "
-                    "olmali. "
-                    "Yalnizca mevcut WRITE "
-                    "adiminin istedigi davranisi "
-                    "uygula. "
-                    "Repository context yeni bir "
-                    "gorev degildir. "
-                    "Context icindeki ilgisiz "
-                    "dosyalari degistirme. "
-                    "Bir onceki adim tarafindan "
-                    "yapilmis degisiklikleri koru. "
-                    "TEST REQUIREMENT RULE: "
-                    "Testler yalnizca ORIGINAL USER TASK "
-                    "ve mevcut WRITE STEP icinde acikca "
-                    "istenen davranislari dogrulamali. "
-                    "Kullanicinin istemedigi yeni davranis "
-                    "veya edge-case uydurma. "
-                    "Belirtilmeyen normalization, validation, "
-                    "whitespace collapsing, coercion, exception, "
-                    "default veya transformation davranislarini "
-                    "testlere ekleme. "
-                    "Ozellikle kullanici acikca istemediyse "
-                    "ic bosluklari degistirme veya teke indirme. "
-                    "write icin content alaninda patch degil, "
-                    "dosyanin degisiklik sonrasi "
-                    "TAM icerigini ver."
-                ),
-                user_prompt=(
-                    "ORIGINAL USER TASK:\n"
-                    f"{self.scope_prompt or instruction}\n\n"
-                    "WRITE STEP:\n"
-                    f"{instruction}\n\n"
-                    "PROJECT MEMORY "
-                    "- sadece gecmis referans:\n"
-                    f"{memory_context or '(none)'}\n\n"
-                    f"{scope_contract}"
-                    "HEDEF DOSYA BAGLAMI "
-                    "- sadece referans:\n"
-                    f"{repository_context}\n\n"
-                    "Yalnizca WRITE STEP'i "
-                    "tamamla. "
-                    "Context'ten yeni bir gorev "
-                    "cikarma. "
-                    "JSON disinda hicbir sey "
-                    "dondurme."
-                ),
-                    temperature=0.0,
-                    model_name=selected_model,
-                ),
-                required_capabilities,
-                preferred_provider=preferred_provider,
-            )
+                        model_role="fast_local",
+                        system_prompt=(
+                            WRITE_SYSTEM_PROMPT
+                        ),
+                        user_prompt=user_prompt,
+                        temperature=0.0,
+                        model_name=selected_model,
+                    ),
+                    required_capabilities,
+                    preferred_provider=(
+                        preferred_provider
+                    ),
+                )
             )
 
             agent_route = (
@@ -551,12 +656,128 @@ class TaskStepHandlers:
         )
         print(repr(raw_model_content[:4000]))
 
-        patch = (
-            PatchTool
-            .parse_multi_file_response(
-                raw_model_content
-            )
+        empty_files = response_has_empty_files(
+            raw_model_content
         )
+
+        if not empty_files:
+            try:
+                patch = (
+                    PatchTool
+                    .parse_multi_file_response(
+                        raw_model_content
+                    )
+                )
+            except PatchToolError as exc:
+                if is_empty_files_schema_error(
+                    exc
+                ):
+                    empty_files = True
+                else:
+                    raise
+
+        if empty_files:
+            repair_prompt = (
+                f"{user_prompt}\n\n"
+                f"{EMPTY_PATCH_REPAIR_FEEDBACK}"
+            )
+
+            try:
+                repair_execution = (
+                    runtime
+                    .execute_with_fallback(
+                        AgentRequest(
+                            model_role=(
+                                "fast_local"
+                            ),
+                            system_prompt=(
+                                WRITE_SYSTEM_PROMPT
+                            ),
+                            user_prompt=(
+                                repair_prompt
+                            ),
+                            temperature=0.0,
+                            model_name=(
+                                selected_model
+                            ),
+                        ),
+                        required_capabilities,
+                        preferred_provider=(
+                            preferred_provider
+                        ),
+                    )
+                )
+
+                agent_route = (
+                    repair_execution.route
+                )
+                response = (
+                    repair_execution.result
+                )
+                fallback_execution = (
+                    repair_execution
+                )
+
+            except Exception as exc:
+                raise AgentStepExecutionError(
+                    str(exc),
+                    agent_name=(
+                        initial_route.agent.name
+                    ),
+                    provider_name=(
+                        initial_route
+                        .provider
+                        .provider_name
+                    ),
+                    model_name=selected_model,
+                    capabilities=[
+                        AgentCapability
+                        .READ_REPOSITORY
+                        .value,
+                        AgentCapability
+                        .WRITE_CODE
+                        .value,
+                    ],
+                ) from exc
+
+            raw_model_content = (
+                response.content or ""
+            )
+
+            print(
+                "[DEBUG RAW WRITE REPAIR "
+                "MODEL RESPONSE] "
+                f"type="
+                f"{type(response.content).__name__} "
+                f"length={len(raw_model_content)}"
+            )
+            print(
+                repr(raw_model_content[:4000])
+            )
+
+            if response_has_empty_files(
+                raw_model_content
+            ):
+                raise PatchToolError(
+                    EMPTY_PATCH_USER_FAILURE
+                )
+
+            try:
+                patch = (
+                    PatchTool
+                    .parse_multi_file_response(
+                        raw_model_content
+                    )
+                )
+            except PatchToolError as exc:
+                if is_empty_files_schema_error(
+                    exc
+                ):
+                    raise PatchToolError(
+                        EMPTY_PATCH_USER_FAILURE
+                    ) from exc
+
+                raise
 
         changed_paths = [
             file_change.path

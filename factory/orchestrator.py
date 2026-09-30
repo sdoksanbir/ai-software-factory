@@ -77,7 +77,12 @@ class Orchestrator:
 
     @staticmethod
     def _extract_explicit_file_targets(prompt: str) -> list[str]:
-        pattern = r"(?<![\w.-])([\w./\\-]+\.(?:py|js|jsx|ts|tsx|json|yaml|yml|txt|md|rst|csv))(?![\w.-])"
+        pattern = (
+            r"(?<![\w.-])([\w./\\-]+\.(?:"
+            r"py|js|jsx|ts|tsx|json|yaml|yml|"
+            r"txt|md|rst|csv|html|htm|css|scss"
+            r"))(?![\w.-])"
+        )
 
         matches = re.findall(
             pattern,

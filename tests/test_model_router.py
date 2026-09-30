@@ -92,3 +92,48 @@ def test_empty_prompt_rejected():
     raise AssertionError(
         "Bos prompt ValueError vermeliydi."
     )
+
+
+def test_html_prototype_prefers_coder_model():
+    route = route_model(
+        "bana statik bir HTML tasarim prototipi yap",
+        AVAILABLE,
+    )
+
+    assert route.code_score > 0
+    assert route.model == CODER_MODEL
+    assert route.profile == "coder_local"
+
+
+def test_bootstrap_dashboard_prefers_coder_model():
+    route = route_model(
+        "Bootstrap ile dashboard olustur",
+        AVAILABLE,
+    )
+
+    assert route.code_score > 0
+    assert route.model == CODER_MODEL
+
+
+def test_css_page_edit_prefers_coder_model():
+    route = route_model(
+        "CSS ile sayfayi duzenle",
+        AVAILABLE,
+    )
+
+    assert route.code_score > 0
+    assert route.model == CODER_MODEL
+
+
+def test_prose_design_talk_stays_fast_model():
+    route = route_model(
+        (
+            "Bu tasarim felsefesini kisaca "
+            "tartis ve ozetle."
+        ),
+        AVAILABLE,
+    )
+
+    assert route.model == FAST_MODEL
+    assert route.profile == "fast_local"
+    assert route.code_score == 0

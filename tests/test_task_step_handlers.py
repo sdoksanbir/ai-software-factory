@@ -494,6 +494,12 @@ def test_write_prompt_guards_against_invented_requirements():
     assert '"operation":"write"' in source
     assert '"operation":"delete"' in source
     assert "files:[]" in source
+    assert "WRITE_SYSTEM_PROMPT" in source
+    assert "EMPTY_PATCH_REPAIR_FEEDBACK" in source
+    assert "Dosya adi verilmedigi icin " in source
+    assert "files:[] dondurme. " in source
+    assert "guvenli, proje-relative bir " in source
+    assert "path sec. " in source
 
 
 def test_write_applies_delete_operation(

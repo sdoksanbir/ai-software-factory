@@ -59,6 +59,13 @@ _CODE_PATTERNS = (
     r"\bekle\b",
     r"\bsil\b",
     r"\bdegistir\b",
+    r"\bhtml\b",
+    r"\bcss\b",
+    r"\bscss\b",
+    r"\bbootstrap\b",
+    r"\bweb\s*page\b",
+    r"\bweb\s*interface\b",
+    r"\bweb\s*sayfa",
     r"\.py\b",
     r"\.ts\b",
     r"\.tsx\b",
@@ -67,6 +74,7 @@ _CODE_PATTERNS = (
     r"\.json\b",
     r"\.css\b",
     r"\.html\b",
+    r"\.scss\b",
 )
 
 
@@ -101,6 +109,17 @@ def _code_score(prompt: str) -> int:
     for pattern in _CODE_PATTERNS:
         if re.search(pattern, normalized):
             score += 1
+
+    # Prototype paired with markup/style is an
+    # implementation signal, not prose design talk.
+    if re.search(
+        r"\bprotot",
+        normalized,
+    ) and re.search(
+        r"\b(?:html|css|scss|bootstrap)\b",
+        normalized,
+    ):
+        score += 1
 
     # Kod bloklari veya shell benzeri komutlar kuvvetli sinyaldir.
     if "```" in prompt:
