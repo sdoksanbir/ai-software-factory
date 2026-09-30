@@ -364,7 +364,7 @@ def test_read_dispatches_to_run_read_task(
     assert cleanups == []
 
 
-def test_execute_dispatches_to_run_execute_task(
+def test_execute_dispatches_to_agent_terminal_loop(
     monkeypatch,
 ):
     task = _task(
@@ -373,7 +373,8 @@ def test_execute_dispatches_to_run_execute_task(
     deps, logs, updates, cleanups, orch = (
         _deps(task=task)
     )
-    execute_calls = []
+    terminal_calls = []
+    legacy_calls = []
 
     monkeypatch.setattr(
         "factory.task_execution_service."
@@ -400,15 +401,35 @@ def test_execute_dispatches_to_run_execute_task(
         "get_task_model_preference",
         lambda *a, **k: None,
     )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "route_model",
+        lambda prompt: SimpleNamespace(
+            model="agent-model",
+            profile="code",
+            reason="selected for execute",
+            code_score=1,
+        ),
+    )
 
-    def fake_execute(**kwargs):
-        execute_calls.append(kwargs)
-        return "EXECUTE OK"
+    def fake_terminal(**kwargs):
+        terminal_calls.append(kwargs)
+        return SimpleNamespace(
+            status="completed",
+            summary="EXECUTE OK",
+            reason="done",
+            steps_used=2,
+            commands_executed=1,
+            successful_commands=1,
+            failed_commands=0,
+            rejected_commands=0,
+            last_observation=None,
+        )
 
     monkeypatch.setattr(
         "factory.task_execution_service."
-        "run_execute_task",
-        fake_execute,
+        "run_agent_terminal_loop",
+        fake_terminal,
     )
     monkeypatch.setattr(
         "factory.task_execution_service."
@@ -416,23 +437,130 @@ def test_execute_dispatches_to_run_execute_task(
         lambda *a, **k: None,
     )
 
+    # Legacy runner must not be imported/called.
+    import factory.execute_task_runner as legacy
+
+    monkeypatch.setattr(
+        legacy,
+        "run_execute_task",
+        lambda **kwargs: legacy_calls.append(kwargs),
+    )
+
     result = TaskExecutionService(
         deps
     ).run(task.task_id)
 
     assert result is None
-    assert len(execute_calls) == 1
-    assert execute_calls[0][
-        "project_path"
-    ] == orch.project_path
-    assert execute_calls[0][
-        "intent"
-    ] == "package_install"
+    assert legacy_calls == []
+    assert len(terminal_calls) == 1
+    call = terminal_calls[0]
+    assert call["project_path"] == orch.project_path
+    assert call["task_id"] == task.task_id
+    assert call["prompt"] == task.prompt
+    assert call["model_route"].model == "agent-model"
+    assert call["model_client"] is orch.model_client
+    assert call["policy"].allow_mutating is True
+    assert call["route_context"].intent == (
+        "package_install"
+    )
     assert any(
-        kwargs.get("model")
-        == "local-executor"
+        kwargs.get("model") == "agent-model"
         for _tid, kwargs in updates
     )
+    assert any(
+        "Agent Terminal Model: agent-model" in message
+        for _tid, message in logs
+    )
+    assert any(
+        message == "Agent Terminal baslatildi."
+        for _tid, message in logs
+    )
+    assert any(
+        "Agent Terminal tamamlandi:" in message
+        for _tid, message in logs
+    )
+    assert (
+        task.task_id,
+        {
+            "status": "completed",
+            "state": "completed",
+            "test_result": "not_required",
+        },
+    ) in updates
+
+
+def test_execute_terminal_stalled_marks_failed(
+    monkeypatch,
+):
+    task = _task(prompt="run checks")
+    deps, logs, updates, cleanups, orch = (
+        _deps(task=task)
+    )
+
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "route_task_semantic",
+        lambda prompt, **kwargs: (
+            SimpleNamespace(
+                kind="execute",
+                reason="execute path",
+                intent="check",
+                target=None,
+                framework=None,
+                confidence=0.9,
+                source="test",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "save_task_route",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "get_task_model_preference",
+        lambda *a, **k: "manual-model",
+    )
+
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "run_agent_terminal_loop",
+        lambda **kwargs: SimpleNamespace(
+            status="stalled",
+            summary="stuck",
+            reason="stall_identical_command",
+            steps_used=3,
+            commands_executed=2,
+            successful_commands=0,
+            failed_commands=2,
+            rejected_commands=0,
+            last_observation=None,
+        ),
+    )
+
+    result = TaskExecutionService(
+        deps
+    ).run(task.task_id)
+
+    assert result is None
+    assert any(
+        kwargs.get("model") == "manual-model"
+        for _tid, kwargs in updates
+    )
+    assert (
+        task.task_id,
+        {
+            "status": "failed",
+            "state": "failed",
+        },
+    ) in updates
+    assert any(
+        "Agent Terminal stalled: "
+        "stall_identical_command" in message
+        for _tid, message in logs
+    )
+    assert cleanups == []
 
 
 def test_write_failure_cleans_up_and_marks_failed(

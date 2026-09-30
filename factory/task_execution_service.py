@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
-from factory.execute_task_runner import (
-    run_execute_task,
+from factory.agent_terminal_loop import (
+    run_agent_terminal_loop,
+)
+from factory.agent_terminal_models import (
+    AgentTerminalRouteContext,
+    build_execute_terminal_policy,
 )
 from factory.model_router import (
     ModelRoute,
@@ -62,8 +66,8 @@ class TaskExecutionService:
 
     Dispatches to structured runners
     (execute_write_task / run_read_task /
-    run_execute_task). Does not call
-    Orchestrator.run_task().
+    Agent Terminal Loop for execute). Does not
+    call Orchestrator.run_task().
     """
 
     def __init__(
@@ -240,23 +244,7 @@ class TaskExecutionService:
             )
         )
 
-        if task_route.kind == "execute":
-            model_route = ModelRoute(
-                model="local-executor",
-                profile="execute",
-                reason=(
-                    "Deterministik yerel eylem "
-                    "calistiricisi secildi."
-                ),
-                code_score=0,
-            )
-
-            selection_log = (
-                "Execution Router: local-executor - "
-                "Model cagrisi gerekmiyor."
-            )
-
-        elif requested_model:
+        if requested_model:
             model_route = ModelRoute(
                 model=requested_model,
                 profile="manual",
@@ -267,20 +255,34 @@ class TaskExecutionService:
                 code_score=0,
             )
 
-            selection_log = (
-                "Manuel Model: "
-                f"{model_route.model}"
-            )
+            if task_route.kind == "execute":
+                selection_log = (
+                    "Agent Terminal Model: "
+                    f"{model_route.model} - "
+                    f"{model_route.reason}"
+                )
+            else:
+                selection_log = (
+                    "Manuel Model: "
+                    f"{model_route.model}"
+                )
         else:
             model_route = route_model(
                 task.prompt,
             )
 
-            selection_log = (
-                "Model Router: "
-                f"{model_route.model} - "
-                f"{model_route.reason}"
-            )
+            if task_route.kind == "execute":
+                selection_log = (
+                    "Agent Terminal Model: "
+                    f"{model_route.model} - "
+                    f"{model_route.reason}"
+                )
+            else:
+                selection_log = (
+                    "Model Router: "
+                    f"{model_route.model} - "
+                    f"{model_route.reason}"
+                )
 
         self._deps.update_runtime(
             task_id,
@@ -322,6 +324,7 @@ class TaskExecutionService:
                 task_id,
                 task,
                 task_route,
+                model_route,
                 orchestrator,
             )
 
@@ -346,46 +349,124 @@ class TaskExecutionService:
         task_id: str,
         task: Any,
         task_route: Any,
+        model_route: Any,
         orchestrator: Any,
     ):
         try:
             self._deps.append_log(
                 task_id,
-                "EXECUTE gorevi calistiriliyor.",
+                "Agent Terminal baslatildi.",
             )
 
-            execute_result = run_execute_task(
-                project_path=orchestrator.project_path,
-                prompt=task.prompt,
-                intent=task_route.intent,
-                target=task_route.target,
-                framework=task_route.framework,
+            policy = (
+                build_execute_terminal_policy()
+            )
+            route_context = (
+                AgentTerminalRouteContext(
+                    intent=getattr(
+                        task_route,
+                        "intent",
+                        None,
+                    ),
+                    target=getattr(
+                        task_route,
+                        "target",
+                        None,
+                    ),
+                    framework=getattr(
+                        task_route,
+                        "framework",
+                        None,
+                    ),
+                )
             )
 
-            save_task_read_result(
-                task_id,
-                execute_result,
+            loop_result = (
+                run_agent_terminal_loop(
+                    project_path=(
+                        orchestrator.project_path
+                    ),
+                    task_id=task_id,
+                    prompt=task.prompt,
+                    model_route=model_route,
+                    model_client=(
+                        orchestrator.model_client
+                    ),
+                    policy=policy,
+                    route_context=route_context,
+                )
             )
+
+            if loop_result.status == "completed":
+                summary = (
+                    loop_result.summary
+                    or loop_result.reason
+                )
+
+                save_task_read_result(
+                    task_id,
+                    summary,
+                )
+
+                self._deps.update_runtime(
+                    task_id,
+                    status="completed",
+                    state="completed",
+                    test_result="not_required",
+                )
+
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "Agent Terminal tamamlandi: "
+                        f"{summary}"
+                    ),
+                )
+
+                self._release_and_run_dependents(
+                    task_id
+                )
+
+                return
+
+            reason = (
+                loop_result.reason
+                or loop_result.summary
+                or loop_result.status
+            )
+
+            if loop_result.status == "stalled":
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "Agent Terminal stalled: "
+                        f"{reason}"
+                    ),
+                )
+            elif (
+                loop_result.status
+                == "budget_exceeded"
+            ):
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "Agent Terminal basarisiz: "
+                        f"budget_exceeded: {reason}"
+                    ),
+                )
+            else:
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "Agent Terminal basarisiz: "
+                        f"{reason}"
+                    ),
+                )
 
             self._deps.update_runtime(
                 task_id,
-                status="completed",
-                state="completed",
-                test_result="not_required",
-            )
-
-            self._deps.append_log(
-                task_id,
-                execute_result,
-            )
-
-            self._deps.append_log(
-                task_id,
-                "EXECUTE gorevi tamamlandi.",
-            )
-
-            self._release_and_run_dependents(
-                task_id
+                status="failed",
+                state="failed",
             )
 
             return
@@ -394,7 +475,7 @@ class TaskExecutionService:
             self._deps.append_log(
                 task_id,
                 (
-                    "EXECUTE gorevi basarisiz: "
+                    "Agent Terminal basarisiz: "
                     f"{exc}"
                 ),
             )

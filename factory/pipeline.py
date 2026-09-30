@@ -355,24 +355,52 @@ def _build_execute_task_pipeline(
         "Task Router: EXECUTE",
     )
 
-    execution_routed = _contains(
-        log_items,
-        "Execution Router:",
+    execution_routed = (
+        _contains(
+            log_items,
+            "Execution Router:",
+        )
+        or _contains(
+            log_items,
+            "Agent Terminal Model:",
+        )
     )
 
-    execute_started = _contains(
-        log_items,
-        "EXECUTE gorevi calistiriliyor",
+    execute_started = (
+        _contains(
+            log_items,
+            "EXECUTE gorevi calistiriliyor",
+        )
+        or _contains(
+            log_items,
+            "Agent Terminal baslatildi",
+        )
     )
 
-    execute_completed = _contains(
-        log_items,
-        "EXECUTE gorevi tamamlandi",
+    execute_completed = (
+        _contains(
+            log_items,
+            "EXECUTE gorevi tamamlandi",
+        )
+        or _contains(
+            log_items,
+            "Agent Terminal tamamlandi",
+        )
     )
 
-    execute_failed = _contains(
-        log_items,
-        "EXECUTE gorevi basarisiz",
+    execute_failed = (
+        _contains(
+            log_items,
+            "EXECUTE gorevi basarisiz",
+        )
+        or _contains(
+            log_items,
+            "Agent Terminal basarisiz",
+        )
+        or _contains(
+            log_items,
+            "Agent Terminal stalled",
+        )
     )
 
     if (

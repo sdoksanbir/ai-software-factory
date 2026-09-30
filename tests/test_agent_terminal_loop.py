@@ -1,0 +1,1464 @@
+"""Agent Terminal Loop unit and acceptance tests."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+from factory.agent_terminal_loop import (
+    command_fingerprint,
+    run_agent_terminal_loop,
+)
+from factory.agent_terminal_models import (
+    AgentTerminalPolicy,
+    build_execute_terminal_policy,
+)
+from factory.task_command_models import (
+    NetworkPolicy,
+    PermissionLevel,
+    TaskCommandPolicyError,
+    TaskCommandRequest,
+    TaskCommandResult,
+    TaskCommandSandboxRuntimeError,
+)
+from factory.task_command_runner import (
+    run_task_command,
+)
+from factory.task_command_store import (
+    init_task_command_store,
+    list_task_commands,
+)
+
+
+class ScriptedDecider:
+    def __init__(self, scripts: list[str]):
+        self.scripts = list(scripts)
+        self.calls: list[dict] = []
+
+    def __call__(self, **kwargs) -> str:
+        self.calls.append(kwargs)
+        if not self.scripts:
+            raise RuntimeError("No scripted decisions left")
+        return self.scripts.pop(0)
+
+
+def _action(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _success_result(
+    *,
+    argv: list[str],
+    cwd: str = ".",
+    command_id: str = "cmd-ok",
+) -> TaskCommandResult:
+    return TaskCommandResult(
+        command_id=command_id,
+        task_id="TASK-T",
+        argv=argv,
+        cwd=cwd,
+        permission_level=PermissionLevel.EXECUTE_SAFE.value,
+        started_at="t0",
+        finished_at="t1",
+        duration_ms=5,
+        exit_code=0,
+        stdout="ok",
+        stderr="",
+        status="succeeded",
+        execution_boundary="HOST_SAFE",
+        network_policy=NetworkPolicy.NETWORK_NONE.value,
+    )
+
+
+def _failed_result(
+    *,
+    argv: list[str],
+    cwd: str = ".",
+    command_id: str = "cmd-fail",
+) -> TaskCommandResult:
+    return TaskCommandResult(
+        command_id=command_id,
+        task_id="TASK-T",
+        argv=argv,
+        cwd=cwd,
+        permission_level=PermissionLevel.EXECUTE_SAFE.value,
+        started_at="t0",
+        finished_at="t1",
+        duration_ms=5,
+        exit_code=1,
+        stdout="",
+        stderr="boom",
+        status="failed",
+        execution_boundary="HOST_SAFE",
+        network_policy=NetworkPolicy.NETWORK_NONE.value,
+    )
+
+
+def test_happy_path_complete_after_success():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        return _success_result(argv=list(req.argv))
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": ["python", "--version"],
+                    "cwd": None,
+                    "reason": "inspect",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "command succeeded",
+                    "summary": "Python is available.",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-1",
+        prompt="Inspect Python and finish.",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert result.commands_executed == 1
+    assert result.successful_commands == 1
+    assert len(runner_calls) == 1
+    request = runner_calls[0]["request"]
+    assert isinstance(request, TaskCommandRequest)
+    assert request.allow_mutating is False
+    assert request.env == {}
+    assert request.secret_env_keys == []
+    assert "allow_mutating" not in decider.calls[0][
+        "user_prompt"
+    ]
+
+
+def test_observe_then_adapt_includes_observation():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        if req.argv == ["missing-tool"]:
+            return _failed_result(argv=list(req.argv))
+        return _success_result(argv=list(req.argv))
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": ["missing-tool"],
+                    "cwd": None,
+                    "reason": "try",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": ["python", "--version"],
+                    "cwd": None,
+                    "reason": "fallback",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "ok",
+                    "summary": "done",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-2",
+        prompt="adapt",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 2
+    assert "missing-tool" in decider.calls[1]["user_prompt"]
+    assert "boom" in decider.calls[1]["user_prompt"]
+
+
+def test_dangerous_command_rejected_and_bounded():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        raise TaskCommandPolicyError(
+            "DANGEROUS komut reddedildi."
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": ["python", "-c", "print(1)"],
+                "cwd": None,
+                "reason": "bad",
+            }
+        )
+        for _ in range(6)
+    ]
+    decider = ScriptedDecider(scripts)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-3",
+        prompt="dangerous",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "stalled"
+    assert result.reason in {
+        "stall_identical_command",
+        "stall_repeated_failure",
+        "max_consecutive_command_failures",
+    }
+    # Rejections never execute; identical/repeated
+    # still consume fingerprint budget.
+    assert len(runner_calls) == 2
+    assert all(
+        call["request"].allow_mutating is True
+        for call in runner_calls
+    )
+
+
+def test_mutating_authority_is_controller_owned():
+    seen: list[bool] = []
+
+    def fake_runner(**kwargs):
+        seen.append(kwargs["request"].allow_mutating)
+        raise TaskCommandPolicyError(
+            "EXECUTE_MUTATING komut icin "
+            "allow_mutating=True gerekli."
+        )
+
+    blocked = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-4a",
+        prompt="pip",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_consecutive_command_failures=1,
+        ),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            "pip",
+                            "install",
+                            "six",
+                        ],
+                        "cwd": None,
+                        "reason": "deps",
+                    }
+                )
+            ]
+        ),
+    )
+    assert blocked.status == "stalled"
+    assert seen == [False]
+
+    seen.clear()
+
+    def allow_runner(**kwargs):
+        seen.append(kwargs["request"].allow_mutating)
+        return _success_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    allowed = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-4b",
+        prompt="pip",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=allow_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            "pip",
+                            "install",
+                            "six",
+                        ],
+                        "cwd": None,
+                        "reason": "deps",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "installed",
+                        "summary": "ok",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert allowed.status == "completed"
+    assert seen == [True]
+
+
+def test_identical_command_stall_skips_third():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        return _failed_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": ["python", "bad.py"],
+                "cwd": None,
+                "reason": "retry",
+            }
+        )
+        for _ in range(5)
+    ]
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-5",
+        prompt="stall",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(scripts),
+    )
+
+    assert result.status == "stalled"
+    assert result.reason in {
+        "stall_identical_command",
+        "stall_repeated_failure",
+    }
+    assert len(runner_calls) == 2
+
+
+def test_oscillation_stall():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        return _failed_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    scripts = []
+    for argv in (
+        ["cmd-a"],
+        ["cmd-b"],
+        ["cmd-a"],
+        ["cmd-b"],
+        ["cmd-a"],
+        ["cmd-b"],
+        ["cmd-a"],
+    ):
+        scripts.append(
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": argv,
+                    "cwd": None,
+                    "reason": "osc",
+                }
+            )
+        )
+
+    # Raise consecutive failure / identical limits so
+    # oscillation is the terminating reason. ABABAB
+    # repeats each fingerprint three times.
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-6",
+        prompt="osc",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_consecutive_command_failures=99,
+            max_identical_command_executions=3,
+        ),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(scripts),
+    )
+
+    assert result.status == "stalled"
+    assert result.reason == "stall_oscillation"
+    assert len(runner_calls) == 6
+
+
+def test_complete_without_evidence_rejected():
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "done",
+                    "summary": "no evidence",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "done again",
+                    "summary": "still no",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "done third",
+                    "summary": "again",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-7",
+        prompt="complete early",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_consecutive_invalid_actions=3,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=decider,
+    )
+
+    assert result.status == "budget_exceeded"
+    assert (
+        result.reason
+        == "max_consecutive_invalid_actions"
+    )
+    assert "successful command" in decider.calls[1][
+        "user_prompt"
+    ]
+
+
+def test_complete_after_failure_then_success():
+    def fake_runner(**kwargs):
+        argv = list(kwargs["request"].argv)
+        if argv == ["bad"]:
+            return _failed_result(argv=argv)
+        return _success_result(argv=argv)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-8",
+        prompt="recover",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["bad"],
+                        "cwd": None,
+                        "reason": "fail first",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "too soon",
+                        "summary": "nope",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["good"],
+                        "cwd": None,
+                        "reason": "recover",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "now ok",
+                        "summary": "done",
+                    }
+                ),
+            ]
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.successful_commands == 1
+    assert result.failed_commands == 1
+
+
+def test_max_agent_steps_budget():
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-9",
+        prompt="budget",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_agent_steps=2,
+            max_consecutive_invalid_actions=99,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "a",
+                        "summary": "a",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "b",
+                        "summary": "b",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "c",
+                        "summary": "c",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "budget_exceeded"
+    assert result.reason == "max_agent_steps"
+    assert result.steps_used == 2
+
+
+def test_provider_decision_failures_bounded():
+    def boom(**kwargs):
+        raise RuntimeError("provider down")
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-10",
+        prompt="provider",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_provider_decision_failures=3,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=boom,
+    )
+    assert result.status == "failed"
+    assert (
+        result.reason
+        == "max_provider_decision_failures"
+    )
+    assert "provider down" not in result.summary
+    assert "provider down" not in result.reason
+
+
+def test_wall_clock_budget_with_injectable_clock():
+    ticks = iter([0.0, 0.0, 1000.0])
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-11",
+        prompt="clock",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_wall_clock_seconds=10,
+            max_consecutive_invalid_actions=99,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "x",
+                        "summary": "x",
+                    }
+                )
+            ]
+        ),
+        clock=lambda: next(ticks),
+    )
+    assert result.status == "budget_exceeded"
+    assert result.reason == "max_wall_clock_seconds"
+
+
+def test_wall_clock_discards_provider_action_after_deadline():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        return _success_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    # start=0, pre-decide wall=0, post-decide wall=100
+    ticks = iter([0.0, 0.0, 100.0])
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-WC-LATE",
+        prompt="late action",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_wall_clock_seconds=10,
+            command_timeout_seconds=180,
+        ),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["python", "--version"],
+                        "cwd": None,
+                        "reason": "should not run",
+                    }
+                )
+            ]
+        ),
+        clock=lambda: next(ticks),
+    )
+
+    assert result.status == "budget_exceeded"
+    assert result.reason == "max_wall_clock_seconds"
+    assert runner_calls == []
+
+
+def test_wall_clock_reduces_command_timeout():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        return _success_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    # start=0, loop wall=1, post-provider=1,
+    # remaining before command ≈ 10-5 = 5
+    timeline = [0.0, 1.0, 1.0, 5.0]
+    index = {"i": 0}
+
+    def clock() -> float:
+        i = index["i"]
+        index["i"] = min(i + 1, len(timeline) - 1)
+        return timeline[i]
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-WC-TIMEOUT",
+        prompt="reduce timeout",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_wall_clock_seconds=10,
+            command_timeout_seconds=180,
+        ),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["python", "--version"],
+                        "cwd": None,
+                        "reason": "inspect",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "ok",
+                        "summary": "done",
+                    }
+                ),
+            ]
+        ),
+        clock=clock,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 1
+    assert (
+        runner_calls[0]["request"].timeout_seconds
+        == 5
+    )
+
+
+def test_wall_clock_no_usable_time_skips_command():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        raise AssertionError("must not execute")
+
+    # After provider, remaining < MIN_TIMEOUT (1).
+    # start=0, pre-wall=0, post-provider=0,
+    # remaining check before command → 9.5 → int 9?
+    # Need remaining < 1 at command time.
+    # start=0, wall pre=0, post=0, remaining at cmd=0.4 → int 0
+    timeline = [0.0, 0.0, 0.0, 9.6]
+    index = {"i": 0}
+
+    def clock() -> float:
+        i = index["i"]
+        index["i"] = min(i + 1, len(timeline) - 1)
+        return timeline[i]
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-WC-ZERO",
+        prompt="no time",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_wall_clock_seconds=10,
+            command_timeout_seconds=180,
+        ),
+        command_runner=fake_runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["python", "--version"],
+                        "cwd": None,
+                        "reason": "inspect",
+                    }
+                )
+            ]
+        ),
+        clock=clock,
+    )
+
+    assert result.status == "budget_exceeded"
+    assert result.reason == "max_wall_clock_seconds"
+    assert runner_calls == []
+
+
+def test_provider_error_secret_absent_from_next_prompt():
+    secret = "SECRET_TOKEN_ABC"
+    prompts: list[str] = []
+    failures_left = {"n": 1}
+
+    def caller(**kwargs):
+        prompts.append(kwargs["user_prompt"])
+        if failures_left["n"] > 0:
+            failures_left["n"] -= 1
+            raise RuntimeError(secret)
+        return _action(
+            {
+                "action_type": "fail",
+                "reason": "done",
+            }
+        )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PROV-PROMPT",
+        prompt="sanitize prompt",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_provider_decision_failures=3,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=caller,
+    )
+
+    assert result.status == "failed"
+    assert len(prompts) == 2
+    assert secret not in prompts[1]
+    assert "RuntimeError" in prompts[1]
+    assert "Provider decision failed" in prompts[1]
+    assert secret not in result.summary
+    assert secret not in result.reason
+
+
+def test_provider_max_failures_result_has_no_secret():
+    secret = "SECRET_TOKEN_ABC"
+
+    def boom(**kwargs):
+        raise RuntimeError(secret)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PROV-FINAL",
+        prompt="sanitize final",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=False,
+            max_provider_decision_failures=3,
+        ),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=boom,
+    )
+
+    assert result.status == "failed"
+    assert (
+        result.reason
+        == "max_provider_decision_failures"
+    )
+    assert secret not in result.summary
+    assert secret not in result.reason
+    assert result.last_observation is not None
+    assert secret not in (
+        result.last_observation.controller_feedback
+        or ""
+    )
+
+
+def test_infrastructure_failure_terminates():
+    def boom(**kwargs):
+        raise TaskCommandSandboxRuntimeError(
+            "Docker unavailable"
+        )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-12",
+        prompt="infra",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=boom,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["python", "x.py"],
+                        "cwd": None,
+                        "reason": "run",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": ["python", "y.py"],
+                        "cwd": None,
+                        "reason": "should not run",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "failed"
+    assert "infrastructure_failure" in result.reason
+    assert "Docker unavailable" in result.reason
+
+
+def test_fail_action_returns_failed():
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-13",
+        prompt="fail",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "fail",
+                        "reason": "cannot proceed",
+                    }
+                )
+            ]
+        ),
+    )
+    assert result.status == "failed"
+    assert result.reason == "cannot proceed"
+
+
+def test_execute_policy_defaults_allow_mutating():
+    policy = build_execute_terminal_policy()
+    assert policy.allow_mutating is True
+    assert policy.max_agent_steps == 16
+    assert policy.max_command_executions == 12
+
+
+def test_fingerprint_ignores_reason():
+    assert command_fingerprint(
+        ["python", "--version"],
+        None,
+    ) == command_fingerprint(
+        ["python", "--version"],
+        ".",
+    )
+
+
+def test_command_history_via_real_runner(tmp_path):
+    db_path = tmp_path / "history.db"
+    init_task_command_store(db_path)
+
+    def runner(**kwargs):
+        return run_task_command(
+            project_path=tmp_path,
+            request=kwargs["request"],
+            db_path=db_path,
+            persist=True,
+        )
+
+    result = run_agent_terminal_loop(
+        project_path=str(tmp_path),
+        task_id="TASK-HIST",
+        prompt="version",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=runner,
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            sys.executable,
+                            "--version",
+                        ],
+                        "cwd": None,
+                        "reason": "inspect",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "ok",
+                        "summary": "version checked",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "completed"
+    history = list_task_commands(
+        "TASK-HIST",
+        db_path=db_path,
+    )
+    assert len(history) == 1
+    assert history[0]["status"] == "succeeded"
+
+
+def test_fake_provider_host_safe_acceptance(tmp_path):
+    result = run_agent_terminal_loop(
+        project_path=str(tmp_path),
+        task_id="TASK-HOST",
+        prompt="Inspect Python and finish.",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            sys.executable,
+                            "--version",
+                        ],
+                        "cwd": None,
+                        "reason": "inspect",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "ok",
+                        "summary": "Python available",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "completed"
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.execution_boundary
+        == "HOST_SAFE"
+    )
+
+
+def _docker_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    try:
+        completed = subprocess.run(
+            ["docker", "info"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=20,
+            shell=False,
+        )
+        return completed.returncode == 0
+    except Exception:
+        return False
+
+
+def test_fake_provider_project_code_sandbox_simulated(
+    tmp_path,
+    monkeypatch,
+):
+    """PROJECT_CODE_SANDBOX path without requiring Docker daemon."""
+    import os
+
+    from factory.task_command_dependency_environment import (
+        CONTAINER_VENV_PYTHON,
+        dependency_environment_name,
+    )
+    from factory.task_command_sandbox import (
+        TaskCommandSandboxResult,
+        build_docker_run_argv,
+        map_argv_for_container,
+    )
+
+    script = tmp_path / "hello.py"
+    script.write_text(
+        "print('sandbox-ok')\n",
+        encoding="utf-8",
+    )
+
+    def _fake_ensure(**kwargs):
+        return dependency_environment_name(
+            project_root=kwargs["project_root"],
+            task_id=kwargs["task_id"],
+        )
+
+    def _fake(
+        *,
+        project_root,
+        workdir,
+        host_argv,
+        request_env,
+        network_policy,
+        command_id,
+        timeout_seconds,
+        image_name="ai-factory-python-test",
+        host_environ=None,
+        dependency_volume_name=None,
+    ):
+        container_argv = map_argv_for_container(
+            host_argv=host_argv,
+            project_root=project_root,
+            workdir=workdir,
+            use_dependency_environment=(
+                dependency_volume_name is not None
+            ),
+        )
+        short_id = command_id.replace("-", "")[:12]
+        container_name = (
+            f"ai-factory-taskcmd-{short_id}"
+        )
+        docker_argv = build_docker_run_argv(
+            project_root=project_root,
+            workdir=workdir,
+            container_argv=container_argv,
+            network_policy=network_policy,
+            container_name=container_name,
+            image_name=image_name,
+            dependency_volume_name=(
+                dependency_volume_name
+            ),
+        )
+        run_argv = list(container_argv)
+        if run_argv and run_argv[0] in {
+            "python",
+            CONTAINER_VENV_PYTHON,
+        }:
+            run_argv[0] = sys.executable
+
+        process_env = {
+            "PATH": os.environ.get("PATH", ""),
+            "SYSTEMROOT": os.environ.get(
+                "SYSTEMROOT",
+                "",
+            ),
+            "WINDIR": os.environ.get("WINDIR", ""),
+        }
+        process_env.update(request_env or {})
+
+        completed = subprocess.run(
+            run_argv,
+            cwd=str(workdir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            check=False,
+            timeout=timeout_seconds,
+            env=process_env,
+        )
+        return TaskCommandSandboxResult(
+            exit_code=completed.returncode,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
+            timed_out=False,
+            docker_argv=docker_argv,
+            container_argv=container_argv,
+            container_name=container_name,
+        )
+
+    monkeypatch.setattr(
+        "factory.task_command_runner."
+        "ensure_dependency_environment",
+        _fake_ensure,
+    )
+    monkeypatch.setattr(
+        "factory.task_command_runner."
+        "run_in_task_command_sandbox",
+        _fake,
+    )
+
+    result = run_agent_terminal_loop(
+        project_path=str(tmp_path),
+        task_id="TASK-SBX-SIM",
+        prompt="Run hello.py",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            "python",
+                            "hello.py",
+                        ],
+                        "cwd": None,
+                        "reason": "run script",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "ok",
+                        "summary": "script ran",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "completed"
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.execution_boundary
+        == "PROJECT_CODE_SANDBOX"
+    )
+    assert "sandbox-ok" in (
+        result.last_observation.stdout
+    )
+
+
+@pytest.mark.skipif(
+    not _docker_ready(),
+    reason="Docker unavailable",
+)
+def test_fake_provider_project_code_sandbox_acceptance(
+    tmp_path,
+):
+    script = tmp_path / "hello.py"
+    script.write_text(
+        "print('sandbox-ok')\n",
+        encoding="utf-8",
+    )
+
+    result = run_agent_terminal_loop(
+        project_path=str(tmp_path),
+        task_id="TASK-SBX",
+        prompt="Run hello.py",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        decision_caller=ScriptedDecider(
+            [
+                _action(
+                    {
+                        "action_type": "run_command",
+                        "argv": [
+                            "python",
+                            "hello.py",
+                        ],
+                        "cwd": None,
+                        "reason": "run script",
+                    }
+                ),
+                _action(
+                    {
+                        "action_type": "complete",
+                        "reason": "ok",
+                        "summary": "script ran",
+                    }
+                ),
+            ]
+        ),
+    )
+    assert result.status == "completed"
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.execution_boundary
+        == "PROJECT_CODE_SANDBOX"
+    )
+    assert "sandbox-ok" in (
+        result.last_observation.stdout
+    )
+
+
+@pytest.mark.skipif(
+    not _docker_ready(),
+    reason="Docker unavailable",
+)
+def test_package_persistence_acceptance(tmp_path):
+    from factory.task_command_dependency_environment import (
+        remove_dependency_environment,
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    script = project / "use_six.py"
+    script.write_text(
+        "import six\nprint(six.__version__)\n",
+        encoding="utf-8",
+    )
+    task_id = "TASK-PIP"
+
+    try:
+        result = run_agent_terminal_loop(
+            project_path=str(project),
+            task_id=task_id,
+            prompt="Install six and import it.",
+            model_route=SimpleNamespace(model="m"),
+            model_client=object(),
+            policy=AgentTerminalPolicy(
+                allow_mutating=True
+            ),
+            decision_caller=ScriptedDecider(
+                [
+                    _action(
+                        {
+                            "action_type": "run_command",
+                            "argv": [
+                                "python",
+                                "-m",
+                                "pip",
+                                "install",
+                                "six",
+                            ],
+                            "cwd": None,
+                            "reason": "install",
+                        }
+                    ),
+                    _action(
+                        {
+                            "action_type": "run_command",
+                            "argv": [
+                                "python",
+                                "use_six.py",
+                            ],
+                            "cwd": None,
+                            "reason": "import",
+                        }
+                    ),
+                    _action(
+                        {
+                            "action_type": "complete",
+                            "reason": "ok",
+                            "summary": "six works",
+                        }
+                    ),
+                ]
+            ),
+        )
+        assert result.status == "completed"
+        assert result.commands_executed == 2
+        assert result.successful_commands == 2
+
+        history = list_task_commands(task_id)
+        assert len(history) >= 2
+        install = history[0]
+        follow = history[1]
+        assert (
+            install["network_policy"]
+            == NetworkPolicy.NETWORK_PACKAGE_INSTALL.value
+        )
+        assert (
+            follow["network_policy"]
+            == NetworkPolicy.NETWORK_NONE.value
+        )
+        assert follow["status"] == "succeeded"
+    finally:
+        remove_dependency_environment(
+            project_root=project,
+            task_id=task_id,
+        )
+
+
+def test_provider_router_integration_with_fake_runtime(
+    monkeypatch,
+):
+    from factory.agents.contracts import AgentResult
+    from factory.agents.execution_router import (
+        AgentFallbackExecution,
+        AgentRoute,
+    )
+    from factory.agents.capabilities import (
+        AgentCapability,
+        AgentDescriptor,
+    )
+
+    class FakeProvider:
+        provider_name = "fake"
+
+        def complete(self, request):
+            assert "ORIGINAL USER TASK" in (
+                request.user_prompt
+            )
+            return AgentResult(
+                content=_action(
+                    {
+                        "action_type": "fail",
+                        "reason": "stop",
+                    }
+                ),
+                provider="fake",
+                model="m",
+            )
+
+    class FakeRouter:
+        provider_registry = SimpleNamespace()
+
+        def execute_with_fallback(
+            self,
+            request,
+            required,
+            *,
+            preferred_provider=None,
+            policy=None,
+        ):
+            assert AgentCapability.RUN_TESTS in required
+            provider = FakeProvider()
+            result = provider.complete(request)
+            return AgentFallbackExecution(
+                route=AgentRoute(
+                    agent=AgentDescriptor(
+                        name="fake-verifier",
+                        provider_name="fake",
+                        capabilities=frozenset(
+                            {
+                                AgentCapability.READ_REPOSITORY,
+                                AgentCapability.RUN_TESTS,
+                            }
+                        ),
+                    ),
+                    provider=provider,
+                ),
+                result=result,
+            )
+
+    monkeypatch.setattr(
+        "factory.agent_terminal_loop."
+        "build_default_agent_execution_router",
+        lambda _client: FakeRouter(),
+    )
+    monkeypatch.setattr(
+        "factory.agent_terminal_loop."
+        "resolve_provider_for_role",
+        lambda *_a, **_k: "fake",
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-ROUTE",
+        prompt="router path",
+        model_route=SimpleNamespace(model="chosen"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=lambda **k: (_ for _ in ()).throw(
+            AssertionError("no command")
+        ),
+    )
+    assert result.status == "failed"
+    assert result.reason == "stop"

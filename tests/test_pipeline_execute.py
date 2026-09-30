@@ -11,9 +11,9 @@ def test_execute_completed_pipeline_is_four_steps():
         },
         [
             "Task Router: EXECUTE - local action",
-            "Execution Router: local-executor",
-            "EXECUTE gorevi calistiriliyor.",
-            "EXECUTE gorevi tamamlandi.",
+            "Agent Terminal Model: agent-model",
+            "Agent Terminal baslatildi.",
+            "Agent Terminal tamamlandi: ok",
         ],
         task_kind="execute",
     )
@@ -43,8 +43,8 @@ def test_execute_running_pipeline_marks_local_action_active():
         },
         [
             "Task Router: EXECUTE",
-            "Execution Router: local-executor",
-            "EXECUTE gorevi calistiriliyor.",
+            "Agent Terminal Model: agent-model",
+            "Agent Terminal baslatildi.",
         ],
         task_kind="execute",
     )
@@ -68,9 +68,9 @@ def test_execute_failure_marks_execution_failed():
         },
         [
             "Task Router: EXECUTE",
-            "Execution Router: local-executor",
-            "EXECUTE gorevi calistiriliyor.",
-            "EXECUTE gorevi basarisiz: test",
+            "Agent Terminal Model: agent-model",
+            "Agent Terminal baslatildi.",
+            "Agent Terminal basarisiz: test",
         ],
         task_kind="execute",
     )
