@@ -1,0 +1,269 @@
+.task-terminal-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(76, 143, 199, 0.24);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 31, 51, 0.96),
+      rgba(5, 22, 38, 0.98)
+    );
+  color: #eaf5ff;
+}
+
+.task-terminal-panel.empty {
+  min-height: 94px;
+  display: grid;
+  place-items: center;
+}
+
+.task-terminal-head {
+  flex: 0 0 auto;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(77, 137, 187, 0.14);
+}
+
+.task-terminal-head > div:first-child > span {
+  display: block;
+  color: var(--factory-cyan, #38d6ff);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.task-terminal-head h2 {
+  margin: 4px 0 0;
+  color: #eef8ff;
+  font-size: 15px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.task-terminal-head p {
+  margin: 4px 0 0;
+  color: #6f8da5;
+  font-size: 9px;
+}
+
+.task-terminal-count {
+  flex: 0 0 auto;
+  color: #8fb4d0;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.task-terminal-error {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255, 101, 114, 0.22);
+  background: rgba(90, 28, 40, 0.35);
+  color: #ff9da9;
+  font-size: 11px;
+}
+
+.task-terminal-error button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(71, 175, 244, 0.36);
+  border-radius: 7px;
+  background: rgba(25, 104, 161, 0.28);
+  color: #d9efff;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.task-terminal-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.task-terminal-empty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  padding: 18px 16px;
+  color: #7595ae;
+  font-size: 12px;
+  text-align: center;
+}
+
+.task-terminal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 14px;
+  min-width: 0;
+}
+
+.task-terminal-command {
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 11px;
+  border: 1px solid rgba(86, 128, 165, 0.18);
+  border-radius: 10px;
+  background: rgba(2, 14, 26, 0.42);
+}
+
+.task-terminal-command-head {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+
+.task-terminal-status {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.task-terminal-command.status-succeeded .task-terminal-status {
+  color: var(--factory-green, #40dda3);
+  background: rgba(64, 221, 163, 0.12);
+}
+
+.task-terminal-command.status-failed .task-terminal-status {
+  color: var(--factory-red, #ff6572);
+  background: rgba(255, 101, 114, 0.12);
+}
+
+.task-terminal-command.status-timed-out .task-terminal-status {
+  color: var(--factory-amber, #ffb84b);
+  background: rgba(255, 184, 75, 0.12);
+}
+
+.task-terminal-command.status-rejected .task-terminal-status {
+  color: #ff8d97;
+  background: rgba(255, 101, 114, 0.08);
+}
+
+.task-terminal-command.status-unknown .task-terminal-status {
+  color: #8ba7bd;
+  background: rgba(139, 167, 189, 0.1);
+}
+
+.task-terminal-argv {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  color: #e7f4ff;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.task-terminal-meta,
+.task-terminal-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 7px;
+  min-width: 0;
+}
+
+.task-terminal-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid rgba(90, 161, 242, 0.22);
+  border-radius: 999px;
+  color: #9fc0d8;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-terminal-facts {
+  color: #7f9db5;
+  font-size: 9.5px;
+}
+
+.task-terminal-facts > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.task-terminal-stream {
+  margin-top: 8px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(86, 128, 165, 0.14);
+  border-radius: 8px;
+  background: rgba(1, 10, 20, 0.55);
+  overflow: hidden;
+}
+
+.task-terminal-stream > summary {
+  cursor: pointer;
+  padding: 6px 9px;
+  color: #8fb4d0;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  user-select: none;
+}
+
+.task-terminal-stream.stderr > summary {
+  color: #ff9da9;
+}
+
+.task-terminal-truncated {
+  padding: 0 9px 4px;
+  color: var(--factory-amber, #ffb84b);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.task-terminal-stream pre {
+  margin: 0;
+  max-height: 220px;
+  padding: 0 9px 9px;
+  overflow: auto;
+  color: #c5d7e8;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.task-terminal-stream.stderr pre {
+  color: #ffb0b8;
+}
+
+.reference-view-tasks .task-ops-panel-body > .task-terminal-panel {
+  height: 100%;
+  margin: 0;
+}

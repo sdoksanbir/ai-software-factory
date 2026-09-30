@@ -1381,6 +1381,7 @@
 }
 
 .task-operations-live > .task-live-panel,
+.task-operations-live > .task-ops-panel-host,
 .task-operations-center > .world-control-stack {
   width: 100%;
   height: 100% !important;
@@ -1446,6 +1447,7 @@
   }
 
   .task-operations-live > .task-live-panel,
+  .task-operations-live > .task-ops-panel-host,
   .task-operations-center > .world-control-stack {
     height: auto !important;
   }
@@ -1754,6 +1756,102 @@
 .reference-global-new-task:disabled {
   cursor: not-allowed;
   opacity: 0.42;
+}
+
+/* TASK_OPS_PANEL_HOST_V1 — Activity | Technical | Terminal */
+
+.task-ops-panel-host {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(76, 143, 199, 0.24);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 31, 51, 0.96),
+      rgba(5, 22, 38, 0.98)
+    );
+}
+
+.task-ops-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(77, 137, 187, 0.14);
+  background: rgba(4, 18, 32, 0.55);
+}
+
+.task-ops-tabs > button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--factory-muted, #7896b5);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.task-ops-tabs > button:hover {
+  color: var(--factory-text-soft, #b8cce2);
+  background: rgba(61, 169, 255, 0.08);
+}
+
+.task-ops-tabs > button.active,
+.task-ops-tabs > button[aria-selected="true"] {
+  color: var(--factory-text, #f0f7ff);
+  border-color: rgba(90, 161, 242, 0.36);
+  background: rgba(25, 104, 161, 0.28);
+}
+
+.task-ops-panel-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.task-ops-panel-body > [role="tabpanel"] {
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+}
+
+.task-ops-panel-body .task-live-panel,
+.task-ops-panel-body .task-terminal-panel {
+  height: 100%;
+  margin: 0 !important;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.task-ops-panel-body .task-tech-layout {
+  margin: 0 !important;
+  grid-column: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 10px;
+}
+
+.task-ops-panel-body .task-tech-panel {
+  border-radius: 10px;
+}
+
+.task-ops-panel-body .task-tech-diff {
+  min-height: 180px;
+  max-height: 220px;
 }
 
 @media (max-width: 820px) {

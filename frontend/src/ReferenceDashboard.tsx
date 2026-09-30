@@ -19,6 +19,7 @@ import {
 import { OpsIcon, type OpsIconName } from "./components/ops/opsIcons"
 import { TaskLiveActivityPanel } from "./components/ops/TaskLiveActivityPanel"
 import { TaskTechnicalDetailsPanel } from "./components/ops/TaskTechnicalDetailsPanel"
+import { TaskTerminalPanel } from "./components/ops/TaskTerminalPanel"
 import { WorldControlPanels } from "./components/world/WorldControlPanels"
 import { WorldRightRail } from "./components/world/WorldRightRail"
 import "./components/factory/FactoryVisuals.css"
@@ -202,6 +203,9 @@ export function ReferenceDashboard({
   void onModels
 
   const [activeNav, setActiveNav] = useState<NavKey>("overview")
+  const [opsPanelTab, setOpsPanelTab] = useState<
+    "activity" | "technical" | "terminal"
+  >("activity")
   const [clock, setClock] = useState(() =>
     new Intl.DateTimeFormat("tr-TR", {
       hour: "2-digit",
@@ -773,64 +777,150 @@ export function ReferenceDashboard({
           </section>
         )}
 
-        {/* TASK_LIVE_ACTIVITY_PANEL_V1 */}
-                <div className="task-operations-row">
+        {/* TASK_OPS_PANELS_V1 — Activity | Technical | Terminal */}
+        <div className="task-operations-row">
           <div className="task-operations-live">
-<TaskLiveActivityPanel
-          selectedTask={selectedTask}
-          pipeline={pipeline}
-          liveLogs={liveLogs}
-          agentExecutions={agentExecutions}
-        />
+            <div className="task-ops-panel-host">
+              <div
+                className="task-ops-tabs"
+                role="tablist"
+                aria-label="Görev panelleri"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  id="task-ops-tab-activity"
+                  aria-selected={opsPanelTab === "activity"}
+                  aria-controls="task-ops-panel-activity"
+                  className={
+                    opsPanelTab === "activity"
+                      ? "active"
+                      : undefined
+                  }
+                  onClick={() => setOpsPanelTab("activity")}
+                >
+                  Activity
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  id="task-ops-tab-technical"
+                  aria-selected={opsPanelTab === "technical"}
+                  aria-controls="task-ops-panel-technical"
+                  className={
+                    opsPanelTab === "technical"
+                      ? "active"
+                      : undefined
+                  }
+                  onClick={() => setOpsPanelTab("technical")}
+                >
+                  Technical
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  id="task-ops-tab-terminal"
+                  aria-selected={opsPanelTab === "terminal"}
+                  aria-controls="task-ops-panel-terminal"
+                  className={
+                    opsPanelTab === "terminal"
+                      ? "active"
+                      : undefined
+                  }
+                  onClick={() => setOpsPanelTab("terminal")}
+                >
+                  Terminal
+                </button>
+              </div>
+
+              <div className="task-ops-panel-body">
+                {opsPanelTab === "activity" && (
+                  <div
+                    id="task-ops-panel-activity"
+                    role="tabpanel"
+                    aria-labelledby="task-ops-tab-activity"
+                  >
+                    <TaskLiveActivityPanel
+                      selectedTask={selectedTask}
+                      pipeline={pipeline}
+                      liveLogs={liveLogs}
+                      agentExecutions={agentExecutions}
+                    />
+                  </div>
+                )}
+
+                {opsPanelTab === "technical" && (
+                  <div
+                    id="task-ops-panel-technical"
+                    role="tabpanel"
+                    aria-labelledby="task-ops-tab-technical"
+                  >
+                    <TaskTechnicalDetailsPanel
+                      selectedTask={selectedTask}
+                      agentExecutions={agentExecutions}
+                      liveLogs={liveLogs}
+                      diff={diff}
+                      loadingDiff={loadingDiff}
+                      onLoadDiff={onLoadDiff}
+                      taskKind={taskKind}
+                    />
+                  </div>
+                )}
+
+                {opsPanelTab === "terminal" && (
+                  <div
+                    id="task-ops-panel-terminal"
+                    role="tabpanel"
+                    aria-labelledby="task-ops-tab-terminal"
+                  >
+                    <TaskTerminalPanel
+                      selectedTask={selectedTask}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="task-operations-center">
-<WorldControlPanels
-          activePanel={activeNav}
-          tasks={tasks}
-          projects={projects}
-          selectedTaskId={selectedTaskId}
-          selectedProjectId={selectedProjectId}
-          availableModels={availableModels}
-          agentExecutions={agentExecutions}
-          controlCenter={controlCenter}
-          prompt={prompt}
-          maxAttempts={maxAttempts}
-          taskModelChoice={taskModelChoice}
-          submitting={submitting}
-          newProjectName={newProjectName}
-          newProjectPath={newProjectPath}
-          projectSubmitting={projectSubmitting}
-          projectCreateError={projectCreateError}
-          projectSettingsName={projectSettingsName}
-          projectSettingsPath={projectSettingsPath}
-          projectSettingsSaving={projectSettingsSaving}
-          onSelectTask={onSelectTask}
-          onSelectProject={onSelectProject}
-          onPromptChange={onPromptChange}
-          onMaxAttemptsChange={onMaxAttemptsChange}
-          onTaskModelChoiceChange={onTaskModelChoiceChange}
-          onCreateTask={onCreateTask}
-          onNewProjectNameChange={onNewProjectNameChange}
-          onNewProjectPathChange={onNewProjectPathChange}
-          onCreateProject={onCreateProject}
-          onCreateNewProject={onCreateNewProject}
-          onProjectSettingsNameChange={onProjectSettingsNameChange}
-          onProjectSettingsPathChange={onProjectSettingsPathChange}
-          onSaveProjectSettings={onSaveProjectSettings}
-        />
+            <WorldControlPanels
+              activePanel={activeNav}
+              tasks={tasks}
+              projects={projects}
+              selectedTaskId={selectedTaskId}
+              selectedProjectId={selectedProjectId}
+              availableModels={availableModels}
+              agentExecutions={agentExecutions}
+              controlCenter={controlCenter}
+              prompt={prompt}
+              maxAttempts={maxAttempts}
+              taskModelChoice={taskModelChoice}
+              submitting={submitting}
+              newProjectName={newProjectName}
+              newProjectPath={newProjectPath}
+              projectSubmitting={projectSubmitting}
+              projectCreateError={projectCreateError}
+              projectSettingsName={projectSettingsName}
+              projectSettingsPath={projectSettingsPath}
+              projectSettingsSaving={projectSettingsSaving}
+              onSelectTask={onSelectTask}
+              onSelectProject={onSelectProject}
+              onPromptChange={onPromptChange}
+              onMaxAttemptsChange={onMaxAttemptsChange}
+              onTaskModelChoiceChange={onTaskModelChoiceChange}
+              onCreateTask={onCreateTask}
+              onNewProjectNameChange={onNewProjectNameChange}
+              onNewProjectPathChange={onNewProjectPathChange}
+              onCreateProject={onCreateProject}
+              onCreateNewProject={onCreateNewProject}
+              onProjectSettingsNameChange={onProjectSettingsNameChange}
+              onProjectSettingsPathChange={onProjectSettingsPathChange}
+              onSaveProjectSettings={onSaveProjectSettings}
+            />
           </div>
         </div>
-
-        <TaskTechnicalDetailsPanel
-          selectedTask={selectedTask}
-          agentExecutions={agentExecutions}
-          liveLogs={liveLogs}
-          diff={diff}
-          loadingDiff={loadingDiff}
-          onLoadDiff={onLoadDiff}
-          taskKind={taskKind}
-        />
 
         {/* TASK_RESULT_PANEL_V2 */}
         {(

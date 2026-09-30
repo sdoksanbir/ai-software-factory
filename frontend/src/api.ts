@@ -220,6 +220,38 @@ export type AgentHandoffsResponse = {
   handoffs: AgentHandoff[]
 }
 
+export type TaskCommandStatus =
+  | "succeeded"
+  | "failed"
+  | "timed_out"
+  | "rejected"
+
+export type TaskCommand = {
+  command_id: string
+  task_id: string
+  argv: string[]
+  cwd: string
+  permission_level: string
+  started_at: string
+  finished_at: string
+  duration_ms: number
+  exit_code: number | null
+  stdout: string
+  stderr: string
+  status: TaskCommandStatus | string
+  secret_env_keys: string[]
+  stdout_truncated: boolean
+  stderr_truncated: boolean
+  execution_boundary: string
+  network_policy: string
+}
+
+export type TaskCommandsResponse = {
+  task_id: string
+  state: string
+  commands: TaskCommand[]
+}
+
 const API_BASE = "/api"
 
 async function request<T>(
@@ -488,5 +520,13 @@ export function getTaskHandoffs(
 ) {
   return request<AgentHandoffsResponse>(
     `/tasks/${taskId}/handoffs`,
+  )
+}
+
+export function getTaskCommands(
+  taskId: string,
+) {
+  return request<TaskCommandsResponse>(
+    `/tasks/${taskId}/commands`,
   )
 }
