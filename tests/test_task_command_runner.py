@@ -49,7 +49,25 @@ def simulate_sandbox(monkeypatch):
     import os
     from pathlib import Path
 
+    from factory.task_command_dependency_environment import (
+        CONTAINER_VENV_PYTHON,
+        dependency_environment_name,
+    )
+
     calls: list[dict] = []
+
+    def _fake_ensure(
+        *,
+        project_root,
+        task_id,
+        image_name="ai-factory-python-test",
+        host_environ=None,
+        timeout_seconds=120,
+    ):
+        return dependency_environment_name(
+            project_root=project_root,
+            task_id=task_id,
+        )
 
     def _fake(
         *,
@@ -62,6 +80,7 @@ def simulate_sandbox(monkeypatch):
         timeout_seconds,
         image_name="ai-factory-python-test",
         host_environ=None,
+        dependency_volume_name=None,
     ):
         from factory.task_command_sandbox import (
             build_docker_run_argv,
@@ -73,6 +92,9 @@ def simulate_sandbox(monkeypatch):
             host_argv=host_argv,
             project_root=project_root,
             workdir=workdir,
+            use_dependency_environment=(
+                dependency_volume_name is not None
+            ),
         )
         short_id = command_id.replace("-", "")[:12]
         container_name = (
@@ -85,6 +107,9 @@ def simulate_sandbox(monkeypatch):
             network_policy=network_policy,
             container_name=container_name,
             image_name=image_name,
+            dependency_volume_name=(
+                dependency_volume_name
+            ),
         )
         payload = build_stdin_payload(
             container_argv=container_argv,
@@ -96,6 +121,9 @@ def simulate_sandbox(monkeypatch):
                 "payload": payload,
                 "network_policy": network_policy,
                 "host_argv": host_argv,
+                "dependency_volume_name": (
+                    dependency_volume_name
+                ),
             }
         )
 
@@ -114,7 +142,10 @@ def simulate_sandbox(monkeypatch):
             )
 
         run_argv = list(container_argv)
-        if run_argv and run_argv[0] == "python":
+        if run_argv and run_argv[0] in {
+            "python",
+            CONTAINER_VENV_PYTHON,
+        }:
             run_argv[0] = sys.executable
 
         # Only request_env overlays a minimal base —
@@ -173,6 +204,11 @@ def simulate_sandbox(monkeypatch):
             container_name=container_name,
         )
 
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".ensure_dependency_environment",
+        _fake_ensure,
+    )
     monkeypatch.setattr(
         "factory.task_command_runner.run_in_task_command_sandbox",
         _fake,
@@ -924,28 +960,10 @@ def test_package_install_with_secret_rejected(
         )
 
 
-def test_package_install_fail_closed_before_docker(
+def test_package_install_any_request_env_rejected(
     tmp_path,
-    monkeypatch,
 ):
-    """NETWORK_PACKAGE_INSTALL must not start Docker."""
-    called = {"sandbox": False}
-
-    def _boom(**kwargs):
-        called["sandbox"] = True
-        raise AssertionError(
-            "sandbox/docker should not run"
-        )
-
-    monkeypatch.setattr(
-        "factory.task_command_runner"
-        ".run_in_task_command_sandbox",
-        _boom,
-    )
-
-    with pytest.raises(
-        TaskCommandSandboxRuntimeError
-    ) as exc_info:
+    with pytest.raises(TaskCommandPolicyError) as exc_info:
         _run(
             tmp_path,
             [
@@ -953,23 +971,177 @@ def test_package_install_fail_closed_before_docker(
                 "-m",
                 "pip",
                 "install",
-                "django",
+                "six",
+            ],
+            env={"PIP_INDEX_URL": "https://evil.example"},
+            allow_mutating=True,
+            persist=False,
+        )
+    assert "request.env" in str(exc_info.value).casefold()
+
+
+def test_package_install_reaches_sandbox_with_bridge(
+    tmp_path,
+    simulate_sandbox,
+):
+    """NETWORK_PACKAGE_INSTALL uses bridge + trusted pip env."""
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "six",
+        ],
+        allow_mutating=True,
+        persist=False,
+    )
+
+    assert len(simulate_sandbox) == 1
+    call = simulate_sandbox[0]
+    assert (
+        call["network_policy"]
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    )
+    idx = call["docker_argv"].index("--network")
+    assert call["docker_argv"][idx + 1] == "bridge"
+    assert call["dependency_volume_name"]
+    volume_mount = (
+        f"{call['dependency_volume_name']}:"
+        "/opt/ai-factory/venv"
+    )
+    assert volume_mount in call["docker_argv"]
+    assert call["payload"]["argv"][:4] == [
+        "/opt/ai-factory/venv/bin/python",
+        "-m",
+        "pip",
+        "install",
+    ]
+    env = call["payload"]["env"]
+    assert env.get("PIP_NO_INPUT") == "1"
+    assert env.get("PIP_CONFIG_FILE") == "/dev/null"
+    assert "PIP_INDEX_URL" not in env
+    # Host simulation remaps venv python → may fail
+    # without network; status is structured either way.
+    assert result.status in {
+        "succeeded",
+        "failed",
+        "timed_out",
+    }
+
+
+def test_requirements_expands_before_sandbox(
+    tmp_path,
+    simulate_sandbox,
+):
+    req = tmp_path / "requirements.txt"
+    req.write_text(
+        "# deps\nsix\nDjango==5.2.17\n",
+        encoding="utf-8",
+    )
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements.txt",
+        ],
+        allow_mutating=True,
+        persist=False,
+    )
+    call = simulate_sandbox[0]
+    assert call["payload"]["argv"] == [
+        "/opt/ai-factory/venv/bin/python",
+        "-m",
+        "pip",
+        "install",
+        "six",
+        "Django==5.2.17",
+    ]
+    # History keeps original user argv.
+    assert result.argv[-2:] == [
+        "-r",
+        "requirements.txt",
+    ]
+
+
+def test_malicious_requirements_rejected_before_sandbox(
+    tmp_path,
+    monkeypatch,
+):
+    called = {"sandbox": False, "ensure": False}
+
+    def boom_ensure(**kwargs):
+        called["ensure"] = True
+        raise AssertionError("ensure should not run")
+
+    def boom_sandbox(**kwargs):
+        called["sandbox"] = True
+        raise AssertionError("sandbox should not run")
+
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".ensure_dependency_environment",
+        boom_ensure,
+    )
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        boom_sandbox,
+    )
+
+    req = tmp_path / "requirements.txt"
+    req.write_text(
+        "--index-url https://example.com/simple\nsix\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(TaskCommandPolicyError):
+        _run(
+            tmp_path,
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                "requirements.txt",
             ],
             allow_mutating=True,
             persist=False,
         )
-
     assert called["sandbox"] is False
-    assert "not implemented" in str(
-        exc_info.value
-    ).casefold()
-    assert (
-        classify_network_policy(
-            "python",
-            ["-m", "pip", "install", "django"],
-        )
-        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    assert called["ensure"] is False
+
+
+def test_python_project_code_uses_venv_and_network_none(
+    tmp_path,
+    simulate_sandbox,
+):
+    script = tmp_path / "hello.py"
+    script.write_text(
+        "print('ok')\n",
+        encoding="utf-8",
     )
+    result = _run(
+        tmp_path,
+        [sys.executable, "hello.py"],
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "succeeded"
+    call = simulate_sandbox[0]
+    assert (
+        call["network_policy"]
+        == NetworkPolicy.NETWORK_NONE
+    )
+    assert call["payload"]["argv"][0] == (
+        "/opt/ai-factory/venv/bin/python"
+    )
+    assert call["dependency_volume_name"]
 
 
 def test_host_safe_git_status_templates():

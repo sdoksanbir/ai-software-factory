@@ -160,6 +160,49 @@ def test_map_python_and_pytest_argv(tmp_path):
     ]
 
 
+def test_map_with_dependency_environment(tmp_path):
+    mapped = map_argv_for_container(
+        host_argv=["python", "manage.py", "check"],
+        project_root=tmp_path,
+        workdir=tmp_path,
+        use_dependency_environment=True,
+    )
+    assert mapped[0] == (
+        "/opt/ai-factory/venv/bin/python"
+    )
+
+    docker_argv = build_docker_run_argv(
+        project_root=tmp_path,
+        workdir=tmp_path,
+        container_argv=mapped,
+        network_policy=NetworkPolicy.NETWORK_NONE,
+        container_name="ai-factory-taskcmd-dep",
+        dependency_volume_name=(
+            "ai-factory-pyenv-abcdef0123456789abcdef01"
+        ),
+    )
+    assert (
+        "ai-factory-pyenv-abcdef0123456789abcdef01:"
+        "/opt/ai-factory/venv"
+    ) in docker_argv
+
+
+def test_invalid_dependency_volume_not_mounted(tmp_path):
+    from factory.task_command_models import (
+        TaskCommandValidationError,
+    )
+
+    with pytest.raises(TaskCommandValidationError):
+        build_docker_run_argv(
+            project_root=tmp_path,
+            workdir=tmp_path,
+            container_argv=["python", "--version"],
+            network_policy=NetworkPolicy.NETWORK_NONE,
+            container_name="ai-factory-taskcmd-bad",
+            dependency_volume_name="not-a-factory-volume",
+        )
+
+
 def test_node_runtime_rejected_without_host_fallback(
     tmp_path,
 ):

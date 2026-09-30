@@ -38,6 +38,12 @@ from factory.task_command_models import (
     resolve_secret_env_keys,
     truncate_capture,
 )
+from factory.task_command_dependency_environment import (
+    ensure_dependency_environment,
+    prepare_package_install_argv,
+    trusted_pip_install_env,
+    uses_python_dependency_environment,
+)
 from factory.task_command_sandbox import (
     run_in_task_command_sandbox,
 )
@@ -1481,26 +1487,26 @@ def run_task_command(
         args,
     )
 
-    if (
+    is_package_install = (
         network_policy
         == NetworkPolicy.NETWORK_PACKAGE_INSTALL
-        and secret_keys
-    ):
-        raise TaskCommandPolicyError(
-            "NETWORK_PACKAGE_INSTALL komutunda "
-            "request secrets V1'de reddedilir."
-        )
+    )
 
-    # Fail closed: ephemeral containers cannot keep
-    # installed deps. Do not run Docker and return a
-    # false success for package installs.
-    if (
-        network_policy
-        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
-    ):
-        raise TaskCommandSandboxRuntimeError(
-            "Persistent sandbox dependency "
-            "environment is not implemented."
+    sandbox_args = list(args)
+
+    if is_package_install:
+        # Fail closed: any caller request.env can
+        # redirect pip/network (PIP_INDEX_URL, proxies…).
+        if extra_env:
+            raise TaskCommandPolicyError(
+                "NETWORK_PACKAGE_INSTALL komutunda "
+                "request.env V1'de bos olmali."
+            )
+        # Expand -r on host; pip never reads the file.
+        sandbox_args = prepare_package_install_argv(
+            project_root=project_root,
+            executable=executable,
+            args=args,
         )
 
     secret_values = collect_secret_values(
@@ -1633,15 +1639,33 @@ def run_task_command(
         )
 
     # PROJECT_CODE_SANDBOX
+    dependency_volume_name: str | None = None
+    sandbox_request_env = dict(extra_env)
+
+    if uses_python_dependency_environment(executable):
+        dependency_volume_name = (
+            ensure_dependency_environment(
+                project_root=project_root,
+                task_id=request.task_id,
+            )
+        )
+        if is_package_install:
+            sandbox_request_env = (
+                trusted_pip_install_env()
+            )
+
     try:
         sandbox_result = run_in_task_command_sandbox(
             project_root=project_root,
             workdir=workdir,
-            host_argv=[executable, *args],
-            request_env=extra_env,
+            host_argv=[executable, *sandbox_args],
+            request_env=sandbox_request_env,
             network_policy=network_policy,
             command_id=command_id,
             timeout_seconds=timeout,
+            dependency_volume_name=(
+                dependency_volume_name
+            ),
         )
     except TaskCommandSandboxRuntimeError:
         raise

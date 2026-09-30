@@ -13,6 +13,11 @@ import os
 import subprocess
 from typing import Any
 
+from factory.task_command_dependency_environment import (
+    CONTAINER_VENV_PYTHON,
+    CONTAINER_VENV_ROOT,
+    validate_dependency_volume_name,
+)
 from factory.task_command_models import (
     NetworkPolicy,
     TaskCommandSandboxRuntimeError,
@@ -119,6 +124,7 @@ def map_argv_for_container(
     host_argv: list[str],
     project_root: Path,
     workdir: Path,
+    use_dependency_environment: bool = False,
 ) -> list[str]:
     """Map host argv to Linux container argv (no shell)."""
     if not host_argv:
@@ -128,6 +134,11 @@ def map_argv_for_container(
 
     root = project_root.resolve()
     first = Path(host_argv[0]).name.casefold()
+    python_bin = (
+        CONTAINER_VENV_PYTHON
+        if use_dependency_environment
+        else "python"
+    )
 
     if first in {
         "python",
@@ -137,17 +148,17 @@ def map_argv_for_container(
         "py",
         "py.exe",
     }:
-        mapped = ["python", *host_argv[1:]]
+        mapped = [python_bin, *host_argv[1:]]
     elif first in {"pytest", "pytest.exe"}:
         mapped = [
-            "python",
+            python_bin,
             "-m",
             "pytest",
             *host_argv[1:],
         ]
     elif first in {"pip", "pip.exe", "pip3", "pip3.exe"}:
         mapped = [
-            "python",
+            python_bin,
             "-m",
             "pip",
             *host_argv[1:],
@@ -212,6 +223,7 @@ def build_docker_run_argv(
     container_name: str,
     image_name: str = DEFAULT_TASK_COMMAND_IMAGE,
     launcher_path: Path | None = None,
+    dependency_volume_name: str | None = None,
 ) -> list[str]:
     launcher = (
         launcher_path
@@ -255,20 +267,39 @@ def build_docker_run_argv(
         # (unlike WRITE DockerSandbox).
         "-v",
         f"{abs_project}:{CONTAINER_PROJECT_ROOT}",
-        "-v",
-        (
-            f"{launcher}:"
-            f"{LAUNCHER_CONTAINER_PATH}:ro"
-        ),
-        "-w",
-        container_workdir(
-            project_root=project_root,
-            workdir=workdir,
-        ),
-        image_name,
-        "python",
-        LAUNCHER_CONTAINER_PATH,
     ]
+
+    if dependency_volume_name:
+        validate_dependency_volume_name(
+            dependency_volume_name
+        )
+        docker_argv.extend(
+            [
+                "-v",
+                (
+                    f"{dependency_volume_name}:"
+                    f"{CONTAINER_VENV_ROOT}"
+                ),
+            ]
+        )
+
+    docker_argv.extend(
+        [
+            "-v",
+            (
+                f"{launcher}:"
+                f"{LAUNCHER_CONTAINER_PATH}:ro"
+            ),
+            "-w",
+            container_workdir(
+                project_root=project_root,
+                workdir=workdir,
+            ),
+            image_name,
+            "python",
+            LAUNCHER_CONTAINER_PATH,
+        ]
+    )
 
     # container_argv is delivered via stdin JSON,
     # not appended to docker argv (keeps secrets
@@ -325,6 +356,7 @@ def run_in_task_command_sandbox(
     timeout_seconds: int,
     image_name: str = DEFAULT_TASK_COMMAND_IMAGE,
     host_environ: dict[str, str] | None = None,
+    dependency_volume_name: str | None = None,
 ) -> TaskCommandSandboxResult:
     """Run argv inside Docker via trusted launcher + stdin."""
     exe_name = Path(host_argv[0]).name
@@ -334,10 +366,12 @@ def run_in_task_command_sandbox(
             "image'inda desteklenmiyor; host fallback yok."
         )
 
+    use_dep = dependency_volume_name is not None
     container_argv = map_argv_for_container(
         host_argv=host_argv,
         project_root=project_root,
         workdir=workdir,
+        use_dependency_environment=use_dep,
     )
     short_id = command_id.replace("-", "")[:12]
     container_name = f"ai-factory-taskcmd-{short_id}"
@@ -349,6 +383,7 @@ def run_in_task_command_sandbox(
         network_policy=network_policy,
         container_name=container_name,
         image_name=image_name,
+        dependency_volume_name=dependency_volume_name,
     )
 
     # Guardrails: never introduce a shell wrapper.
