@@ -79,6 +79,56 @@ DecisionCaller = Callable[..., str]
 Clock = Callable[[], float]
 
 
+# Conservative stderr markers for deterministic
+# missing-file/path failures. Do not treat every
+# nonzero exit as deterministic.
+_MISSING_PATH_STDERR_MARKERS = (
+    "no such file or directory",
+    "can't open file",
+    "cannot open file",
+    "cannot find the path",
+    "the system cannot find the path",
+    "cannot find the file",
+    "the system cannot find the file",
+    "file not found",
+    "path not found",
+)
+
+_DETERMINISTIC_MISSING_PATH_FEEDBACK = (
+    "The referenced file/path was not found from "
+    "the current cwd. Inspect the repository and "
+    "change cwd or argv before retrying."
+)
+
+
+def is_deterministic_missing_path_failure(
+    *,
+    status: str,
+    exit_code: int | None,
+    stderr: str,
+) -> bool:
+    """Classify clearly deterministic missing-path fails.
+
+    Controller-owned. Conservative: requires failed
+    status plus a known missing-path stderr marker.
+    Nonzero exit alone is not enough.
+    """
+    del exit_code  # reserved for future tightening
+
+    if str(status or "") != "failed":
+        return False
+
+    text = str(stderr or "").casefold()
+
+    if not text:
+        return False
+
+    return any(
+        marker in text
+        for marker in _MISSING_PATH_STDERR_MARKERS
+    )
+
+
 def command_fingerprint(
     argv: Sequence[str],
     cwd: str | None,
@@ -246,6 +296,9 @@ def run_agent_terminal_loop(
     fingerprints_seen: list[str] = []
     outcomes_seen: list[str] = []
     fingerprint_counts: dict[str, int] = {}
+    deterministic_missing_path_fps: set[str] = (
+        set()
+    )
 
     steps_used = 0
     commands_executed = 0
@@ -517,9 +570,6 @@ def run_agent_terminal_loop(
 
             continue
 
-        # Valid typed action resets invalid streak.
-        consecutive_invalid = 0
-
         fingerprint = command_fingerprint(
             action.argv,
             action.cwd,
@@ -528,6 +578,47 @@ def run_agent_terminal_loop(
             fingerprint,
             0,
         )
+
+        # Deterministic missing-path: identical
+        # argv+cwd must not re-run. Feedback only;
+        # not a subprocess execution.
+        if fingerprint in (
+            deterministic_missing_path_fps
+        ):
+            consecutive_invalid += 1
+            observation = rejected_observation(
+                argv=list(action.argv),
+                cwd=action.cwd,
+                rejection_reason=(
+                    "identical_deterministic_"
+                    "missing_path_retry_blocked"
+                ),
+                controller_feedback=(
+                    _DETERMINISTIC_MISSING_PATH_FEEDBACK
+                ),
+            )
+            observations.append(observation)
+            last_observation = observation
+
+            if (
+                consecutive_invalid
+                >= active_policy
+                .max_consecutive_invalid_actions
+            ):
+                return _result(
+                    "budget_exceeded",
+                    reason=(
+                        "max_consecutive_invalid_actions"
+                    ),
+                    summary=(
+                        _DETERMINISTIC_MISSING_PATH_FEEDBACK
+                    ),
+                )
+
+            continue
+
+        # Valid executable attempt resets invalid streak.
+        consecutive_invalid = 0
 
         # Identical stall: do not execute 3rd time.
         if (
@@ -742,6 +833,26 @@ def run_agent_terminal_loop(
                 failed_commands += 1
 
             consecutive_failures += 1
+
+            if is_deterministic_missing_path_failure(
+                status=status,
+                exit_code=getattr(
+                    command_result,
+                    "exit_code",
+                    None,
+                ),
+                stderr=str(
+                    getattr(
+                        command_result,
+                        "stderr",
+                        "",
+                    )
+                    or ""
+                ),
+            ):
+                deterministic_missing_path_fps.add(
+                    fingerprint
+                )
         else:
             failed_commands += 1
             consecutive_failures += 1

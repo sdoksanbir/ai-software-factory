@@ -15,6 +15,7 @@ export type Task = {
   test_result: string | null
   started_at: string | null
   task_kind?: TaskKind | null
+  related_task_id?: string | null
 }
 
 export type Project = {
@@ -297,6 +298,7 @@ export function createTask(
   maxAttempts: number,
   projectId: string,
   model: string | null = null,
+  relatedTaskId: string | null = null,
 ) {
   return request<Task>("/tasks", {
     method: "POST",
@@ -305,6 +307,7 @@ export function createTask(
       max_attempts: maxAttempts,
       project_id: projectId,
       model,
+      related_task_id: relatedTaskId,
     }),
   })
 }

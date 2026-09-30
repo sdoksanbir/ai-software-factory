@@ -334,6 +334,7 @@ class TaskExecutionService:
                 task,
                 model_route,
                 orchestrator,
+                task_route=task_route,
             )
 
         return self._run_write(
@@ -494,6 +495,8 @@ class TaskExecutionService:
         task: Any,
         model_route: Any,
         orchestrator: Any,
+        *,
+        task_route: Any = None,
     ):
         try:
             self._deps.append_log(
@@ -501,11 +504,59 @@ class TaskExecutionService:
                 "READ gorevi calistiriliyor.",
             )
 
+            execution_evidence_text = None
+            related_task_id = getattr(
+                task,
+                "related_task_id",
+                None,
+            )
+            intent = None
+
+            if task_route is not None:
+                intent = getattr(
+                    task_route,
+                    "intent",
+                    None,
+                )
+
+            from factory.task_execution_evidence import (
+                build_task_execution_evidence,
+                format_execution_evidence_for_prompt,
+                should_attach_related_execution_evidence,
+            )
+
+            if should_attach_related_execution_evidence(
+                related_task_id=related_task_id,
+                prompt=task.prompt,
+                intent=intent,
+            ):
+                evidence = (
+                    build_task_execution_evidence(
+                        str(related_task_id),
+                    )
+                )
+                execution_evidence_text = (
+                    format_execution_evidence_for_prompt(
+                        evidence
+                    )
+                )
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "READ diagnosis: related "
+                        "task execution evidence "
+                        f"attached ({related_task_id})."
+                    ),
+                )
+
             read_result = run_read_task(
                 project_path=orchestrator.project_path,
                 prompt=task.prompt,
                 model_route=model_route,
                 model_client=orchestrator.model_client,
+                execution_evidence_text=(
+                    execution_evidence_text
+                ),
             )
 
             save_task_read_result(

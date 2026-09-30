@@ -142,6 +142,7 @@ def init_database(
             "test_result": "TEXT",
             "started_at": "TEXT",
             "completed_at": "TEXT",
+            "related_task_id": "TEXT",
         }
 
         for column_name, definition in task_columns.items():
@@ -172,6 +173,7 @@ def upsert_task(
     project_id: str | None = None,
     branch: str | None = None,
     worktree_path: str | None = None,
+    related_task_id: str | None = None,
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> None:
     connection = get_connection(db_path)
@@ -193,10 +195,11 @@ def upsert_task(
                 test_result,
                 started_at,
                 completed_at,
+                related_task_id,
                 updated_at
             )
             VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 CURRENT_TIMESTAMP
             )
             ON CONFLICT(task_id) DO UPDATE SET
@@ -212,6 +215,10 @@ def upsert_task(
                 test_result = excluded.test_result,
                 started_at = excluded.started_at,
                 completed_at = excluded.completed_at,
+                related_task_id = COALESCE(
+                    excluded.related_task_id,
+                    tasks.related_task_id
+                ),
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -228,6 +235,7 @@ def upsert_task(
                 test_result,
                 started_at,
                 completed_at,
+                related_task_id,
             ),
         )
 

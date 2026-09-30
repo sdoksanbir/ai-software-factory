@@ -1351,6 +1351,7 @@ function App() {
         maxAttempts,
         selectedProject.project_id,
         taskModelChoice || null,
+        selectedTaskId,
       )
 
       setPrompt("")

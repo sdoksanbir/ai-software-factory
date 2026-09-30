@@ -64,6 +64,31 @@ Package install:
 cwd is relative to the project/worktree root and may change between actions.
 Use cwd to enter a newly created project directory when needed.
 
+Do not assume the repository root contains framework or project
+marker files such as manage.py, package.json, pyproject.toml, or
+Cargo.toml. Nested project layouts are common.
+
+Before running a command that references a repository-relative
+file whose location has not been established by prior evidence,
+inspect the repository first. Prefer already-allowed safe Git
+discovery commands, for example:
+["git","ls-files"]
+["git","ls-files","*manage.py"]
+["git","ls-files","*package.json"]
+["git","ls-files","*pyproject.toml"]
+["git","ls-files","*Cargo.toml"]
+
+If discovery evidence shows a nested marker such as
+subdir/manage.py, prefer either a project-relative cwd for that
+directory with ["python","manage.py",...] or an equivalent safe
+relative-path form. Derive the directory from evidence; never
+hardcode a folder name.
+
+If a command fails because a referenced file/path was not found
+from the current cwd, do not immediately repeat the identical
+argv and cwd. Inspect the repository, change cwd or the
+referenced path, then retry only after something material changes.
+
 If a command is rejected, read rejection_reason and choose an equivalent
 supported argv form. Do not fail immediately when a safe equivalent exists.
 Only fail when no supported approach remains or budgets are exhausted.

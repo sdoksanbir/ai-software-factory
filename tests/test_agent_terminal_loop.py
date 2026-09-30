@@ -12,6 +12,7 @@ import pytest
 
 from factory.agent_terminal_loop import (
     command_fingerprint,
+    is_deterministic_missing_path_failure,
     run_agent_terminal_loop,
 )
 from factory.agent_terminal_models import (
@@ -80,6 +81,9 @@ def _failed_result(
     argv: list[str],
     cwd: str = ".",
     command_id: str = "cmd-fail",
+    exit_code: int = 1,
+    stderr: str = "boom",
+    stdout: str = "",
 ) -> TaskCommandResult:
     return TaskCommandResult(
         command_id=command_id,
@@ -90,9 +94,9 @@ def _failed_result(
         started_at="t0",
         finished_at="t1",
         duration_ms=5,
-        exit_code=1,
-        stdout="",
-        stderr="boom",
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
         status="failed",
         execution_boundary="HOST_SAFE",
         network_policy=NetworkPolicy.NETWORK_NONE.value,
@@ -377,7 +381,194 @@ def test_identical_command_stall_skips_third():
         "stall_identical_command",
         "stall_repeated_failure",
     }
+    # Transient / non-missing-path failures still
+    # allow the general identical budget of 2.
     assert len(runner_calls) == 2
+
+
+def test_deterministic_missing_path_classifier():
+    assert is_deterministic_missing_path_failure(
+        status="failed",
+        exit_code=2,
+        stderr=(
+            "can't open file '/app/manage.py': "
+            "[Errno 2] No such file or directory"
+        ),
+    )
+    assert is_deterministic_missing_path_failure(
+        status="failed",
+        exit_code=1,
+        stderr="The system cannot find the path specified.",
+    )
+    assert not is_deterministic_missing_path_failure(
+        status="failed",
+        exit_code=1,
+        stderr="boom",
+    )
+    assert not is_deterministic_missing_path_failure(
+        status="succeeded",
+        exit_code=0,
+        stderr="No such file or directory",
+    )
+    assert not is_deterministic_missing_path_failure(
+        status="timed_out",
+        exit_code=None,
+        stderr="No such file or directory",
+    )
+
+
+def test_missing_path_blocks_identical_retry_then_recovers():
+    runner_calls: list[dict] = []
+    missing_stderr = (
+        "can't open file '/app/manage.py': "
+        "[Errno 2] No such file or directory"
+    )
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        argv = list(req.argv)
+        cwd = str(req.cwd or ".")
+
+        if (
+            argv[:3] == ["python", "manage.py", "check"]
+            and cwd in {".", None, ""}
+        ):
+            return _failed_result(
+                argv=argv,
+                cwd=".",
+                exit_code=2,
+                stderr=missing_stderr,
+                command_id=f"miss-{len(runner_calls)}",
+            )
+
+        if argv[:2] == ["git", "ls-files"]:
+            return TaskCommandResult(
+                command_id=f"git-{len(runner_calls)}",
+                task_id="TASK-T",
+                argv=argv,
+                cwd=".",
+                permission_level=(
+                    PermissionLevel.EXECUTE_SAFE.value
+                ),
+                started_at="t0",
+                finished_at="t1",
+                duration_ms=3,
+                exit_code=0,
+                stdout="edusen/manage.py\n",
+                stderr="",
+                status="succeeded",
+                execution_boundary="HOST_SAFE",
+                network_policy=(
+                    NetworkPolicy.NETWORK_NONE.value
+                ),
+            )
+
+        if (
+            argv[:3] == ["python", "manage.py", "check"]
+            and cwd == "edusen"
+        ):
+            return _success_result(
+                argv=argv,
+                cwd="edusen",
+                command_id=f"ok-{len(runner_calls)}",
+            )
+
+        raise AssertionError(
+            f"Unexpected command: argv={argv!r} cwd={cwd!r}"
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": ["python", "manage.py", "check"],
+                "cwd": ".",
+                "reason": "assume root",
+            }
+        ),
+        # Identical miss — must be blocked without runner.
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": ["python", "manage.py", "check"],
+                "cwd": ".",
+                "reason": "retry identical",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "discover",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": ["python", "manage.py", "check"],
+                "cwd": "edusen",
+                "reason": "correct cwd",
+            }
+        ),
+        _action(
+            {
+                "action_type": "complete",
+                "reason": "django check ok",
+                "summary": "Recovered via discovery.",
+            }
+        ),
+    ]
+    decider = ScriptedDecider(scripts)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-MISS-1",
+        prompt="django check",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 3
+
+    first = runner_calls[0]["request"]
+    assert list(first.argv) == [
+        "python",
+        "manage.py",
+        "check",
+    ]
+    assert (first.cwd or ".") in {".", None}
+
+    second = runner_calls[1]["request"]
+    assert list(second.argv)[:2] == ["git", "ls-files"]
+
+    third = runner_calls[2]["request"]
+    assert list(third.argv) == [
+        "python",
+        "manage.py",
+        "check",
+    ]
+    assert third.cwd == "edusen"
+
+    # Blocked identical retry appears as controller feedback.
+    assert any(
+        "Inspect the repository and change cwd or argv"
+        in call["user_prompt"]
+        for call in decider.calls[2:]
+    )
+    assert any(
+        missing_stderr in call["user_prompt"]
+        for call in decider.calls[1:]
+    )
 
 
 def test_oscillation_stall():

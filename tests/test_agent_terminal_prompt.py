@@ -41,6 +41,20 @@ def test_system_prompt_capability_guidance():
     assert "SAFE_PATH_EXECUTABLES" not in text
 
 
+def test_system_prompt_repository_discovery_guidance():
+    text = build_terminal_system_prompt()
+    assert "Do not assume the repository root" in text
+    assert '["git","ls-files"]' in text
+    assert '*manage.py' in text
+    assert '*package.json' in text
+    assert '*pyproject.toml' in text
+    assert '*Cargo.toml' in text
+    assert "edusen" not in text
+    assert "change cwd or the" in text.casefold() or (
+        "change cwd or argv" in text.casefold()
+    )
+
+
 def test_user_prompt_includes_task_budget_observations():
     policy = AgentTerminalPolicy(allow_mutating=True)
     obs = TerminalObservation(

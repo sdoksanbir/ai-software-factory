@@ -295,6 +295,7 @@ class TaskCreateRequest(BaseModel):
     max_attempts: int = Field(default=2, ge=1, le=5)
     project_id: str | None = None
     model: str | None = None
+    related_task_id: str | None = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -309,6 +310,7 @@ class TaskCreateResponse(BaseModel):
     test_result: str | None = None
     started_at: str | None = None
     task_kind: str | None = None
+    related_task_id: str | None = None
 
 
 
@@ -615,6 +617,7 @@ def persist_task(
             if worktree_path is not None
             else None
         ),
+        related_task_id=task.related_task_id,
     )
 
 
@@ -678,6 +681,9 @@ def hydrate_runtime_from_database() -> None:
             ),
             test_result=row["test_result"],
             started_at=row["started_at"],
+            related_task_id=row.get(
+                "related_task_id"
+            ),
         )
 
         route_record = get_task_route(
@@ -1784,6 +1790,41 @@ def create_task(
 
         selected_project = projects[0]
 
+    related_task_id = None
+
+    if request.related_task_id is not None:
+        related_raw = str(
+            request.related_task_id
+        ).strip()
+
+        if related_raw:
+            from factory.task_execution_evidence import (
+                validate_related_task_id,
+            )
+
+            try:
+                validate_related_task_id(
+                    related_task_id=related_raw,
+                    project_id=selected_project[
+                        "project_id"
+                    ],
+                )
+            except ValueError as exc:
+                message = str(exc)
+
+                if "not found" in message:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=message,
+                    ) from exc
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=message,
+                ) from exc
+
+            related_task_id = related_raw
+
     while True:
         task_id = f"TASK-{random.randint(1000, 9999)}"
         if task_id not in TASKS:
@@ -1796,6 +1837,7 @@ def create_task(
         max_attempts=request.max_attempts,
         project_id=selected_project["project_id"],
         started_at=datetime.now(timezone.utc).isoformat(),
+        related_task_id=related_task_id,
     )
 
     TASKS[task_id] = task
