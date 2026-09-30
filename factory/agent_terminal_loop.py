@@ -529,7 +529,13 @@ def run_agent_terminal_loop(
             consecutive_invalid += 1
             feedback = (
                 "Invalid action rejected: "
-                f"{exc}"
+                f"{exc} "
+                "Return exactly one raw JSON object "
+                "with action_type run_command, "
+                "complete, or fail. After successful "
+                "remediation, retry the original "
+                "user-requested operation if it is "
+                "still unsatisfied."
             )
             observation = (
                 controller_feedback_observation(
@@ -632,7 +638,11 @@ def run_agent_terminal_loop(
             consecutive_invalid += 1
             feedback = (
                 "Unsupported action type "
-                "rejected by controller."
+                "rejected by controller. "
+                "Use run_command, complete, or fail. "
+                "After successful remediation, retry "
+                "the original user-requested "
+                "operation if it is still unsatisfied."
             )
             observation = (
                 controller_feedback_observation(
@@ -743,9 +753,19 @@ def run_agent_terminal_loop(
         # Valid executable attempt resets invalid streak.
         consecutive_invalid = 0
 
-        # Identical stall: do not execute 3rd time.
+        # Consecutive identical argv+cwd attempts:
+        # intervening different commands (e.g. install
+        # or migrate) allow retrying the original
+        # operation. Do not use lifetime totals here.
+        trailing_identical = 0
+        for prior_fp in reversed(fingerprints_seen):
+            if prior_fp == fingerprint:
+                trailing_identical += 1
+            else:
+                break
+
         if (
-            prior_count
+            trailing_identical
             >= active_policy
             .max_identical_command_executions
         ):

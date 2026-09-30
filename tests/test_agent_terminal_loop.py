@@ -2367,3 +2367,247 @@ def test_missing_required_secret_rejects_safely():
     assert "will-clear" not in json.dumps(
         result.to_dict()
     )
+
+
+def test_django_createsuperuser_recovers_after_install_and_migrate():
+    """Missing dependency → install → schema miss → migrate → retry → complete.
+
+    Failed subprocess commands must not count toward
+    max_consecutive_invalid_actions. After remediation
+    succeeds, retrying the original operation must be
+    able to finish without exhausting the invalid budget.
+    """
+    createsuperuser = [
+        "python",
+        "manage.py",
+        "createsuperuser",
+        "--noinput",
+        "--username",
+        "admin",
+        "--email",
+        "admin@example.com",
+    ]
+    install = [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "django",
+    ]
+    migrate = [
+        "python",
+        "manage.py",
+        "migrate",
+    ]
+
+    runner_calls: list[dict] = []
+    phase = {"n": 0}
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        argv = list(req.argv)
+        cwd = req.cwd
+        phase["n"] += 1
+
+        if phase["n"] == 1:
+            assert argv == createsuperuser
+            assert cwd == "ajan"
+            return _failed_result(
+                argv=argv,
+                cwd=cwd or ".",
+                stderr=(
+                    "ModuleNotFoundError: "
+                    "No module named 'django'"
+                ),
+            )
+
+        if phase["n"] == 2:
+            assert argv == install
+            return _success_result(
+                argv=argv,
+                cwd=cwd or ".",
+            )
+
+        if phase["n"] == 3:
+            assert argv == createsuperuser
+            assert cwd == "ajan"
+            return _failed_result(
+                argv=argv,
+                cwd=cwd or ".",
+                stderr=(
+                    "django.db.utils.OperationalError: "
+                    "no such table: auth_user"
+                ),
+            )
+
+        if phase["n"] == 4:
+            assert argv == migrate
+            assert cwd == "ajan"
+            return _success_result(
+                argv=argv,
+                cwd=cwd or ".",
+            )
+
+        if phase["n"] == 5:
+            assert argv == createsuperuser
+            assert cwd == "ajan"
+            return _success_result(
+                argv=argv,
+                cwd=cwd or ".",
+                command_id="cmd-superuser-ok",
+            )
+
+        raise AssertionError(
+            f"unexpected command #{phase['n']}: {argv}"
+        )
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": createsuperuser,
+                    "cwd": "ajan",
+                    "reason": "create superuser",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": install,
+                    "cwd": None,
+                    "reason": "install missing django",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": createsuperuser,
+                    "cwd": "ajan",
+                    "reason": "retry after install",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": migrate,
+                    "cwd": "ajan",
+                    "reason": "apply schema",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": createsuperuser,
+                    "cwd": "ajan",
+                    "reason": "retry after migrate",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "superuser created",
+                    "summary": "createsuperuser succeeded",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-DJANGO-RECOVERY",
+        prompt=(
+            "ajan Django projesinde admin "
+            "superuser olustur"
+        ),
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=True,
+            max_consecutive_invalid_actions=3,
+        ),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert result.reason != "max_consecutive_invalid_actions"
+    assert result.commands_executed == 5
+    assert result.successful_commands == 3
+    assert result.failed_commands == 2
+    assert len(runner_calls) == 5
+    assert list(runner_calls[-1]["request"].argv) == (
+        createsuperuser
+    )
+    assert runner_calls[-1]["request"].cwd == "ajan"
+    # Failed subprocesses must not appear as controller
+    # invalid-action feedback in the completion path.
+    assert result.last_observation is not None
+    assert result.last_observation.status == "succeeded"
+
+
+def test_malformed_actions_remain_bounded_after_remediation():
+    """Valid remediation resets the invalid streak; later
+    malformed decisions still exhaust the budget.
+    """
+    prompts: list[str] = []
+
+    def fake_runner(**kwargs):
+        return _success_result(
+            argv=list(kwargs["request"].argv)
+        )
+
+    class TrackingDecider(ScriptedDecider):
+        def __call__(self, **kwargs) -> str:
+            prompts.append(kwargs["user_prompt"])
+            return super().__call__(**kwargs)
+
+    decider = TrackingDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-m",
+                        "pip",
+                        "install",
+                        "django",
+                    ],
+                    "cwd": None,
+                    "reason": "remediate",
+                }
+            ),
+            "not json at all",
+            "```json\n{\"action_type\":\"complete\"}\n```",
+            "still not a raw json object",
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-INVALID-BOUND",
+        prompt="bounded malformed",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=True,
+            max_consecutive_invalid_actions=3,
+        ),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "budget_exceeded"
+    assert (
+        result.reason
+        == "max_consecutive_invalid_actions"
+    )
+    assert result.successful_commands == 1
+    assert result.commands_executed == 1
+    # Corrective feedback must reach the model.
+    assert len(prompts) == 4
+    assert "Invalid action rejected" in prompts[2]
+    assert "retry the original" in prompts[2].casefold()
+    assert "Invalid action rejected" in prompts[3]

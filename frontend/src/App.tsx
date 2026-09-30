@@ -612,6 +612,8 @@ function App() {
   const [prompt, setPrompt] = useState("")
   const [userPassword, setUserPassword] =
     useState("")
+  const [showSecretField, setShowSecretField] =
+    useState(false)
   const [maxAttempts, setMaxAttempts] = useState(2)
 
   const [showTaskComposer, setShowTaskComposer] =
@@ -1359,6 +1361,7 @@ function App() {
 
       setPrompt("")
       setUserPassword("")
+      setShowSecretField(false)
       setShowTaskComposer(false)
       setSelectedTaskId(task.task_id)
 
@@ -1996,25 +1999,48 @@ function App() {
                 placeholder="AI ajanına görevini yaz..."
               />
 
-              <label className="task-secret-field">
-                <span>
-                  {"Gizli parola (isteğe bağlı)"}
-                </span>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={userPassword}
-                  onChange={(event) =>
-                    setUserPassword(
-                      event.target.value,
-                    )
+              {!showSecretField ? (
+                <button
+                  type="button"
+                  className="task-secret-toggle"
+                  onClick={() =>
+                    setShowSecretField(true)
                   }
-                  placeholder="Parolayı görev metnine yazmayın."
-                />
-                <small>
-                  {"Parolayı görev metnine yazmayın."}
-                </small>
-              </label>
+                >
+                  {"+ Gizli bilgi ekle"}
+                </button>
+              ) : (
+                <label className="task-secret-field">
+                  <span className="task-secret-field-header">
+                    <span>{"Gizli bilgi"}</span>
+                    <button
+                      type="button"
+                      className="task-secret-close"
+                      onClick={() => {
+                        setShowSecretField(false)
+                        setUserPassword("")
+                      }}
+                    >
+                      {"Kapat"}
+                    </button>
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={userPassword}
+                    onChange={(event) =>
+                      setUserPassword(
+                        event.target.value,
+                      )
+                    }
+                  />
+                  <small>
+                    {
+                      "Parola veya başka hassas bilgileri görev metnine yazmayın."
+                    }
+                  </small>
+                </label>
+              )}
 
               <div className="task-model-field">
                 <span>

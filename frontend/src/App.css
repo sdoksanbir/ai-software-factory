@@ -2855,6 +2855,64 @@ body {
 }
 
 
+/* OPTIONAL SECRET FIELD */
+
+.task-secret-toggle {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: #6f899f;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+  margin-bottom: 8px;
+}
+
+.task-secret-toggle:hover {
+  color: #d7e5f1;
+}
+
+.task-secret-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.task-secret-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-secret-field-header > span {
+  color: #6f899f;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.task-secret-close {
+  border: 0;
+  background: transparent;
+  color: #6f899f;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.task-secret-close:hover {
+  color: #d7e5f1;
+}
+
+.task-secret-field small {
+  color: #6f899f;
+  font-size: 10px;
+}
+
+
 /* TASK MODEL SELECTOR */
 
 .task-model-field {

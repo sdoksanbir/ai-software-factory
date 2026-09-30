@@ -66,6 +66,19 @@ def test_system_prompt_repository_discovery_guidance():
     )
 
 
+def test_system_prompt_recovery_after_remediation():
+    text = build_terminal_system_prompt()
+    folded = text.casefold()
+    assert "remediation" in folded
+    assert "retry the original" in folded
+    assert "install a missing dependency" in folded
+    assert "required directory" in folded
+    assert "migrate" in folded or "schema setup" in folded
+    # Guidance must stay general — no Django workflow hardcoding.
+    assert "createsuperuser" not in folded
+    assert "auth_user" not in folded
+
+
 def test_user_prompt_includes_task_budget_observations():
     policy = AgentTerminalPolicy(allow_mutating=True)
     obs = TerminalObservation(

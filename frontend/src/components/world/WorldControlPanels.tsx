@@ -134,6 +134,8 @@ export function WorldControlPanels({
 }: Props) {
   const [showTaskComposer, setShowTaskComposer] =
     useState(false)
+  const [showSecretField, setShowSecretField] =
+    useState(false)
 
   useEffect(() => {
     if (composerRequestId > 0) {
@@ -237,9 +239,13 @@ export function WorldControlPanels({
               type="button"
               className="world-primary-button"
               onClick={() =>
-                setShowTaskComposer(
-                  (current) => !current,
-                )
+                setShowTaskComposer((current) => {
+                  if (current) {
+                    setShowSecretField(false)
+                    onUserPasswordChange("")
+                  }
+                  return !current
+                })
               }
               disabled={!selectedProjectId}
             >
@@ -253,9 +259,10 @@ export function WorldControlPanels({
             <form
               className="world-form world-task-form"
               onSubmit={(event) => {
-              onCreateTask(event)
-              setShowTaskComposer(false)
-            }}
+                onCreateTask(event)
+                setShowTaskComposer(false)
+                setShowSecretField(false)
+              }}
             >
                 <label className="world-task-project-field world-form-wide">
                   <span>Proje</span>
@@ -304,27 +311,50 @@ export function WorldControlPanels({
                 />
               </label>
 
-              <label className="world-form-wide">
-                <span>
-                  Gizli parola (isteğe bağlı)
-                </span>
-
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={userPassword}
-                  onChange={(event) =>
-                    onUserPasswordChange(
-                      event.target.value,
-                    )
+              {!showSecretField ? (
+                <button
+                  type="button"
+                  className="world-secret-toggle"
+                  onClick={() =>
+                    setShowSecretField(true)
                   }
-                  placeholder="Parolayı görev metnine yazmayın."
-                />
+                >
+                  {"+ Gizli bilgi ekle"}
+                </button>
+              ) : (
+                <label className="world-form-wide world-secret-field">
+                  <span className="world-secret-field-header">
+                    <span>Gizli bilgi</span>
+                    <button
+                      type="button"
+                      className="world-secret-close"
+                      onClick={() => {
+                        setShowSecretField(false)
+                        onUserPasswordChange("")
+                      }}
+                    >
+                      {"Kapat"}
+                    </button>
+                  </span>
 
-                <small>
-                  Parolayı görev metnine yazmayın.
-                </small>
-              </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={userPassword}
+                    onChange={(event) =>
+                      onUserPasswordChange(
+                        event.target.value,
+                      )
+                    }
+                  />
+
+                  <small>
+                    {
+                      "Parola veya başka hassas bilgileri görev metnine yazmayın."
+                    }
+                  </small>
+                </label>
+              )}
 
               <label>
                 <span>Model</span>

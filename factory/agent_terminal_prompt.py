@@ -111,6 +111,19 @@ If a command is rejected, read rejection_reason and choose an equivalent
 supported argv form. Do not fail immediately when a safe equivalent exists.
 Only fail when no supported approach remains or budgets are exhausted.
 
+After a remediation command succeeds, return to the original
+user-requested operation unless observations already show it is
+satisfied. Remediation is setup that unblocks the original goal —
+not completion of the goal itself.
+
+Conceptual examples (general — not task-specific routing):
+- install a missing dependency → retry the original command
+- create a required directory → retry the original command
+- apply migrations / schema setup → retry the original command
+
+Do not complete solely because remediation succeeded.
+Retry the original operation first when it is still unsatisfied.
+
 Package installation must be ordinary argv, for example:
 ["python","-m","pip","install","package"]
 Existing TaskCommand policy decides whether install is allowed and

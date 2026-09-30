@@ -120,6 +120,43 @@
   grid-column: span 2;
 }
 
+.world-secret-toggle {
+  grid-column: span 2;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #9bb4cb;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.world-secret-toggle:hover {
+  color: #eaf6ff;
+}
+
+.world-secret-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.world-secret-close {
+  border: 0;
+  background: transparent;
+  color: #9bb4cb;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.world-secret-close:hover {
+  color: #eaf6ff;
+}
+
 .world-form label > span {
   display: block;
   margin-bottom: 5px;
