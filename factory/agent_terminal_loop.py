@@ -657,7 +657,6 @@ def run_agent_terminal_loop(
                 ),
             )
 
-        commands_executed += 1
         status = str(
             getattr(
                 command_result,
@@ -666,6 +665,59 @@ def run_agent_terminal_loop(
             )
             or ""
         )
+
+        # Runner-owned REJECTED (persisted, no process):
+        # replan with observation; do not count as executed.
+        if status == "rejected":
+            rejected_commands += 1
+            consecutive_failures += 1
+            rejection_reason = str(
+                getattr(
+                    command_result,
+                    "stderr",
+                    "",
+                )
+                or "Command rejected by policy."
+            )
+            observation = (
+                observation_from_task_command_result(
+                    command_result,
+                    rejection_reason=rejection_reason,
+                )
+            )
+            observations.append(observation)
+            last_observation = observation
+            last_command_status = "rejected"
+            fingerprints_seen.append(fingerprint)
+            outcomes_seen.append("rejected")
+            fingerprint_counts[fingerprint] = (
+                prior_count + 1
+            )
+
+            if _detect_oscillation(
+                fingerprints_seen,
+                outcomes_seen,
+            ):
+                return _result(
+                    "stalled",
+                    reason="stall_oscillation",
+                )
+
+            if (
+                consecutive_failures
+                >= active_policy
+                .max_consecutive_command_failures
+            ):
+                return _result(
+                    "stalled",
+                    reason=(
+                        "max_consecutive_command_failures"
+                    ),
+                )
+
+            continue
+
+        commands_executed += 1
         observation = (
             observation_from_task_command_result(
                 command_result

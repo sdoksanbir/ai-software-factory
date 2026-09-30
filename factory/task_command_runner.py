@@ -1428,9 +1428,15 @@ def run_task_command(
     db_path: str | Path | None = None,
     persist: bool = True,
 ) -> TaskCommandResult:
-    """Run one guarded command and optionally persist history."""
+    """Run one guarded command and optionally persist history.
+
+    Policy / path / validation rejections before process start are
+    persisted as ``CommandStatus.REJECTED`` (no subprocess) and
+    returned — not raised — so Terminal history stays complete.
+    """
     project_root = _project_root(project_path)
     argv = _normalize_argv(request.argv)
+    original_argv = list(argv)
     timeout = _validate_timeout(
         request.timeout_seconds
         if request.timeout_seconds is not None
@@ -1442,85 +1448,67 @@ def run_task_command(
         request.secret_env_keys,
     )
 
-    # Secrets must never appear in argv.
-    secret_values_for_argv_check = collect_secret_values(
-        extra_env,
-        secret_keys,
-    )
-
-    for arg in argv:
-        for secret in secret_values_for_argv_check:
-            if secret and secret in arg:
-                raise TaskCommandValidationError(
-                    "Secret deger argv icinde bulunamaz; "
-                    "env kullanin."
-                )
-
-    workdir = resolve_command_cwd(
-        project_root,
-        request.cwd,
-    )
-    executable = resolve_command_executable(
-        project_root,
-        argv[0],
-    )
-    args = argv[1:]
-    original_argv = list(argv)
-
-    permission_level = classify_permission_level(
-        executable,
-        args,
-    )
-    assert_command_allowed(
-        permission_level,
-        allow_mutating=bool(
-            request.allow_mutating
-        ),
-    )
-
-    boundary = classify_execution_boundary(
-        executable,
-        args,
-    )
-    network_policy = classify_network_policy(
-        executable,
-        args,
-    )
-
-    is_package_install = (
-        network_policy
-        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
-    )
-
-    sandbox_args = list(args)
-
-    if is_package_install:
-        # Fail closed: any caller request.env can
-        # redirect pip/network (PIP_INDEX_URL, proxies…).
-        if extra_env:
-            raise TaskCommandPolicyError(
-                "NETWORK_PACKAGE_INSTALL komutunda "
-                "request.env V1'de bos olmali."
-            )
-        # Expand -r on host; pip never reads the file.
-        sandbox_args = prepare_package_install_argv(
-            project_root=project_root,
-            executable=executable,
-            args=args,
-        )
-
-    secret_values = collect_secret_values(
-        extra_env,
-        secret_keys,
-    )
-
     command_id = str(uuid4())
     started_at = _utcnow_iso()
     started_monotonic = time.monotonic()
-    cwd_label = _relative_cwd_label(
-        project_root,
-        workdir,
-    )
+    cwd_label = "."
+    permission_level = PermissionLevel.DANGEROUS
+    boundary = ExecutionBoundary.PROJECT_CODE_SANDBOX
+    network_policy = NetworkPolicy.NETWORK_NONE
+    secret_values: list[str] = []
+    workdir: Path | None = None
+    executable: str | None = None
+    args: list[str] = []
+    sandbox_args: list[str] = []
+
+    def _persist_result(
+        result: TaskCommandResult,
+    ) -> TaskCommandResult:
+        if persist:
+            save_kwargs: dict[str, Any] = {
+                "result": result,
+            }
+            if db_path is not None:
+                save_kwargs["db_path"] = db_path
+            save_task_command(**save_kwargs)
+        return result
+
+    def _rejected(
+        reason: str,
+        *,
+        level: PermissionLevel | None = None,
+    ) -> TaskCommandResult:
+        finished_at = _utcnow_iso()
+        duration_ms = int(
+            (
+                time.monotonic()
+                - started_monotonic
+            )
+            * 1000
+        )
+        err, err_trunc = truncate_capture(reason)
+        result = TaskCommandResult(
+            command_id=command_id,
+            task_id=request.task_id,
+            argv=original_argv,
+            cwd=cwd_label,
+            permission_level=(
+                level or permission_level
+            ).value,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=duration_ms,
+            exit_code=None,
+            stdout="",
+            stderr=err,
+            status=CommandStatus.REJECTED.value,
+            secret_env_keys=secret_keys,
+            stdout_truncated=False,
+            stderr_truncated=err_trunc,
+            execution_boundary="",
+            network_policy="",
+        )
+        return _persist_result(result)
 
     def _finish(
         *,
@@ -1568,16 +1556,86 @@ def run_task_command(
             execution_boundary=boundary.value,
             network_policy=network_policy.value,
         )
+        return _persist_result(result)
 
-        if persist:
-            save_kwargs: dict[str, Any] = {
-                "result": result,
-            }
-            if db_path is not None:
-                save_kwargs["db_path"] = db_path
-            save_task_command(**save_kwargs)
+    # Secrets must never appear in argv.
+    secret_values_for_argv_check = collect_secret_values(
+        extra_env,
+        secret_keys,
+    )
 
-        return result
+    for arg in argv:
+        for secret in secret_values_for_argv_check:
+            if secret and secret in arg:
+                return _rejected(
+                    "Secret deger argv icinde bulunamaz; "
+                    "env kullanin.",
+                )
+
+    try:
+        workdir = resolve_command_cwd(
+            project_root,
+            request.cwd,
+        )
+        cwd_label = _relative_cwd_label(
+            project_root,
+            workdir,
+        )
+        executable = resolve_command_executable(
+            project_root,
+            argv[0],
+        )
+        args = argv[1:]
+        permission_level = classify_permission_level(
+            executable,
+            args,
+        )
+        assert_command_allowed(
+            permission_level,
+            allow_mutating=bool(
+                request.allow_mutating
+            ),
+        )
+        boundary = classify_execution_boundary(
+            executable,
+            args,
+        )
+        network_policy = classify_network_policy(
+            executable,
+            args,
+        )
+
+        is_package_install = (
+            network_policy
+            == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+        )
+        sandbox_args = list(args)
+
+        if is_package_install:
+            if extra_env:
+                raise TaskCommandPolicyError(
+                    "NETWORK_PACKAGE_INSTALL komutunda "
+                    "request.env V1'de bos olmali."
+                )
+            sandbox_args = prepare_package_install_argv(
+                project_root=project_root,
+                executable=executable,
+                args=args,
+            )
+
+        secret_values = collect_secret_values(
+            extra_env,
+            secret_keys,
+        )
+    except (
+        TaskCommandPolicyError,
+        TaskCommandPathError,
+        TaskCommandValidationError,
+    ) as exc:
+        return _rejected(str(exc))
+
+    assert workdir is not None
+    assert executable is not None
 
     if boundary == ExecutionBoundary.HOST_SAFE:
         if _executable_basename(executable) in {
@@ -1641,6 +1699,10 @@ def run_task_command(
     # PROJECT_CODE_SANDBOX
     dependency_volume_name: str | None = None
     sandbox_request_env = dict(extra_env)
+    is_package_install = (
+        network_policy
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    )
 
     if uses_python_dependency_environment(executable):
         dependency_volume_name = (

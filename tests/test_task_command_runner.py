@@ -301,13 +301,15 @@ def test_cwd_under_project_root(
 
 
 def test_cwd_parent_escape_rejected(tmp_path):
-    with pytest.raises(TaskCommandPathError):
-        _run(
-            tmp_path,
-            [sys.executable, "--version"],
-            cwd="../",
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [sys.executable, "--version"],
+        cwd="../",
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert result.exit_code is None
+    assert result.stderr
 
 
 def test_absolute_external_cwd_rejected(
@@ -318,13 +320,15 @@ def test_absolute_external_cwd_rejected(
         "outside-cwd"
     )
 
-    with pytest.raises(TaskCommandPathError):
-        _run(
-            tmp_path,
-            [sys.executable, "--version"],
-            cwd=str(outside),
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [sys.executable, "--version"],
+        cwd=str(outside),
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert result.exit_code is None
+    assert result.stderr
 
 
 def test_shell_metacharacters_not_interpreted(
@@ -376,13 +380,16 @@ def test_dangerous_commands_rejected(
     tmp_path,
     argv,
 ):
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            argv,
-            allow_mutating=True,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        argv,
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert result.exit_code is None
+    assert result.command_id
+    assert result.stderr
 
 
 def test_timeout_returns_structured_result(
@@ -654,13 +661,16 @@ def test_migrate_allowed_with_allow_mutating_true():
 def test_dangerous_still_rejected_with_allow_mutating(
     tmp_path,
 ):
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            [sys.executable, "-c", "print(1)"],
-            allow_mutating=True,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [sys.executable, "-c", "print(1)"],
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert "DANGEROUS" in result.stderr or (
+        "-c" in " ".join(result.argv)
+    )
 
 
 def test_manage_py_flush_is_dangerous():
@@ -926,58 +936,62 @@ def test_migrate_without_allow_mutating_rejects_before_sandbox(
         _boom,
     )
 
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            [
-                sys.executable,
-                "manage.py",
-                "migrate",
-            ],
-            allow_mutating=False,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "manage.py",
+            "migrate",
+        ],
+        allow_mutating=False,
+        persist=False,
+    )
 
+    assert result.status == "rejected"
     assert called["sandbox"] is False
+    assert "allow_mutating" in result.stderr.casefold() or (
+        "mutating" in result.stderr.casefold()
+    )
 
 
 def test_package_install_with_secret_rejected(
     tmp_path,
 ):
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "django",
-            ],
-            env={"MY_TOKEN": "secret"},
-            allow_mutating=True,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "django",
+        ],
+        env={"MY_TOKEN": "secret"},
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert result.exit_code is None
 
 
 def test_package_install_any_request_env_rejected(
     tmp_path,
 ):
-    with pytest.raises(TaskCommandPolicyError) as exc_info:
-        _run(
-            tmp_path,
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "six",
-            ],
-            env={"PIP_INDEX_URL": "https://evil.example"},
-            allow_mutating=True,
-            persist=False,
-        )
-    assert "request.env" in str(exc_info.value).casefold()
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "six",
+        ],
+        env={"PIP_INDEX_URL": "https://evil.example"},
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert "request.env" in result.stderr.casefold()
 
 
 def test_package_install_reaches_sandbox_with_bridge(
@@ -1099,20 +1113,20 @@ def test_malicious_requirements_rejected_before_sandbox(
         "--index-url https://example.com/simple\nsix\n",
         encoding="utf-8",
     )
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "-r",
-                "requirements.txt",
-            ],
-            allow_mutating=True,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements.txt",
+        ],
+        allow_mutating=True,
+        persist=False,
+    )
+    assert result.status == "rejected"
     assert called["sandbox"] is False
     assert called["ensure"] is False
 
@@ -1378,14 +1392,14 @@ def test_git_branch_create_rejected_without_allow_mutating(
         _boom,
     )
 
-    with pytest.raises(TaskCommandPolicyError):
-        _run(
-            tmp_path,
-            ["git", "branch", "new-name"],
-            allow_mutating=False,
-            persist=False,
-        )
+    result = _run(
+        tmp_path,
+        ["git", "branch", "new-name"],
+        allow_mutating=False,
+        persist=False,
+    )
 
+    assert result.status == "rejected"
     assert called["sandbox"] is False
 
 
@@ -1550,3 +1564,112 @@ def test_sqlite_migration_adds_boundary_columns(
 
     assert "execution_boundary" in cols
     assert "network_policy" in cols
+
+
+def test_django_admin_rejected_no_subprocess_persisted(
+    tmp_path,
+    monkeypatch,
+):
+    called = {"run": False}
+
+    def boom(*args, **kwargs):
+        called["run"] = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr(
+        "factory.task_command_runner.subprocess.run",
+        boom,
+    )
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        boom,
+    )
+
+    db_path = tmp_path / "factory.db"
+    result = _run(
+        tmp_path,
+        ["django-admin", "startproject", "ajan"],
+        allow_mutating=True,
+        persist=True,
+        db_path=db_path,
+        task_id="TASK-DJANGO-1",
+    )
+
+    assert result.status == "rejected"
+    assert result.exit_code is None
+    assert result.command_id
+    assert "django-admin" in result.stderr
+    assert "izinli" in result.stderr.casefold()
+    assert called["run"] is False
+
+    rows = list_task_commands(
+        "TASK-DJANGO-1",
+        db_path=db_path,
+    )
+    assert len(rows) == 1
+    assert rows[0]["status"] == "rejected"
+    assert rows[0]["command_id"] == result.command_id
+    assert rows[0]["argv"][0] == "django-admin"
+
+
+def test_python_m_django_and_manage_classification():
+    assert (
+        classify_permission_level(
+            "python",
+            ["-m", "django", "--version"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    assert (
+        classify_permission_level(
+            "python",
+            ["-m", "django", "startproject", "ajan"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_permission_level(
+            "python",
+            ["manage.py", "startapp", "users"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_permission_level(
+            "python",
+            ["manage.py", "check"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    assert (
+        classify_network_policy(
+            "python",
+            ["-m", "pip", "install", "django"],
+        )
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    )
+    assert (
+        classify_permission_level(
+            "python",
+            ["-m", "pip", "install", "django"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+
+
+def test_shell_wrappers_still_rejected(tmp_path):
+    for argv in (
+        ["bash", "-c", "echo hi"],
+        ["sh", "-c", "echo hi"],
+        ["cmd", "/c", "echo hi"],
+        ["powershell", "-Command", "1"],
+    ):
+        result = _run(
+            tmp_path,
+            argv,
+            allow_mutating=True,
+            persist=False,
+        )
+        assert result.status == "rejected"
+        assert result.exit_code is None

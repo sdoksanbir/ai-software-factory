@@ -139,9 +139,11 @@ function CommandRow({
         <span>
           {formatDuration(command.duration_ms)}
         </span>
-        {command.exit_code !== null && (
+        {command.exit_code !== null ? (
           <span>exit {command.exit_code}</span>
-        )}
+        ) : command.status === "rejected" ? (
+          <span>çalıştırılmadı</span>
+        ) : null}
       </div>
 
       {showStdout && (

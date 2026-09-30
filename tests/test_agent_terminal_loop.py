@@ -1462,3 +1462,165 @@ def test_provider_router_integration_with_fake_runtime(
     )
     assert result.status == "failed"
     assert result.reason == "stop"
+
+
+def test_django_admin_reject_then_replan_to_python_module(
+    tmp_path,
+):
+    """Rejected django-admin becomes observation; supported forms succeed."""
+    db_path = tmp_path / "factory.db"
+    init_task_command_store(db_path)
+    runner_calls: list[list[str]] = []
+
+    def fake_runner(**kwargs):
+        request = kwargs["request"]
+        argv = list(request.argv)
+        runner_calls.append(argv)
+        cwd = request.cwd or "."
+
+        if argv and argv[0] == "django-admin":
+            # Mimic real runner: persist REJECTED, return result.
+            from factory.task_command_models import (
+                CommandStatus,
+            )
+            from factory.task_command_store import (
+                save_task_command,
+            )
+
+            result = TaskCommandResult(
+                command_id="rej-1",
+                task_id=request.task_id,
+                argv=argv,
+                cwd=cwd,
+                permission_level=(
+                    PermissionLevel.DANGEROUS.value
+                ),
+                started_at="t0",
+                finished_at="t0",
+                duration_ms=0,
+                exit_code=None,
+                stdout="",
+                stderr=(
+                    "Executable izinli degil: django-admin"
+                ),
+                status=CommandStatus.REJECTED.value,
+            )
+            if kwargs.get("persist", True):
+                save_task_command(
+                    result=result,
+                    db_path=db_path,
+                )
+            return result
+
+        return _success_result(
+            argv=argv,
+            cwd=str(cwd),
+            command_id=f"ok-{len(runner_calls)}",
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "django-admin",
+                    "startproject",
+                    "ajan",
+                ],
+                "cwd": None,
+                "reason": "scaffold",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "python",
+                    "-m",
+                    "django",
+                    "startproject",
+                    "ajan",
+                ],
+                "cwd": None,
+                "reason": "supported form",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "python",
+                    "manage.py",
+                    "startapp",
+                    "users",
+                ],
+                "cwd": "ajan",
+                "reason": "app",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "python",
+                    "manage.py",
+                    "check",
+                ],
+                "cwd": "ajan",
+                "reason": "verify",
+            }
+        ),
+        _action(
+            {
+                "action_type": "complete",
+                "reason": "done",
+                "summary": "Django scaffold ready",
+            }
+        ),
+    ]
+    decider = ScriptedDecider(scripts)
+
+    result = run_agent_terminal_loop(
+        project_path=str(tmp_path),
+        task_id="TASK-DJANGO-REPLAN",
+        prompt=(
+            "ajan adinda django projesi ve users app"
+        ),
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(
+            allow_mutating=True,
+            max_consecutive_command_failures=3,
+        ),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 4
+    assert runner_calls[0][0] == "django-admin"
+    assert runner_calls[1][:3] == [
+        "python",
+        "-m",
+        "django",
+    ]
+
+    # Rejection visible in next model context.
+    assert len(decider.calls) >= 2
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert "django-admin" in second_prompt
+    assert "rejected" in second_prompt.casefold()
+    assert (
+        "izinli degil" in second_prompt.casefold()
+        or "rejection_reason" in second_prompt
+    )
+
+    history = list_task_commands(
+        "TASK-DJANGO-REPLAN",
+        db_path=db_path,
+    )
+    assert any(
+        row["status"] == "rejected"
+        and row["argv"][0] == "django-admin"
+        for row in history
+    )

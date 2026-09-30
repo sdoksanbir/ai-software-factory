@@ -22,7 +22,23 @@ def test_system_prompt_covers_safety_rules():
     assert "raw JSON" in text.lower() or "JSON action" in text
     assert "python -c" in text
     assert "untrusted" in text.lower()
-    assert "allow_mutating" not in text
+    # Mentions allow_mutating only as authority the model must NOT set.
+    assert "Never invent or request permission_level" in text
+    assert "allow_mutating=True" not in text
+
+
+def test_system_prompt_capability_guidance():
+    text = build_terminal_system_prompt()
+    assert "python -m" in text or '"-m"' in text
+    assert "django-admin" in text
+    assert "rejected" in text.casefold()
+    assert "pip" in text.casefold()
+    assert "cwd" in text.casefold()
+    assert "network_policy" in text
+    assert "permission_level" in text
+    # Advisory only — model must not control authority.
+    assert "Never invent or request permission_level" in text
+    assert "SAFE_PATH_EXECUTABLES" not in text
 
 
 def test_user_prompt_includes_task_budget_observations():
