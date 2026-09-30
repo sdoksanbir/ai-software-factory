@@ -23,17 +23,23 @@ from factory.task_command_models import (
     MAX_TIMEOUT_SECONDS,
     MIN_TIMEOUT_SECONDS,
     CommandStatus,
+    ExecutionBoundary,
+    NetworkPolicy,
     PermissionLevel,
     TaskCommandError,
     TaskCommandPathError,
     TaskCommandPolicyError,
     TaskCommandRequest,
     TaskCommandResult,
+    TaskCommandSandboxRuntimeError,
     TaskCommandValidationError,
     collect_secret_values,
     redact_text,
     resolve_secret_env_keys,
     truncate_capture,
+)
+from factory.task_command_sandbox import (
+    run_in_task_command_sandbox,
 )
 from factory.task_command_store import (
     save_task_command,
@@ -106,20 +112,57 @@ NODE_EVAL_FLAGS = {
     "--print",
 }
 
-GIT_SAFE_SUBCOMMANDS = {
+# Narrow HOST_SAFE git templates (read-only).
+# Subcommand alone is insufficient — each entry is
+# validated by a per-subcommand arg allowlist/template.
+GIT_HOST_SAFE_SUBCOMMANDS = {
     "status",
-    "diff",
-    "log",
-    "show",
-    "branch",
     "rev-parse",
-    "remote",
-    "tag",
-    "describe",
+    "branch",
     "ls-files",
-    "version",
-    "--version",
-    "help",
+}
+
+# Exact flags only (fail closed on unknown).
+GIT_HOST_SAFE_STATUS_FLAGS = {
+    "--short",
+    "--porcelain",
+    "--porcelain=v1",
+}
+
+GIT_HOST_SAFE_BRANCH_FLAGS = {
+    "--list",
+    "--show-current",
+}
+
+GIT_HOST_SAFE_REV_PARSE_FLAGS = {
+    "--is-inside-work-tree",
+    "--show-toplevel",
+    "--show-prefix",
+    "--git-dir",
+    "--absolute-git-dir",
+    "--is-bare-repository",
+    "--abbrev-ref",
+    "--short",
+    "--verify",
+    "--quiet",
+    "--symbolic-full-name",
+}
+
+GIT_HOST_SAFE_LS_FILES_FLAGS = {
+    "--cached",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--modified",
+    "--deleted",
+    "--stage",
+    "-c",
+    "-o",
+    "-i",
+    "-m",
+    "-d",
+    "-s",
+    "-z",
 }
 
 GIT_MUTATING_SUBCOMMANDS = {
@@ -677,33 +720,7 @@ def classify_permission_level(
         return PermissionLevel.EXECUTE_MUTATING
 
     if name in {"git", "git.exe"}:
-        if not lowered_args:
-            return PermissionLevel.EXECUTE_SAFE
-
-        sub = lowered_args[0]
-
-        if any(
-            flag in lowered_args
-            for flag in GIT_DANGEROUS_FLAGS
-        ):
-            return PermissionLevel.DANGEROUS
-
-        if sub in GIT_DANGEROUS_SUBCOMMANDS:
-            return PermissionLevel.DANGEROUS
-
-        if sub == "reset" and any(
-            flag in lowered_args
-            for flag in ("--hard", "--merge")
-        ):
-            return PermissionLevel.DANGEROUS
-
-        if sub in GIT_SAFE_SUBCOMMANDS:
-            return PermissionLevel.EXECUTE_SAFE
-
-        if sub in GIT_MUTATING_SUBCOMMANDS:
-            return PermissionLevel.EXECUTE_MUTATING
-
-        return PermissionLevel.EXECUTE_MUTATING
+        return classify_git_permission_level(args)
 
     if name in {"uv", "uv.exe"}:
         if any(
@@ -715,6 +732,580 @@ def classify_permission_level(
         return PermissionLevel.EXECUTE_SAFE
 
     return PermissionLevel.DANGEROUS
+
+
+def _find_git_subcommand(
+    args: list[str],
+) -> tuple[str | None, list[str]]:
+    """Locate git subcommand after common globals."""
+    index = 0
+    while index < len(args):
+        lowered = args[index].casefold()
+
+        if lowered in {"--no-pager", "--paginate"}:
+            index += 1
+            continue
+
+        if lowered == "-c":
+            index += 2
+            continue
+
+        if lowered.startswith("-c") and lowered != "-c":
+            index += 1
+            continue
+
+        if lowered.startswith("-"):
+            index += 1
+            continue
+
+        break
+
+    if index >= len(args):
+        return None, []
+
+    return args[index].casefold(), list(args[index + 1 :])
+
+
+def _git_delete_force_flags(
+    sub_args: list[str],
+) -> bool:
+    lowered = [arg.casefold() for arg in sub_args]
+    if "-d" in lowered or "-D".casefold() in lowered:
+        return True
+    if "--delete" in lowered:
+        return True
+    return False
+
+
+def _git_permission_is_dangerous(
+    sub: str | None,
+    sub_args: list[str],
+    full_args: list[str],
+) -> bool:
+    lowered_full = [arg.casefold() for arg in full_args]
+
+    if any(
+        flag in lowered_full
+        for flag in GIT_DANGEROUS_FLAGS
+    ):
+        return True
+
+    if sub in GIT_DANGEROUS_SUBCOMMANDS:
+        return True
+
+    if sub == "reset" and any(
+        flag in lowered_full
+        for flag in ("--hard", "--merge")
+    ):
+        return True
+
+    if sub == "branch" and _git_delete_force_flags(
+        sub_args
+    ):
+        return True
+
+    if sub == "tag" and _git_delete_force_flags(
+        sub_args
+    ):
+        return True
+
+    return False
+
+
+# Narrow read-only flags for diff/log/show EXECUTE_SAFE.
+# Unknown / exec / write surfaces → not SAFE (MUTATING).
+GIT_READ_ONLY_DIFF_LOG_SHOW_FLAGS = {
+    "--stat",
+    "--name-only",
+    "--name-status",
+    "--cached",
+    "--staged",
+    "--quiet",
+    "--numstat",
+    "--shortstat",
+    "--compact-summary",
+    "--color",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--oneline",
+    "--decorate",
+    "--all",
+    "--graph",
+    "--reverse",
+    "--summary",
+}
+
+
+def _git_diff_log_show_read_only_args(
+    sub_args: list[str],
+) -> bool:
+    allowed = {
+        flag.casefold()
+        for flag in GIT_READ_ONLY_DIFF_LOG_SHOW_FLAGS
+    }
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+        lowered = arg.casefold()
+        if lowered.startswith("-"):
+            if lowered in {
+                "--ext-diff",
+                "--textconv",
+                "--exec",
+            } or lowered.startswith("--output"):
+                return False
+            if lowered.startswith("--max-count="):
+                continue
+            if lowered.startswith("--unified="):
+                continue
+            if (
+                len(lowered) > 2
+                and lowered.startswith("-u")
+                and lowered[2:].isdigit()
+            ):
+                continue
+            if lowered not in allowed:
+                return False
+            continue
+        if not _is_safe_git_ref_or_path(arg):
+            return False
+    return True
+
+
+def _git_remote_read_only_args(
+    sub_args: list[str],
+) -> bool:
+    if not sub_args:
+        return True
+
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+
+    head = sub_args[0].casefold()
+    if head in {"-v", "--verbose"}:
+        return len(sub_args) == 1
+
+    if head == "show":
+        if len(sub_args) == 1:
+            return True
+        if len(sub_args) == 2:
+            return _is_safe_git_ref_or_path(
+                sub_args[1]
+            )
+        return False
+
+    if head == "get-url":
+        if len(sub_args) == 2:
+            return _is_safe_git_ref_or_path(
+                sub_args[1]
+            )
+        return False
+
+    return False
+
+
+def _git_tag_read_only_args(
+    sub_args: list[str],
+) -> bool:
+    """Bare list / --list only — creating tags is mutating."""
+    if not sub_args:
+        return True
+
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+
+    head = sub_args[0].casefold()
+    if head in {"-l", "--list"}:
+        if len(sub_args) == 1:
+            return True
+        if len(sub_args) == 2:
+            return _is_safe_git_ref_or_path(
+                sub_args[1]
+            )
+        return False
+
+    return False
+
+
+def is_git_execute_safe_argv(
+    args: list[str],
+) -> bool:
+    """Verified read-only git templates for EXECUTE_SAFE.
+
+    Reuses the same HOST_SAFE read-only templates where
+    applicable, plus narrow read-only forms for
+    diff/log/show/remote/tag/version that may still run
+    in PROJECT_CODE_SANDBOX. Does not consult
+    ExecutionBoundary.
+    """
+    if not args:
+        return True
+
+    if is_host_safe_git_argv(args):
+        return True
+
+    remaining, sub = _parse_host_safe_git_head(args)
+    if sub is None:
+        return False
+
+    if sub in {"version", "--version", "help"}:
+        return len(remaining) == 1
+
+    if sub in {"diff", "log", "show"}:
+        return _git_diff_log_show_read_only_args(
+            remaining[1:]
+        )
+
+    if sub == "remote":
+        return _git_remote_read_only_args(
+            remaining[1:]
+        )
+
+    if sub == "tag":
+        return _git_tag_read_only_args(
+            remaining[1:]
+        )
+
+    if sub == "describe":
+        # Only bare describe or a single safe ref.
+        rest = remaining[1:]
+        if not rest:
+            return True
+        if len(rest) == 1:
+            return _is_safe_git_ref_or_path(rest[0])
+        return False
+
+    return False
+
+
+def classify_git_permission_level(
+    args: list[str],
+) -> PermissionLevel:
+    """Argv-aware git permission — fail closed on unknown."""
+    if not args:
+        return PermissionLevel.EXECUTE_SAFE
+
+    sub, sub_args = _find_git_subcommand(args)
+
+    if _git_permission_is_dangerous(
+        sub,
+        sub_args,
+        args,
+    ):
+        return PermissionLevel.DANGEROUS
+
+    if is_git_execute_safe_argv(args):
+        return PermissionLevel.EXECUTE_SAFE
+
+    return PermissionLevel.EXECUTE_MUTATING
+
+
+def _parse_host_safe_git_head(
+    args: list[str],
+) -> tuple[list[str], str | None]:
+    """Parse HOST_SAFE git head — reject caller globals.
+
+    Only optional ``--no-pager`` is tolerated (harden
+    injects it anyway). ``-c`` / other globals are
+    fail-closed because they can reopen exec surfaces.
+    """
+    index = 0
+    while index < len(args):
+        lowered = args[index].casefold()
+        if lowered == "--no-pager":
+            index += 1
+            continue
+        if lowered.startswith("-"):
+            return [], None
+        break
+
+    if index >= len(args):
+        return [], None
+
+    return args[index:], args[index].casefold()
+
+
+def _is_safe_git_token(token: str) -> bool:
+    if not token:
+        return False
+    if token.startswith("!"):
+        return False
+    if "\n" in token or "\r" in token or "\x00" in token:
+        return False
+    return True
+
+
+def _is_safe_git_ref_or_path(token: str) -> bool:
+    if not _is_safe_git_token(token):
+        return False
+    if token.startswith("-"):
+        return False
+    return True
+
+
+def _host_safe_git_status_args(
+    sub_args: list[str],
+) -> bool:
+    allowed = {
+        flag.casefold()
+        for flag in GIT_HOST_SAFE_STATUS_FLAGS
+    }
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+        if arg.casefold() not in allowed:
+            return False
+    return True
+
+
+def _host_safe_git_branch_args(
+    sub_args: list[str],
+) -> bool:
+    """Only bare list / --list / --show-current."""
+    if not sub_args:
+        return True
+
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+
+    head = sub_args[0].casefold()
+    if head == "--show-current":
+        return len(sub_args) == 1
+
+    if head == "--list":
+        if len(sub_args) == 1:
+            return True
+        if len(sub_args) == 2:
+            return _is_safe_git_ref_or_path(
+                sub_args[1]
+            )
+        return False
+
+    # Positional branch names / -D / -m / etc.
+    return False
+
+
+def _host_safe_git_rev_parse_args(
+    sub_args: list[str],
+) -> bool:
+    allowed = {
+        flag.casefold()
+        for flag in GIT_HOST_SAFE_REV_PARSE_FLAGS
+    }
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+        lowered = arg.casefold()
+        if lowered.startswith("-"):
+            if lowered not in allowed:
+                return False
+            continue
+        if not _is_safe_git_ref_or_path(arg):
+            return False
+    return True
+
+
+def _host_safe_git_ls_files_args(
+    sub_args: list[str],
+) -> bool:
+    allowed = {
+        flag.casefold()
+        for flag in GIT_HOST_SAFE_LS_FILES_FLAGS
+    }
+    for arg in sub_args:
+        if not _is_safe_git_token(arg):
+            return False
+        lowered = arg.casefold()
+        if lowered.startswith("-"):
+            if lowered not in allowed:
+                return False
+            continue
+        if not _is_safe_git_ref_or_path(arg):
+            return False
+    return True
+
+
+def _host_safe_git_sub_args_allowed(
+    sub: str,
+    sub_args: list[str],
+) -> bool:
+    if sub == "status":
+        return _host_safe_git_status_args(sub_args)
+    if sub == "branch":
+        return _host_safe_git_branch_args(sub_args)
+    if sub == "rev-parse":
+        return _host_safe_git_rev_parse_args(
+            sub_args
+        )
+    if sub == "ls-files":
+        return _host_safe_git_ls_files_args(
+            sub_args
+        )
+    return False
+
+
+def is_host_safe_python_version_argv(
+    args: list[str],
+) -> bool:
+    if len(args) != 1:
+        return False
+
+    return args[0] in {"--version", "-V"}
+
+
+def is_host_safe_git_argv(
+    args: list[str],
+) -> bool:
+    """HOST_SAFE only for exact per-subcommand templates."""
+    remaining, sub = _parse_host_safe_git_head(args)
+
+    if sub is None:
+        return False
+
+    if sub not in GIT_HOST_SAFE_SUBCOMMANDS:
+        return False
+
+    return _host_safe_git_sub_args_allowed(
+        sub,
+        remaining[1:],
+    )
+
+
+def classify_execution_boundary(
+    executable: str,
+    args: list[str],
+) -> ExecutionBoundary:
+    """Classify where a non-dangerous command may run."""
+    name = _executable_basename(executable)
+
+    if _is_python_executable(name):
+        if is_host_safe_python_version_argv(args):
+            return ExecutionBoundary.HOST_SAFE
+
+        return ExecutionBoundary.PROJECT_CODE_SANDBOX
+
+    if name in {"git", "git.exe"}:
+        if is_host_safe_git_argv(args):
+            return ExecutionBoundary.HOST_SAFE
+
+        return ExecutionBoundary.PROJECT_CODE_SANDBOX
+
+    # Everything else that passed permission checks
+    # (pytest, manage.py, npm, pip, scripts, ...) is
+    # repository-controlled / package-manager code.
+    return ExecutionBoundary.PROJECT_CODE_SANDBOX
+
+
+def classify_network_policy(
+    executable: str,
+    args: list[str],
+) -> NetworkPolicy:
+    name = _executable_basename(executable)
+    lowered = [arg.casefold() for arg in args]
+
+    if _is_python_executable(name):
+        if (
+            len(lowered) >= 3
+            and lowered[0] == "-m"
+            and lowered[1] == "pip"
+            and "install" in lowered[2:]
+        ):
+            return NetworkPolicy.NETWORK_PACKAGE_INSTALL
+
+    if _is_pip_executable(name):
+        if "install" in lowered:
+            return NetworkPolicy.NETWORK_PACKAGE_INSTALL
+
+    if _is_npm_family(name):
+        if lowered and lowered[0] in {
+            "install",
+            "ci",
+        }:
+            return NetworkPolicy.NETWORK_PACKAGE_INSTALL
+
+    return NetworkPolicy.NETWORK_NONE
+
+
+def harden_host_safe_git_command(
+    executable: str,
+    args: list[str],
+) -> list[str]:
+    """Rebuild HOST_SAFE git from validated templates only.
+
+    Caller globals / unknown flags are dropped by
+    re-parsing through ``is_host_safe_git_argv`` —
+    security options cannot be overridden by trailing
+    caller args because only allowlisted tokens remain.
+    """
+    if not is_host_safe_git_argv(args):
+        raise TaskCommandPolicyError(
+            "HOST_SAFE git template degil."
+        )
+
+    remaining, sub = _parse_host_safe_git_head(args)
+    if sub is None:
+        raise TaskCommandPolicyError(
+            "HOST_SAFE git template degil."
+        )
+
+    sub_args = remaining[1:]
+
+    return [
+        executable,
+        "--no-pager",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=",
+        sub,
+        *sub_args,
+    ]
+
+
+def build_host_safe_process_env(
+    request_env: dict[str, str] | None = None,
+    *,
+    host_environ: dict[str, str] | None = None,
+    for_git: bool = False,
+) -> dict[str, str]:
+    """Minimal trusted host env for HOST_SAFE only.
+
+    ``request_env`` is intentionally ignored in V1 —
+    HOST_SAFE must not receive caller env overlays
+    (blocks GIT_DIR / GIT_CONFIG_* / secret injection).
+    """
+    _ = request_env
+    process_env = build_process_env(
+        None,
+        host_environ=host_environ,
+    )
+
+    # Never forward external-diff helper env.
+    drop_keys = {
+        key
+        for key in list(process_env)
+        if key.casefold()
+        in {
+            "git_external_diff",
+            "git_pager",
+            "pager",
+            "git_trace",
+        }
+    }
+    for key in drop_keys:
+        process_env.pop(key, None)
+
+    if for_git:
+        process_env["GIT_CONFIG_NOSYSTEM"] = "1"
+        process_env["GIT_CONFIG_GLOBAL"] = os.devnull
+        process_env["GIT_CONFIG_SYSTEM"] = os.devnull
+        process_env["GIT_TERMINAL_PROMPT"] = "0"
+
+    return process_env
 
 
 def assert_command_allowed(
@@ -867,11 +1458,12 @@ def run_task_command(
         project_root,
         argv[0],
     )
-    command = [executable, *argv[1:]]
+    args = argv[1:]
+    original_argv = list(argv)
 
     permission_level = classify_permission_level(
         executable,
-        argv[1:],
+        args,
     )
     assert_command_allowed(
         permission_level,
@@ -880,7 +1472,36 @@ def run_task_command(
         ),
     )
 
-    process_env = build_process_env(extra_env)
+    boundary = classify_execution_boundary(
+        executable,
+        args,
+    )
+    network_policy = classify_network_policy(
+        executable,
+        args,
+    )
+
+    if (
+        network_policy
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+        and secret_keys
+    ):
+        raise TaskCommandPolicyError(
+            "NETWORK_PACKAGE_INSTALL komutunda "
+            "request secrets V1'de reddedilir."
+        )
+
+    # Fail closed: ephemeral containers cannot keep
+    # installed deps. Do not run Docker and return a
+    # false success for package installs.
+    if (
+        network_policy
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    ):
+        raise TaskCommandSandboxRuntimeError(
+            "Persistent sandbox dependency "
+            "environment is not implemented."
+        )
 
     secret_values = collect_secret_values(
         extra_env,
@@ -890,22 +1511,20 @@ def run_task_command(
     command_id = str(uuid4())
     started_at = _utcnow_iso()
     started_monotonic = time.monotonic()
+    cwd_label = _relative_cwd_label(
+        project_root,
+        workdir,
+    )
 
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=str(workdir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            shell=False,
-            check=False,
-            timeout=timeout,
-            env=process_env,
-        )
-    except subprocess.TimeoutExpired as exc:
+    def _finish(
+        *,
+        exit_code: int | None,
+        stdout: str,
+        stderr: str,
+        status: str,
+        stdout_truncated: bool = False,
+        stderr_truncated: bool = False,
+    ) -> TaskCommandResult:
         finished_at = _utcnow_iso()
         duration_ms = int(
             (
@@ -914,115 +1533,136 @@ def run_task_command(
             )
             * 1000
         )
-
-        raw_stdout = (
-            exc.stdout
-            if isinstance(exc.stdout, str)
-            else ""
+        out, out_trunc = truncate_capture(
+            redact_text(stdout, secret_values)
         )
-        raw_stderr = (
-            exc.stderr
-            if isinstance(exc.stderr, str)
-            else ""
+        err, err_trunc = truncate_capture(
+            redact_text(stderr, secret_values)
         )
-
-        stdout, stdout_truncated = truncate_capture(
-            redact_text(raw_stdout, secret_values)
-        )
-        stderr, stderr_truncated = truncate_capture(
-            redact_text(raw_stderr, secret_values)
-        )
-
         result = TaskCommandResult(
             command_id=command_id,
             task_id=request.task_id,
-            argv=list(argv),
-            cwd=_relative_cwd_label(
-                project_root,
-                workdir,
-            ),
+            argv=original_argv,
+            cwd=cwd_label,
             permission_level=permission_level.value,
             started_at=started_at,
             finished_at=finished_at,
             duration_ms=duration_ms,
-            exit_code=None,
-            stdout=stdout,
-            stderr=stderr,
-            status=CommandStatus.TIMED_OUT.value,
+            exit_code=exit_code,
+            stdout=out,
+            stderr=err,
+            status=status,
             secret_env_keys=secret_keys,
-            stdout_truncated=stdout_truncated,
-            stderr_truncated=stderr_truncated,
+            stdout_truncated=(
+                stdout_truncated or out_trunc
+            ),
+            stderr_truncated=(
+                stderr_truncated or err_trunc
+            ),
+            execution_boundary=boundary.value,
+            network_policy=network_policy.value,
         )
 
         if persist:
             save_kwargs: dict[str, Any] = {
                 "result": result,
             }
-
             if db_path is not None:
                 save_kwargs["db_path"] = db_path
-
             save_task_command(**save_kwargs)
 
         return result
 
-    finished_at = _utcnow_iso()
-    duration_ms = int(
-        (
-            time.monotonic()
-            - started_monotonic
-        )
-        * 1000
-    )
+    if boundary == ExecutionBoundary.HOST_SAFE:
+        if _executable_basename(executable) in {
+            "git",
+            "git.exe",
+        }:
+            command = harden_host_safe_git_command(
+                executable,
+                args,
+            )
+            process_env = build_host_safe_process_env(
+                for_git=True,
+            )
+        else:
+            command = [executable, *args]
+            process_env = build_host_safe_process_env(
+                for_git=False,
+            )
 
-    stdout, stdout_truncated = truncate_capture(
-        redact_text(
-            completed.stdout or "",
-            secret_values,
-        )
-    )
-    stderr, stderr_truncated = truncate_capture(
-        redact_text(
-            completed.stderr or "",
-            secret_values,
-        )
-    )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(workdir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=False,
+                check=False,
+                timeout=timeout,
+                env=process_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return _finish(
+                exit_code=None,
+                stdout=(
+                    exc.stdout
+                    if isinstance(exc.stdout, str)
+                    else ""
+                ),
+                stderr=(
+                    exc.stderr
+                    if isinstance(exc.stderr, str)
+                    else ""
+                ),
+                status=CommandStatus.TIMED_OUT.value,
+            )
 
-    status = (
-        CommandStatus.SUCCEEDED.value
-        if completed.returncode == 0
-        else CommandStatus.FAILED.value
-    )
+        return _finish(
+            exit_code=completed.returncode,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
+            status=(
+                CommandStatus.SUCCEEDED.value
+                if completed.returncode == 0
+                else CommandStatus.FAILED.value
+            ),
+        )
 
-    result = TaskCommandResult(
-        command_id=command_id,
-        task_id=request.task_id,
-        argv=list(argv),
-        cwd=_relative_cwd_label(
-            project_root,
-            workdir,
+    # PROJECT_CODE_SANDBOX
+    try:
+        sandbox_result = run_in_task_command_sandbox(
+            project_root=project_root,
+            workdir=workdir,
+            host_argv=[executable, *args],
+            request_env=extra_env,
+            network_policy=network_policy,
+            command_id=command_id,
+            timeout_seconds=timeout,
+        )
+    except TaskCommandSandboxRuntimeError:
+        raise
+    except TaskCommandError:
+        raise
+
+    if sandbox_result.timed_out:
+        return _finish(
+            exit_code=None,
+            stdout=sandbox_result.stdout,
+            stderr=sandbox_result.stderr,
+            status=CommandStatus.TIMED_OUT.value,
+        )
+
+    return _finish(
+        exit_code=sandbox_result.exit_code,
+        stdout=sandbox_result.stdout,
+        stderr=sandbox_result.stderr,
+        status=(
+            CommandStatus.SUCCEEDED.value
+            if sandbox_result.exit_code == 0
+            else CommandStatus.FAILED.value
         ),
-        permission_level=permission_level.value,
-        started_at=started_at,
-        finished_at=finished_at,
-        duration_ms=duration_ms,
-        exit_code=completed.returncode,
-        stdout=stdout,
-        stderr=stderr,
-        status=status,
-        secret_env_keys=secret_keys,
-        stdout_truncated=stdout_truncated,
-        stderr_truncated=stderr_truncated,
     )
-
-    if persist:
-        save_kwargs = {
-            "result": result,
-        }
-
-        if db_path is not None:
-            save_kwargs["db_path"] = db_path
-
-        save_task_command(**save_kwargs)
-
-    return result

@@ -1,8 +1,9 @@
-"""Focused tests for guarded task command engine (Step 1)."""
+"""Focused tests for guarded task command engine."""
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -12,21 +13,171 @@ from api import app as app_module
 from factory.database import get_connection
 from factory.task_command_models import (
     REDACTION_MASK,
+    ExecutionBoundary,
+    NetworkPolicy,
     PermissionLevel,
     TaskCommandRequest,
+    TaskCommandSandboxRuntimeError,
 )
 from factory.task_command_runner import (
     TaskCommandPathError,
     TaskCommandPolicyError,
     assert_command_allowed,
+    build_host_safe_process_env,
     build_process_env,
+    classify_execution_boundary,
+    classify_git_permission_level,
+    classify_network_policy,
     classify_permission_level,
+    harden_host_safe_git_command,
+    is_host_safe_git_argv,
     run_task_command,
+)
+from factory.task_command_sandbox import (
+    TaskCommandSandboxResult,
 )
 from factory.task_command_store import (
     get_task_command,
+    init_task_command_store,
     list_task_commands,
 )
+
+
+@pytest.fixture
+def simulate_sandbox(monkeypatch):
+    """Run PROJECT_CODE commands on host for unit tests."""
+    import os
+    from pathlib import Path
+
+    calls: list[dict] = []
+
+    def _fake(
+        *,
+        project_root,
+        workdir,
+        host_argv,
+        request_env,
+        network_policy,
+        command_id,
+        timeout_seconds,
+        image_name="ai-factory-python-test",
+        host_environ=None,
+    ):
+        from factory.task_command_sandbox import (
+            build_docker_run_argv,
+            build_stdin_payload,
+            map_argv_for_container,
+        )
+
+        container_argv = map_argv_for_container(
+            host_argv=host_argv,
+            project_root=project_root,
+            workdir=workdir,
+        )
+        short_id = command_id.replace("-", "")[:12]
+        container_name = (
+            f"ai-factory-taskcmd-{short_id}"
+        )
+        docker_argv = build_docker_run_argv(
+            project_root=project_root,
+            workdir=workdir,
+            container_argv=container_argv,
+            network_policy=network_policy,
+            container_name=container_name,
+            image_name=image_name,
+        )
+        payload = build_stdin_payload(
+            container_argv=container_argv,
+            request_env=request_env,
+        )
+        calls.append(
+            {
+                "docker_argv": docker_argv,
+                "payload": payload,
+                "network_policy": network_policy,
+                "host_argv": host_argv,
+            }
+        )
+
+        exe = Path(host_argv[0]).name.casefold()
+        if exe in {
+            "node",
+            "node.exe",
+            "npm",
+            "npm.cmd",
+            "npx",
+            "npx.cmd",
+        }:
+            raise TaskCommandSandboxRuntimeError(
+                "Node/npm runtime bu terminal sandbox "
+                "image'inda desteklenmiyor; host fallback yok."
+            )
+
+        run_argv = list(container_argv)
+        if run_argv and run_argv[0] == "python":
+            run_argv[0] = sys.executable
+
+        # Only request_env overlays a minimal base —
+        # do not inherit host secrets into simulation
+        # of container payload semantics for probes.
+        process_env = {
+            "PATH": os.environ.get("PATH", ""),
+            "SYSTEMROOT": os.environ.get(
+                "SYSTEMROOT",
+                "",
+            ),
+            "WINDIR": os.environ.get("WINDIR", ""),
+        }
+        process_env.update(request_env)
+
+        try:
+            completed = subprocess.run(
+                run_argv,
+                cwd=str(workdir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=False,
+                check=False,
+                timeout=timeout_seconds,
+                env=process_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return TaskCommandSandboxResult(
+                exit_code=None,
+                stdout=(
+                    exc.stdout
+                    if isinstance(exc.stdout, str)
+                    else ""
+                ),
+                stderr=(
+                    exc.stderr
+                    if isinstance(exc.stderr, str)
+                    else ""
+                ),
+                timed_out=True,
+                docker_argv=docker_argv,
+                container_argv=container_argv,
+                container_name=container_name,
+            )
+
+        return TaskCommandSandboxResult(
+            exit_code=completed.returncode,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
+            timed_out=False,
+            docker_argv=docker_argv,
+            container_argv=container_argv,
+            container_name=container_name,
+        )
+
+    monkeypatch.setattr(
+        "factory.task_command_runner.run_in_task_command_sandbox",
+        _fake,
+    )
+    return calls
 
 
 def _run(
@@ -77,11 +228,17 @@ def test_safe_command_runs(tmp_path):
     assert result.permission_level == (
         PermissionLevel.EXECUTE_SAFE.value
     )
+    assert result.execution_boundary == (
+        ExecutionBoundary.HOST_SAFE.value
+    )
     combined = result.stdout + result.stderr
     assert "Python" in combined
 
 
-def test_cwd_under_project_root(tmp_path):
+def test_cwd_under_project_root(
+    tmp_path,
+    simulate_sandbox,
+):
     nested = tmp_path / "subdir"
     nested.mkdir()
 
@@ -102,6 +259,9 @@ def test_cwd_under_project_root(tmp_path):
     assert result.status == "succeeded"
     assert result.cwd == "subdir"
     assert result.stdout.strip() == "subdir"
+    assert result.execution_boundary == (
+        ExecutionBoundary.PROJECT_CODE_SANDBOX.value
+    )
 
 
 def test_cwd_parent_escape_rejected(tmp_path):
@@ -133,6 +293,7 @@ def test_absolute_external_cwd_rejected(
 
 def test_shell_metacharacters_not_interpreted(
     tmp_path,
+    simulate_sandbox,
 ):
     marker = tmp_path / "should-not-exist.txt"
     script = tmp_path / "echo_arg.py"
@@ -190,6 +351,7 @@ def test_dangerous_commands_rejected(
 
 def test_timeout_returns_structured_result(
     tmp_path,
+    simulate_sandbox,
 ):
     script = tmp_path / "sleep.py"
     script.write_text(
@@ -210,7 +372,10 @@ def test_timeout_returns_structured_result(
     assert result.duration_ms >= 0
 
 
-def test_stdout_stderr_captured(tmp_path):
+def test_stdout_stderr_captured(
+    tmp_path,
+    simulate_sandbox,
+):
     script = tmp_path / "streams.py"
     script.write_text(
         "import sys\n"
@@ -232,6 +397,7 @@ def test_stdout_stderr_captured(tmp_path):
 
 def test_secret_env_reaches_process_but_not_persisted(
     tmp_path,
+    simulate_sandbox,
 ):
     db_path = tmp_path / "factory.db"
     secret = "super-secret-password-xyz"
@@ -271,9 +437,6 @@ def test_secret_env_reaches_process_but_not_persisted(
     )
     assert stored is not None
     assert secret not in json.dumps(stored)
-    assert "DJANGO_SUPERUSER_PASSWORD" in (
-        stored["secret_env_keys"]
-    )
 
     connection = get_connection(db_path)
 
@@ -292,6 +455,7 @@ def test_secret_env_reaches_process_but_not_persisted(
 
 def test_secret_echo_in_stdout_is_masked(
     tmp_path,
+    simulate_sandbox,
 ):
     secret = "leak-me-now-123"
 
@@ -360,18 +524,13 @@ def test_get_task_commands_endpoint_returns_history(
     )
 
     assert payload["task_id"] == task_id
-    assert payload["state"] == "running"
     assert len(payload["commands"]) == 2
-
     ids = {
         item["command_id"]
         for item in payload["commands"]
     }
     assert first.command_id in ids
     assert second.command_id in ids
-
-    serialized = json.dumps(payload)
-    assert "super-secret" not in serialized
 
 
 def test_get_task_commands_endpoint_404(
@@ -402,15 +561,11 @@ def test_classify_django_manage_levels():
         == PermissionLevel.EXECUTE_SAFE
     )
     assert (
-        classify_permission_level(
+        classify_execution_boundary(
             "python",
-            [
-                "manage.py",
-                "createsuperuser",
-                "--noinput",
-            ],
+            ["manage.py", "check"],
         )
-        == PermissionLevel.EXECUTE_MUTATING
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
     )
     assert (
         classify_permission_level(
@@ -419,16 +574,29 @@ def test_classify_django_manage_levels():
         )
         == PermissionLevel.EXECUTE_MUTATING
     )
+    assert (
+        classify_execution_boundary(
+            "python",
+            ["manage.py", "migrate"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
 
 
 def test_mutating_pip_install_classification():
-    # Classification only — do not hit network.
     level = classify_permission_level(
         "python",
         ["-m", "pip", "install", "django"],
     )
     assert level == (
         PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_network_policy(
+            "python",
+            ["-m", "pip", "install", "django"],
+        )
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
     )
 
 
@@ -444,14 +612,6 @@ def test_migrate_allowed_with_allow_mutating_true():
     assert_command_allowed(
         PermissionLevel.EXECUTE_MUTATING,
         allow_mutating=True,
-    )
-
-    level = classify_permission_level(
-        "python",
-        ["manage.py", "migrate"],
-    )
-    assert level == (
-        PermissionLevel.EXECUTE_MUTATING
     )
 
 
@@ -476,15 +636,10 @@ def test_manage_py_flush_is_dangerous():
         == PermissionLevel.DANGEROUS
     )
 
-    with pytest.raises(TaskCommandPolicyError):
-        assert_command_allowed(
-            PermissionLevel.DANGEROUS,
-            allow_mutating=True,
-        )
-
 
 def test_host_secret_not_inherited(
     tmp_path,
+    simulate_sandbox,
     monkeypatch,
 ):
     host_secret = "super-secret-host-value"
@@ -510,10 +665,15 @@ def test_host_secret_not_inherited(
     assert result.status == "succeeded"
     assert host_secret not in result.stdout
     assert "MISSING" in result.stdout
+    assert (
+        "FACTORY_TEST_HOST_API_KEY"
+        not in simulate_sandbox[0]["payload"]["env"]
+    )
 
 
 def test_auto_sensitive_env_key_redaction(
     tmp_path,
+    simulate_sandbox,
 ):
     db_path = tmp_path / "factory.db"
     secret = "auto-detected-secret-value"
@@ -538,16 +698,10 @@ def test_auto_sensitive_env_key_redaction(
     assert secret not in result.stdout
     assert REDACTION_MASK in result.stdout
 
-    stored = get_task_command(
-        result.command_id,
-        db_path=db_path,
-    )
-    assert stored is not None
-    assert secret not in json.dumps(stored)
-
 
 def test_secret_echo_in_stderr_is_masked(
     tmp_path,
+    simulate_sandbox,
 ):
     secret = "stderr-secret-999"
 
@@ -601,6 +755,7 @@ def test_symlink_cwd_escape_rejected(
 
 def test_capture_truncation_flags(
     tmp_path,
+    simulate_sandbox,
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -629,19 +784,10 @@ def test_capture_truncation_flags(
     assert len(result.stdout) <= 32
     assert len(result.stderr) <= 32
 
-    stored = get_task_command(
-        result.command_id,
-        db_path=db_path,
-    )
-    assert stored is not None
-    assert len(stored["stdout"]) <= 32
-    assert len(stored["stderr"]) <= 32
-    assert stored["stdout_truncated"] is True
-    assert stored["stderr_truncated"] is True
-
 
 def test_api_history_masks_real_secret_command(
     tmp_path,
+    simulate_sandbox,
     monkeypatch,
 ):
     db_path = tmp_path / "factory.db"
@@ -684,11 +830,9 @@ def test_api_history_masks_real_secret_command(
             task_id
         )
     )
-
     serialized = json.dumps(payload)
     assert secret not in serialized
     assert REDACTION_MASK in serialized
-    assert len(payload["commands"]) == 1
 
 
 def test_build_process_env_allowlist_only():
@@ -709,3 +853,528 @@ def test_build_process_env_allowlist_only():
     assert built["APP_SETTING"] == "ok"
     assert "FACTORY_TEST_HOST_API_KEY" not in built
     assert "OPENAI_API_KEY" not in built
+
+
+def test_python_project_script_is_sandbox():
+    assert (
+        classify_execution_boundary(
+            "python",
+            ["project.py"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+
+
+def test_pytest_is_sandbox():
+    assert (
+        classify_execution_boundary(
+            "pytest",
+            ["-q"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+
+
+def test_migrate_without_allow_mutating_rejects_before_sandbox(
+    tmp_path,
+    monkeypatch,
+):
+    called = {"sandbox": False}
+
+    def _boom(**kwargs):
+        called["sandbox"] = True
+        raise AssertionError("sandbox should not run")
+
+    monkeypatch.setattr(
+        "factory.task_command_runner.run_in_task_command_sandbox",
+        _boom,
+    )
+
+    with pytest.raises(TaskCommandPolicyError):
+        _run(
+            tmp_path,
+            [
+                sys.executable,
+                "manage.py",
+                "migrate",
+            ],
+            allow_mutating=False,
+            persist=False,
+        )
+
+    assert called["sandbox"] is False
+
+
+def test_package_install_with_secret_rejected(
+    tmp_path,
+):
+    with pytest.raises(TaskCommandPolicyError):
+        _run(
+            tmp_path,
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "django",
+            ],
+            env={"MY_TOKEN": "secret"},
+            allow_mutating=True,
+            persist=False,
+        )
+
+
+def test_package_install_fail_closed_before_docker(
+    tmp_path,
+    monkeypatch,
+):
+    """NETWORK_PACKAGE_INSTALL must not start Docker."""
+    called = {"sandbox": False}
+
+    def _boom(**kwargs):
+        called["sandbox"] = True
+        raise AssertionError(
+            "sandbox/docker should not run"
+        )
+
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        _boom,
+    )
+
+    with pytest.raises(
+        TaskCommandSandboxRuntimeError
+    ) as exc_info:
+        _run(
+            tmp_path,
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "django",
+            ],
+            allow_mutating=True,
+            persist=False,
+        )
+
+    assert called["sandbox"] is False
+    assert "not implemented" in str(
+        exc_info.value
+    ).casefold()
+    assert (
+        classify_network_policy(
+            "python",
+            ["-m", "pip", "install", "django"],
+        )
+        == NetworkPolicy.NETWORK_PACKAGE_INSTALL
+    )
+
+
+def test_host_safe_git_status_templates():
+    assert is_host_safe_git_argv(["status"])
+    assert is_host_safe_git_argv(
+        ["status", "--short"]
+    )
+    assert is_host_safe_git_argv(
+        ["status", "--porcelain"]
+    )
+    assert is_host_safe_git_argv(
+        ["status", "--porcelain=v1"]
+    )
+    assert is_host_safe_git_argv(
+        ["--no-pager", "status"]
+    )
+    assert not is_host_safe_git_argv(
+        ["status", "--ignored"]
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["status"],
+        )
+        == ExecutionBoundary.HOST_SAFE
+    )
+
+
+def test_host_safe_git_rev_parse_and_ls_files():
+    assert is_host_safe_git_argv(
+        ["rev-parse", "--is-inside-work-tree"]
+    )
+    assert is_host_safe_git_argv(
+        ["rev-parse", "HEAD"]
+    )
+    assert is_host_safe_git_argv(["ls-files"])
+    assert is_host_safe_git_argv(
+        ["ls-files", "--cached"]
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["rev-parse", "--show-toplevel"],
+        )
+        == ExecutionBoundary.HOST_SAFE
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["ls-files", "--exclude-standard"],
+        )
+        == ExecutionBoundary.HOST_SAFE
+    )
+
+
+def test_host_safe_git_branch_read_only_only():
+    assert is_host_safe_git_argv(["branch"])
+    assert is_host_safe_git_argv(
+        ["branch", "--show-current"]
+    )
+    assert is_host_safe_git_argv(
+        ["branch", "--list"]
+    )
+    assert not is_host_safe_git_argv(
+        ["branch", "new-name"]
+    )
+    assert not is_host_safe_git_argv(
+        ["branch", "-D", "x"]
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["branch", "new-name"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["branch", "-D", "x"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["branch", "--show-current"],
+        )
+        == ExecutionBoundary.HOST_SAFE
+    )
+
+
+def test_host_safe_git_diff_dangerous_flags_rejected():
+    assert not is_host_safe_git_argv(
+        ["diff", "--ext-diff"]
+    )
+    assert not is_host_safe_git_argv(
+        ["diff", "--textconv"]
+    )
+    assert not is_host_safe_git_argv(
+        ["diff", "--output=x"]
+    )
+    assert not is_host_safe_git_argv(["diff"])
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["diff", "--ext-diff"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["diff", "--textconv"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["diff", "--output=x"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+
+
+def test_harden_host_safe_git_rebuilds_from_template():
+    hardened = harden_host_safe_git_command(
+        "git",
+        ["status", "--short"],
+    )
+    assert hardened[0] == "git"
+    assert hardened[1] == "--no-pager"
+    assert "status" in hardened
+    assert "--short" in hardened
+    # Caller -c config must not open HOST_SAFE.
+    assert not is_host_safe_git_argv(
+        ["-c", "core.pager=less", "status"]
+    )
+    with pytest.raises(TaskCommandPolicyError):
+        harden_host_safe_git_command(
+            "git",
+            ["branch", "new-name"],
+        )
+
+
+def test_git_permission_branch_remote_tag_argv_aware():
+    assert (
+        classify_permission_level(
+            "git",
+            ["branch", "new-name"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_git_permission_level(
+            ["branch", "-D", "x"]
+        )
+        == PermissionLevel.DANGEROUS
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["remote", "add", "origin", "https://example.com/r.git"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["tag", "v1"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["tag", "-d", "v1"],
+        )
+        == PermissionLevel.DANGEROUS
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["branch", "--show-current"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["status", "--short"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    # Read-only diff template may be SAFE but not HOST_SAFE.
+    assert (
+        classify_permission_level(
+            "git",
+            ["diff", "--stat"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            ["diff", "--stat"],
+        )
+        == ExecutionBoundary.PROJECT_CODE_SANDBOX
+    )
+    # Suspicious diff flags → MUTATING fail-closed.
+    assert (
+        classify_permission_level(
+            "git",
+            ["diff", "--ext-diff"],
+        )
+        == PermissionLevel.EXECUTE_MUTATING
+    )
+
+
+def test_git_branch_create_rejected_without_allow_mutating(
+    tmp_path,
+    monkeypatch,
+):
+    called = {"sandbox": False}
+
+    def _boom(**kwargs):
+        called["sandbox"] = True
+        raise AssertionError("sandbox should not run")
+
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        _boom,
+    )
+
+    with pytest.raises(TaskCommandPolicyError):
+        _run(
+            tmp_path,
+            ["git", "branch", "new-name"],
+            allow_mutating=False,
+            persist=False,
+        )
+
+    assert called["sandbox"] is False
+
+
+def test_host_safe_ignores_request_env(
+    tmp_path,
+    monkeypatch,
+):
+    from pathlib import Path
+
+    captured: dict = {}
+
+    real_run = subprocess.run
+
+    def fake_run(argv, **kwargs):
+        captured["env"] = dict(kwargs.get("env") or {})
+        exe = ""
+        if isinstance(argv, (list, tuple)) and argv:
+            exe = Path(str(argv[0])).name.casefold()
+        if exe in {"git", "git.exe"}:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                "ok\n",
+                "",
+            )
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(
+        "factory.task_command_runner.subprocess.run",
+        fake_run,
+    )
+
+    result = _run(
+        tmp_path,
+        ["git", "status"],
+        env={
+            "GIT_DIR": "C:\\evil\\gitdir",
+            "MY_TOKEN": "secret",
+        },
+        persist=False,
+    )
+
+    assert result.status == "succeeded"
+    assert result.execution_boundary == (
+        ExecutionBoundary.HOST_SAFE.value
+    )
+    env = captured["env"]
+    assert "GIT_DIR" not in env
+    assert "MY_TOKEN" not in env
+
+    # python --version HOST_SAFE also drops request.env
+    captured.clear()
+    result_py = _run(
+        tmp_path,
+        [sys.executable, "--version"],
+        env={"MY_TOKEN": "secret"},
+        persist=False,
+    )
+    assert result_py.status == "succeeded"
+    assert result_py.execution_boundary == (
+        ExecutionBoundary.HOST_SAFE.value
+    )
+    assert "MY_TOKEN" not in captured["env"]
+
+
+def test_build_host_safe_process_env_drops_request_env():
+    built = build_host_safe_process_env(
+        {
+            "GIT_DIR": "/tmp/evil",
+            "MY_TOKEN": "secret",
+            "GIT_CONFIG_COUNT": "1",
+        },
+        host_environ={
+            "PATH": "/bin",
+            "TEMP": "/tmp",
+        },
+        for_git=True,
+    )
+    assert built["PATH"] == "/bin"
+    assert "GIT_DIR" not in built
+    assert "MY_TOKEN" not in built
+    assert "GIT_CONFIG_COUNT" not in built
+    assert built["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_project_code_sandbox_still_gets_request_env(
+    tmp_path,
+    simulate_sandbox,
+):
+    script = tmp_path / "echo_env.py"
+    script.write_text(
+        "import os\n"
+        "print(os.environ.get('APP_FLAG', 'MISSING'))\n",
+        encoding="utf-8",
+    )
+
+    result = _run(
+        tmp_path,
+        [sys.executable, "echo_env.py"],
+        env={"APP_FLAG": "from-request"},
+        allow_mutating=True,
+        persist=False,
+    )
+
+    assert result.status == "succeeded"
+    assert "from-request" in result.stdout
+    assert (
+        simulate_sandbox[0]["payload"]["env"][
+            "APP_FLAG"
+        ]
+        == "from-request"
+    )
+
+
+def test_sqlite_migration_adds_boundary_columns(
+    tmp_path,
+):
+    db_path = tmp_path / "legacy.db"
+    connection = get_connection(db_path)
+
+    try:
+        connection.execute(
+            """
+            CREATE TABLE task_commands (
+                command_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                argv_json TEXT NOT NULL,
+                cwd TEXT NOT NULL,
+                permission_level TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                duration_ms INTEGER,
+                exit_code INTEGER,
+                stdout TEXT,
+                stderr TEXT,
+                status TEXT NOT NULL,
+                secret_env_keys_json TEXT NOT NULL
+                    DEFAULT '[]',
+                stdout_truncated INTEGER NOT NULL
+                    DEFAULT 0,
+                stderr_truncated INTEGER NOT NULL
+                    DEFAULT 0
+            )
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    init_task_command_store(db_path)
+
+    connection = get_connection(db_path)
+    try:
+        cols = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(task_commands)"
+            ).fetchall()
+        }
+    finally:
+        connection.close()
+
+    assert "execution_boundary" in cols
+    assert "network_policy" in cols

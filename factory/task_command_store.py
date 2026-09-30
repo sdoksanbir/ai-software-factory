@@ -11,9 +11,11 @@ from typing import Any
 
 from factory.database import (
     DEFAULT_DB_PATH,
+    _ensure_column,
     get_connection,
 )
 from factory.task_command_models import (
+    NetworkPolicy,
     TaskCommandResult,
     normalize_secret_env_keys,
 )
@@ -56,6 +58,21 @@ def init_task_command_store(
                 command_id
             );
             """
+        )
+
+        # Backward-compatible column adds for
+        # existing Step 1 databases.
+        _ensure_column(
+            connection,
+            "task_commands",
+            "execution_boundary",
+            "TEXT",
+        )
+        _ensure_column(
+            connection,
+            "task_commands",
+            "network_policy",
+            "TEXT",
         )
 
         connection.commit()
@@ -112,6 +129,19 @@ def _deserialize_secret_keys(
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
+    keys = set(row.keys())
+
+    boundary = ""
+    if "execution_boundary" in keys:
+        boundary = row["execution_boundary"] or ""
+
+    network = NetworkPolicy.NETWORK_NONE.value
+    if "network_policy" in keys:
+        network = (
+            row["network_policy"]
+            or NetworkPolicy.NETWORK_NONE.value
+        )
+
     return {
         "command_id": row["command_id"],
         "task_id": row["task_id"],
@@ -140,6 +170,8 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "stderr_truncated": bool(
             row["stderr_truncated"]
         ),
+        "execution_boundary": boundary,
+        "network_policy": network,
     }
 
 
@@ -176,6 +208,13 @@ def save_task_command(
         "stderr_truncated": bool(
             result.stderr_truncated
         ),
+        "execution_boundary": (
+            result.execution_boundary or ""
+        ),
+        "network_policy": (
+            result.network_policy
+            or NetworkPolicy.NETWORK_NONE.value
+        ),
     }
 
     connection = get_connection(db_path)
@@ -198,10 +237,12 @@ def save_task_command(
                 status,
                 secret_env_keys_json,
                 stdout_truncated,
-                stderr_truncated
+                stderr_truncated,
+                execution_boundary,
+                network_policy
             )
             VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -228,6 +269,8 @@ def save_task_command(
                 int(
                     payload["stderr_truncated"]
                 ),
+                payload["execution_boundary"],
+                payload["network_policy"],
             ),
         )
 

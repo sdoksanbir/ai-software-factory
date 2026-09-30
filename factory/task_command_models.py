@@ -17,6 +17,16 @@ class PermissionLevel(str, Enum):
     DANGEROUS = "DANGEROUS"
 
 
+class ExecutionBoundary(str, Enum):
+    HOST_SAFE = "HOST_SAFE"
+    PROJECT_CODE_SANDBOX = "PROJECT_CODE_SANDBOX"
+
+
+class NetworkPolicy(str, Enum):
+    NETWORK_NONE = "NETWORK_NONE"
+    NETWORK_PACKAGE_INSTALL = "NETWORK_PACKAGE_INSTALL"
+
+
 class CommandStatus(str, Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -80,6 +90,10 @@ class TaskCommandResult:
     )
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    execution_boundary: str = ""
+    network_policy: str = (
+        NetworkPolicy.NETWORK_NONE.value
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -99,6 +113,10 @@ class TaskCommandPathError(TaskCommandError):
 
 class TaskCommandValidationError(TaskCommandError):
     """Invalid request shape (argv, timeout, env)."""
+
+
+class TaskCommandSandboxRuntimeError(TaskCommandError):
+    """Sandbox runtime unavailable or unsupported."""
 
 
 def normalize_secret_env_keys(
