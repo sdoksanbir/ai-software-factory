@@ -44,7 +44,7 @@ def test_simple_task_does_not_call_model():
 
 def test_complex_task_detected():
     assert should_create_multi_step_plan(
-        "Backend API ekle, frontend'i ba?la "
+        "Backend API ekle, frontend'i bağla "
         "ve testlerini yaz."
     )
 
@@ -53,21 +53,21 @@ def test_complex_task_uses_model():
     client = FakeModelClient(
         """
         {
-          "summary": "Kullan?c? kayd?",
+          "summary": "Kullanıcı kaydı",
           "steps": [
             {
-              "title": "Mevcut yap?y? incele",
-              "instruction": "Auth yap?s?n? incele.",
+              "title": "Mevcut yapıyı incele",
+              "instruction": "Auth yapısını incele.",
               "kind": "read"
             },
             {
-              "title": "Backend'i geli?tir",
-              "instruction": "Kay?t endpointini ekle.",
+              "title": "Backend'i geliştir",
+              "instruction": "Kayıt endpointini ekle.",
               "kind": "write"
             },
             {
-              "title": "Do?rula",
-              "instruction": "Testleri ?al??t?r.",
+              "title": "Doğrula",
+              "instruction": "Testleri çalıştır.",
               "kind": "verify"
             }
           ]
@@ -76,7 +76,7 @@ def test_complex_task_uses_model():
     )
 
     result = build_task_plan(
-        "Backend API ekle, frontend'i ba?la "
+        "Backend API ekle, frontend'i bağla "
         "ve testlerini yaz.",
         model_client=client,
         model_name="fake-model",
@@ -112,13 +112,13 @@ def test_markdown_json_is_accepted():
           "summary": "Plan",
           "steps": [
             {
-              "title": "?ncele",
-              "instruction": "Yap?y? incele.",
+              "title": "İncele",
+              "instruction": "Yapıyı incele.",
               "kind": "read"
             },
             {
-              "title": "De?i?tir",
-              "instruction": "Kodu de?i?tir.",
+              "title": "Değiştir",
+              "instruction": "Kodu değiştir.",
               "kind": "write"
             }
           ]
@@ -127,7 +127,7 @@ def test_markdown_json_is_accepted():
     )
 
     result = build_task_plan(
-        "API yap?s?n? incele ve endpoint ekle",
+        "API yapısını incele ve endpoint ekle",
         model_client=client,
         model_name="fake-model",
     )
@@ -146,8 +146,8 @@ def test_invalid_kind_is_rejected():
               "kind": "read"
             },
             {
-              "title": "?ki",
-              "instruction": "?kinci",
+              "title": "İki",
+              "instruction": "İkinci",
               "kind": "delete_everything"
             }
           ]
@@ -187,7 +187,7 @@ def test_too_many_steps_rejected():
     with pytest.raises(ValueError):
         build_task_plan(
             "Backend, frontend, API ve test "
-            "sistemlerini g?ncelle.",
+            "sistemlerini güncelle.",
             model_client=client,
             model_name="fake-model",
         )
@@ -202,18 +202,18 @@ def test_create_and_save_plan(tmp_path):
           "summary": "Entegrasyon",
           "steps": [
             {
-              "title": "?ncele",
+              "title": "İncele",
               "instruction": "Mevcut sistemi incele.",
               "kind": "read"
             },
             {
               "title": "Uygula",
-              "instruction": "De?i?ikli?i uygula.",
+              "instruction": "Değişikliği uygula.",
               "kind": "write"
             },
             {
               "title": "Test",
-              "instruction": "Sonucu do?rula.",
+              "instruction": "Sonucu doğrula.",
               "kind": "verify"
             }
           ]
@@ -223,7 +223,7 @@ def test_create_and_save_plan(tmp_path):
 
     created = create_and_save_task_plan(
         "TASK-2001",
-        "Backend API ekle, frontend'i ba?la "
+        "Backend API ekle, frontend'i bağla "
         "ve testlerini yaz.",
         model_client=client,
         model_name="fake-model",

@@ -651,7 +651,7 @@ def build_orchestrator_for_task(
     # model_client, git_manager, and sandbox. They do
     # not invoke Orchestrator.run_task().
     if task.project_id is None:
-        # Eski, FAZ 13 ?ncesi g?revler i?in uyumluluk.
+        # Eski, FAZ 13 öncesi görevler için uyumluluk.
         return Orchestrator(
             provider_registry=API_PROVIDER_REGISTRY
         )
@@ -728,8 +728,8 @@ def hydrate_runtime_from_database() -> None:
         if diff_output is not None:
             TASK_DIFFS[task.task_id] = diff_output
 
-        # Restart sonras?nda onay bekleyen g?revlerin
-        # ge?ici runtime context'ini yeniden olu?tur.
+        # Restart sonrasında onay bekleyen görevlerin
+        # geçici runtime context'ini yeniden oluştur.
         if (
             task.state == "ready_for_approval"
             and row["branch"]
@@ -741,8 +741,8 @@ def hydrate_runtime_from_database() -> None:
                     build_orchestrator_for_task(task)
                 )
             except KeyError:
-                # Projesi silinmi? bir g?revin approval
-                # context'ini yanl?? repoda kurma.
+                # Projesi silinmiş bir görevin approval
+                # context'ini yanlış repoda kurma.
                 continue
 
             task_spec = TaskSpec(
@@ -2440,7 +2440,7 @@ def task_pipeline(task_id: str):
     if task is None:
         raise HTTPException(
             status_code=404,
-            detail="G?rev bulunamad?.",
+            detail="Görev bulunamadı.",
         )
 
     logs = TASK_LOGS.get(
@@ -2483,7 +2483,7 @@ def open_project_folder(project_id: str):
     if project is None:
         raise HTTPException(
             status_code=404,
-            detail="Proje bulunamad?.",
+            detail="Proje bulunamadı.",
         )
 
     try:
@@ -2493,7 +2493,7 @@ def open_project_folder(project_id: str):
     except OSError as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Proje a??lamad?: {exc}",
+            detail=f"Proje açılamadı: {exc}",
         ) from exc
 
     return {
@@ -2509,7 +2509,7 @@ def open_project_terminal(project_id: str):
     if project is None:
         raise HTTPException(
             status_code=404,
-            detail="Proje bulunamad?.",
+            detail="Proje bulunamadı.",
         )
 
     try:
@@ -2519,7 +2519,7 @@ def open_project_terminal(project_id: str):
     except OSError as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Terminal a??lamad?: {exc}",
+            detail=f"Terminal açılamadı: {exc}",
         ) from exc
 
     return {
@@ -2537,7 +2537,7 @@ def test_local_model(payload: ModelTestRequest):
     if not model:
         raise HTTPException(
             status_code=400,
-            detail="Model ad? zorunludur.",
+            detail="Model adı zorunludur.",
         )
 
     if not prompt:
@@ -2580,13 +2580,13 @@ def test_local_model(payload: ModelTestRequest):
 
         raise HTTPException(
             status_code=502,
-            detail=f"Ollama hatas?: {detail}",
+            detail=f"Ollama hatası: {detail}",
         ) from exc
 
     except urllib_error.URLError as exc:
         raise HTTPException(
             status_code=503,
-            detail="Ollama servisine ula??lam?yor.",
+            detail="Ollama servisine ulaşılamıyor.",
         ) from exc
 
     elapsed_ms = round(
@@ -2598,7 +2598,7 @@ def test_local_model(payload: ModelTestRequest):
     except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=502,
-            detail="Ollama ge?ersiz JSON d?nd?rd?.",
+            detail="Ollama geçersiz JSON döndürdü.",
         ) from exc
 
     answer = result.get("response")
@@ -2606,7 +2606,7 @@ def test_local_model(payload: ModelTestRequest):
     if not isinstance(answer, str):
         raise HTTPException(
             status_code=502,
-            detail="Ollama yan?t? bulunamad?.",
+            detail="Ollama yanıtı bulunamadı.",
         )
 
     return {

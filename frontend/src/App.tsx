@@ -2565,7 +2565,7 @@ function App() {
                   setError(
                     err instanceof Error
                       ? err.message
-                      : "Proje a??lamad?.",
+                      : "Proje açılamadı.",
                   )
                 })
               }}
