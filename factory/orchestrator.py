@@ -365,9 +365,14 @@ class Orchestrator:
             "Sen otonom bir yazılım geliştirme ajanısın. "
             "Yanıtın yalnızca geçerli bir JSON nesnesi olmalı. "
             "Markdown, açıklama metni veya kod bloğu kullanma. "
-            "JSON yapısı tam olarak şu biçimde olmalı: "
-            '{"files":[{"path":"REQUESTED_FILE_PATH","content":"dosyanın tam içeriği"}],"explanation":"kısa açıklama"}. '
-            "Her dosya için content alanında dosyanın değişiklik sonrası TAM içeriğini ver. "
+            "JSON yapısı şu biçimde olmalı: "
+            '{"files":[{"path":"relative/path.py","operation":"write","content":"dosyanın tam içeriği"},'
+            '{"path":"obsolete.py","operation":"delete"}],"explanation":"kısa açıklama"}. '
+            'operation "write" veya "delete" olabilir; yoksa write varsayılır. '
+            "Silme için operation=delete kullan ve content gönderme. "
+            "Silmeyi boş content ile temsil etme. Dizin silme desteklenmez. "
+            "Değişiklik gerekiyorsa asla files:[] döndürme. "
+            "Her write dosyası için content alanında dosyanın değişiklik sonrası TAM içeriğini ver. "
             "Görev çalıştırılabilir Python kodunda yeni davranış ekliyor veya mevcut davranışı değiştiriyorsa "
             "uygun pytest test dosyasını da files dizisine ekle veya güncelle. "
             "Testler gerçek davranışı doğrulamalı; yalnızca import veya smoke test yeterli değildir. "
@@ -412,9 +417,16 @@ class Orchestrator:
             "Do not infer functionality from filenames, repository names, existing modules, "
             "or repository context. Implement only the behavior explicitly requested in TASK. "
             "OUTPUT SCHEMA IS MANDATORY: the top-level JSON object must contain a files key. "
-            "files must be a JSON array. Every files item must contain path and content. "
+            "files must be a JSON array with at least one item. "
+            "Every files item must contain path. "
+            'operation is "write" or "delete" (default write). '
+            "write items must contain content with FULL FILE CONTENT. "
+            "delete items must omit content or use empty content. "
+            "Never return files:[]. Never represent deletion with empty write content. "
+            "Directory deletion is unsupported. "
             "Use exactly this structure: "
-            '{"files":[{"path":"relative/path.py","content":"FULL FILE CONTENT"}],"explanation":"short explanation"}. '
+            '{"files":[{"path":"relative/path.py","operation":"write","content":"FULL FILE CONTENT"},'
+            '{"path":"obsolete.py","operation":"delete"}],"explanation":"short explanation"}. '
             'Never return a filename-to-content object such as {"file.py":"content"}. '
             "Return exactly one valid JSON object using this schema. "
             "The first character of your response must be { and the last character must be }. "

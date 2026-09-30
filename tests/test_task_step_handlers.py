@@ -491,6 +491,57 @@ def test_write_prompt_guards_against_invented_requirements():
     assert "whitespace collapsing" in source
     assert "ic bosluklari degistirme veya teke indirme" in source
 
+    assert '"operation":"write"' in source
+    assert '"operation":"delete"' in source
+    assert "files:[]" in source
+
+
+def test_write_applies_delete_operation(
+    tmp_path,
+):
+    target = tmp_path / "old.py"
+    target.write_text("OLD\n", encoding="utf-8")
+
+    model = FakeModelClient(
+        [
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "path": "old.py",
+                            "operation": "delete",
+                        }
+                    ],
+                    "explanation": (
+                        "remove obsolete file"
+                    ),
+                }
+            )
+        ]
+    )
+
+    handlers = TaskStepHandlers(
+        FakeOrchestrator(
+            model_client=model
+        ),
+        model_name="fake-model",
+    )
+
+    result = handlers.write(
+        {
+            "instruction": (
+                "old.py dosyasini sil"
+            )
+        },
+        str(tmp_path),
+    )
+
+    assert not target.exists()
+    diff = result.checkpoint_payload["diff"]
+    assert "OPERATION: DELETE" in diff
+    assert "FILE DELETED" in diff
+    assert "FULL CONTENT AFTER WRITE" not in diff
+
 
 
 def test_write_uses_actual_fallback_agent_identity(

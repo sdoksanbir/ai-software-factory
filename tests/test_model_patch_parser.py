@@ -67,3 +67,23 @@ def test_single_file_object():
 
     assert len(result.files) == 1
     assert result.files[0].path == "a.py"
+    assert result.files[0].operation == "write"
+
+
+def test_delete_operation_preserved():
+    result = parse_model_patch_response(
+        """{
+          "files": [
+            {
+              "path": "old.py",
+              "operation": "delete"
+            }
+          ],
+          "explanation": "remove obsolete file"
+        }"""
+    )
+
+    assert len(result.files) == 1
+    assert result.files[0].path == "old.py"
+    assert result.files[0].operation == "delete"
+    assert result.files[0].content == ""

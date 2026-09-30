@@ -1,7 +1,12 @@
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Literal
 
 
 class TaskStatus(str, Enum):
@@ -63,7 +68,8 @@ class PatchResult(BaseModel):
 
 class FileChange(BaseModel):
     path: str
-    content: str
+    operation: Literal["write", "delete"] = "write"
+    content: str = ""
 
     @field_validator("path")
     @classmethod
@@ -71,6 +77,27 @@ class FileChange(BaseModel):
         if not v or not v.strip():
             raise ValueError("Dosya yolu boş olamaz.")
         return v.strip()
+
+    @model_validator(mode="after")
+    def validate_operation_content(self) -> "FileChange":
+        fields_set = self.model_fields_set
+
+        if self.operation == "delete":
+            if self.content.strip():
+                raise ValueError(
+                    "Delete operation must not include "
+                    "non-empty content."
+                )
+            return self
+
+        # write: content must be explicitly present
+        # (empty string is allowed; missing field is not).
+        if "content" not in fields_set:
+            raise ValueError(
+                "Write operation requires content field."
+            )
+
+        return self
 
 
 class MultiFilePatch(BaseModel):

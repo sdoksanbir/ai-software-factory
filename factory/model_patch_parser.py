@@ -75,15 +75,25 @@ def _normalize_payload(
     if (
         "files" not in payload
         and isinstance(payload.get("path"), str)
-        and "content" in payload
+        and (
+            "content" in payload
+            or payload.get("operation") == "delete"
+        )
     ):
+        item: dict[str, Any] = {
+            "path": payload["path"],
+        }
+
+        if "content" in payload:
+            item["content"] = payload["content"]
+
+        if "operation" in payload:
+            item["operation"] = payload[
+                "operation"
+            ]
+
         payload = {
-            "files": [
-                {
-                    "path": payload["path"],
-                    "content": payload["content"],
-                }
-            ],
+            "files": [item],
             "explanation": payload.get(
                 "explanation",
                 "",
@@ -96,6 +106,28 @@ def _normalize_payload(
     if isinstance(files, dict):
         payload = dict(payload)
         payload["files"] = [files]
+
+    # operation yoksa write varsayilanina birak;
+    # delete metadata kaybolmasin.
+    normalized_files = payload.get("files")
+
+    if isinstance(normalized_files, list):
+        kept: list[Any] = []
+
+        for item in normalized_files:
+            if not isinstance(item, dict):
+                kept.append(item)
+                continue
+
+            entry = dict(item)
+
+            if "operation" not in entry:
+                entry["operation"] = "write"
+
+            kept.append(entry)
+
+        payload = dict(payload)
+        payload["files"] = kept
 
     return payload
 

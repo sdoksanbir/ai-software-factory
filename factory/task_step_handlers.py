@@ -393,7 +393,8 @@ class TaskStepHandlers:
                     in allowed_targets
                 )
                 + "\nBaska hicbir dosyayi "
-                "olusturma veya degistirme.\n\n"
+                "olusturma, degistirme "
+                "veya silme.\n\n"
             )
         else:
             scope_contract = ""
@@ -434,12 +435,32 @@ class TaskStepHandlers:
                     "JSON nesnesi olmali. "
                     "Markdown veya kod blogu "
                     "kullanma. "
-                    "JSON semasi tam olarak: "
+                    "JSON semasi: "
                     '{"files":['
-                    '{"path":"REQUESTED_FILE_PATH",'
+                    '{"path":"relative/path.py",'
+                    '"operation":"write",'
                     '"content":"dosyanin TAM '
-                    'son icerigi"}],'
+                    'son icerigi"},'
+                    '{"path":"obsolete.py",'
+                    '"operation":"delete"}'
+                    '],'
                     '"explanation":"kisa aciklama"}. '
+                    "operation alani: "
+                    '"write" veya "delete". '
+                    "operation yoksa write "
+                    "anlamina gelir. "
+                    "Dosya silmek icin "
+                    'operation="delete" kullan; '
+                    "content gonderme. "
+                    "Silmeyi bos content ile "
+                    "temsil etme. "
+                    "Dizin silme desteklenmez; "
+                    "yalnizca dosya sil. "
+                    "Repository degisikligi "
+                    "gerekiyorsa asla files:[] "
+                    "dondurme. "
+                    "Tum path'ler proje-relative "
+                    "olmali. "
                     "Yalnizca mevcut WRITE "
                     "adiminin istedigi davranisi "
                     "uygula. "
@@ -461,7 +482,7 @@ class TaskStepHandlers:
                     "testlere ekleme. "
                     "Ozellikle kullanici acikca istemediyse "
                     "ic bosluklari degistirme veya teke indirme. "
-                    "content alaninda patch degil, "
+                    "write icin content alaninda patch degil, "
                     "dosyanin degisiklik sonrasi "
                     "TAM icerigini ver."
                 ),
@@ -596,12 +617,27 @@ class TaskStepHandlers:
             evidence_parts = []
 
             for file_change in patch.files:
-                evidence_parts.append(
-                    "FILE: "
-                    f"{file_change.path}\n"
-                    "FULL CONTENT AFTER WRITE:\n"
-                    f"{file_change.content}"
+                operation = getattr(
+                    file_change,
+                    "operation",
+                    "write",
                 )
+
+                if operation == "delete":
+                    evidence_parts.append(
+                        "FILE: "
+                        f"{file_change.path}\n"
+                        "OPERATION: DELETE\n"
+                        "FILE DELETED"
+                    )
+                else:
+                    evidence_parts.append(
+                        "FILE: "
+                        f"{file_change.path}\n"
+                        "OPERATION: WRITE\n"
+                        "FULL CONTENT AFTER WRITE:\n"
+                        f"{file_change.content}"
+                    )
 
             review_evidence = (
                 "\n\n".join(evidence_parts)

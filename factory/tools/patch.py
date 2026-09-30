@@ -1,6 +1,7 @@
 import os
 import json
 import pathlib
+import stat
 from typing import List
 
 from factory.schemas import MultiFilePatch
@@ -34,14 +35,183 @@ class PatchTool:
     def _clean_markdown_fences(content: str) -> str:
         """Modelin eklediği ```python ... ``` tarzı markdown bloklarını temizler."""
         lines = content.strip().splitlines()
-        
-        # Eğer ilk satır ``` ile başlıyorsa ve son satır ``` ise bunları soy
+
         if lines and lines[0].startswith("```"):
             lines = lines[1:]
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
-            
+
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _ensure_under_root(
+        path: pathlib.Path,
+        root: pathlib.Path,
+        *,
+        label: str,
+    ) -> None:
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise PatchToolError(
+                "Access denied: Path is outside worktree -> "
+                f"{label}"
+            ) from exc
+
+    @staticmethod
+    def normalize_relative_path(raw: str) -> str:
+        text = (raw or "").strip()
+
+        if not text:
+            raise PatchToolError("Empty path rejected")
+
+        if (
+            os.path.isabs(text)
+            or pathlib.PureWindowsPath(text).is_absolute()
+            or pathlib.PurePosixPath(
+                text.replace("\\", "/")
+            ).is_absolute()
+        ):
+            raise PatchToolError(
+                f"Absolute path rejected: {raw}"
+            )
+
+        parts: list[str] = []
+
+        for part in pathlib.PurePosixPath(
+            text.replace("\\", "/")
+        ).parts:
+            if part in ("", "."):
+                continue
+
+            if part == "..":
+                raise PatchToolError(
+                    f"Path traversal rejected: {raw}"
+                )
+
+            if part.casefold() == ".git":
+                raise PatchToolError(
+                    f".git path rejected: {raw}"
+                )
+
+            parts.append(part)
+
+        if not parts:
+            raise PatchToolError(
+                "Project root path rejected"
+            )
+
+        return "/".join(parts)
+
+    @staticmethod
+    def resolve_safe_target(
+        worktree_path: str,
+        relative_path: str,
+        *,
+        must_exist: bool,
+        for_delete: bool = False,
+    ) -> pathlib.Path:
+        """Resolve a project-relative mutation path.
+
+        V1 policy: reject ANY symlink component (file or
+        directory) so lexical scope cannot be bypassed via
+        in-tree aliases. Also reject paths that would leave
+        the worktree.
+        """
+        root = pathlib.Path(worktree_path).resolve()
+        rel = PatchTool.normalize_relative_path(
+            relative_path
+        )
+        parts = pathlib.PurePosixPath(rel).parts
+        current = root
+
+        for index, part in enumerate(parts):
+            is_final = index == len(parts) - 1
+            next_path = current / part
+
+            if next_path.is_symlink():
+                raise PatchToolError(
+                    "Symlink path rejected for mutation: "
+                    f"{relative_path}"
+                )
+
+            if next_path.exists():
+                resolved = next_path.resolve()
+                PatchTool._ensure_under_root(
+                    resolved,
+                    root,
+                    label=relative_path,
+                )
+
+                if not is_final:
+                    if not resolved.is_dir():
+                        raise PatchToolError(
+                            "Invalid path component "
+                            f"(not a directory): {relative_path}"
+                        )
+                    current = resolved
+                    continue
+
+                if for_delete or must_exist:
+                    if resolved.is_dir():
+                        raise PatchToolError(
+                            "Directory deletion is unsupported "
+                            "in V1; emit explicit file delete "
+                            f"entries instead: {relative_path}"
+                        )
+
+                    if not resolved.is_file():
+                        raise PatchToolError(
+                            "Delete target is not a regular "
+                            f"file: {relative_path}"
+                        )
+
+                    return resolved
+
+                if not resolved.is_file():
+                    raise PatchToolError(
+                        "Target path is not a file: "
+                        f"{relative_path}"
+                    )
+
+                return resolved
+
+            # Component does not exist.
+            if must_exist or for_delete:
+                raise PatchToolError(
+                    "Delete target does not exist: "
+                    f"{relative_path}"
+                )
+
+            remainder = pathlib.Path(*parts[index:])
+            candidate = current / remainder
+            PatchTool._ensure_under_root(
+                candidate,
+                root,
+                label=relative_path,
+            )
+
+            parent = candidate.parent
+
+            if parent.is_symlink():
+                raise PatchToolError(
+                    "Symlink path rejected for mutation: "
+                    f"{relative_path}"
+                )
+
+            if parent.exists():
+                parent_resolved = parent.resolve()
+                PatchTool._ensure_under_root(
+                    parent_resolved,
+                    root,
+                    label=relative_path,
+                )
+
+            return candidate
+
+        raise PatchToolError(
+            f"Unable to resolve path: {relative_path}"
+        )
 
     @staticmethod
     def validate_non_destructive_edit(
@@ -51,8 +221,6 @@ class PatchTool:
         prompt: str = "",
     ) -> None:
         # DESTRUCTIVE_PATCH_GUARD_V2
-        # Model tam dosya icerigi dondurdugu icin, mevcut buyuk bir dosyanin
-        # neredeyse tamamen silinmesini yazmadan once engelle.
         abs_base = pathlib.Path(worktree_path).resolve()
         prompt_folded = prompt.casefold()
 
@@ -81,22 +249,19 @@ class PatchTool:
         )
 
         for file_change in patch.files:
-            target_path = pathlib.Path(
-                os.path.abspath(
-                    os.path.join(
-                        str(abs_base),
-                        file_change.path,
-                    )
-                )
-            )
+            if getattr(
+                file_change,
+                "operation",
+                "write",
+            ) == "delete":
+                continue
 
-            try:
-                target_path.relative_to(abs_base)
-            except ValueError:
-                raise PatchToolError(
-                    "Access denied: Path is outside worktree -> "
-                    f"{file_change.path}"
-                )
+            target_path = PatchTool.resolve_safe_target(
+                str(abs_base),
+                file_change.path,
+                must_exist=False,
+                for_delete=False,
+            )
 
             if not target_path.exists() or not target_path.is_file():
                 continue
@@ -145,8 +310,6 @@ class PatchTool:
             line_ratio = proposed_lines / original_lines
             char_ratio = proposed_chars / original_chars
 
-            # Genel felaket korumasi: buyuk bir mevcut dosya hem satir
-            # hem karakter olarak dramatik bicimde kuculuyorsa reddet.
             if (
                 original_lines >= 80
                 and original_chars >= 2000
@@ -163,8 +326,6 @@ class PatchTool:
                     "complete updated file."
                 )
 
-            # Prompt acikca sona ekleme istiyorsa mevcut dosya aynen
-            # korunmali, sadece sonuna yeni icerik eklenmelidir.
             if append_intent:
                 original_body = original_norm.rstrip("\\n")
                 proposed_body = proposed_norm.rstrip("\\n")
@@ -197,114 +358,231 @@ class PatchTool:
                     )
 
     @staticmethod
-    def apply_multi_file_patch(worktree_path: str, patch: MultiFilePatch) -> List[str]:
+    def _restore_item(
+        *,
+        target_path: pathlib.Path,
+        existed: bool,
+        original_bytes: bytes | None,
+        original_mode: int | None,
+    ) -> None:
+        if existed and original_bytes is not None:
+            target_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            target_path.write_bytes(original_bytes)
+
+            if original_mode is not None:
+                os.chmod(
+                    target_path,
+                    stat.S_IMODE(original_mode),
+                )
+            return
+
+        if target_path.exists() and target_path.is_file():
+            target_path.unlink()
+
+    @staticmethod
+    def apply_multi_file_patch(
+        worktree_path: str,
+        patch: MultiFilePatch,
+    ) -> List[str]:
         abs_base = pathlib.Path(worktree_path).resolve()
 
         prepared = []
         seen_targets = set()
 
-        # First validate every file before writing anything.
+        # Validate every item before mutating anything.
         for file_change in patch.files:
-            target_path = pathlib.Path(
-                os.path.abspath(
-                    os.path.join(str(abs_base), file_change.path)
-                )
+            operation = getattr(
+                file_change,
+                "operation",
+                "write",
             )
 
-            try:
-                target_path.relative_to(abs_base)
-            except ValueError:
+            if operation not in {"write", "delete"}:
                 raise PatchToolError(
-                    f"Access denied: Path is outside worktree -> {file_change.path}"
+                    f"Unknown patch operation: {operation}"
                 )
 
-            target_key = str(target_path).lower()
+            target_path = PatchTool.resolve_safe_target(
+                str(abs_base),
+                file_change.path,
+                must_exist=(operation == "delete"),
+                for_delete=(operation == "delete"),
+            )
+
+            target_key = str(target_path).casefold()
+
             if target_key in seen_targets:
                 raise PatchToolError(
-                    f"Duplicate target path in patch: {file_change.path}"
+                    "Duplicate target path in patch: "
+                    f"{file_change.path}"
                 )
 
             seen_targets.add(target_key)
 
-            if target_path.exists() and not target_path.is_file():
-                raise PatchToolError(
-                    f"Target path is not a file: {file_change.path}"
-                )
-
             existed = target_path.exists()
-            original_bytes = target_path.read_bytes() if existed else None
+            original_bytes = None
+            original_mode = None
 
-            cleaned_content = PatchTool._clean_markdown_fences(
-                file_change.content
-            )
+            if existed:
+                original_bytes = target_path.read_bytes()
+                original_mode = target_path.stat().st_mode
+
+            cleaned_content = ""
+
+            if operation == "write":
+                cleaned_content = (
+                    PatchTool._clean_markdown_fences(
+                        file_change.content
+                    )
+                )
 
             prepared.append(
                 (
+                    operation,
                     target_path,
                     cleaned_content,
                     existed,
-                    original_bytes
+                    original_bytes,
+                    original_mode,
                 )
             )
 
-        written_files = []
+        changed_files: list[str] = []
+        applied: list[
+            tuple[
+                str,
+                pathlib.Path,
+                bool,
+                bytes | None,
+                int | None,
+            ]
+        ] = []
 
         try:
-            for target_path, cleaned_content, _, _ in prepared:
-                target_path.parent.mkdir(
-                    parents=True,
-                    exist_ok=True
+            for (
+                operation,
+                target_path,
+                cleaned_content,
+                existed,
+                original_bytes,
+                original_mode,
+            ) in prepared:
+                # Register BEFORE mutation so a partial write
+                # failure still restores this current item.
+                applied.append(
+                    (
+                        operation,
+                        target_path,
+                        existed,
+                        original_bytes,
+                        original_mode,
+                    )
                 )
 
-                target_path.write_text(
-                    cleaned_content,
-                    encoding="utf-8"
-                )
+                if operation == "write":
+                    target_path.parent.mkdir(
+                        parents=True,
+                        exist_ok=True,
+                    )
+                    parent_resolved = (
+                        target_path.parent.resolve()
+                    )
+                    PatchTool._ensure_under_root(
+                        parent_resolved,
+                        abs_base,
+                        label=str(target_path),
+                    )
+                    target_path.write_text(
+                        cleaned_content,
+                        encoding="utf-8",
+                    )
+                elif operation == "delete":
+                    if (
+                        not target_path.exists()
+                        or not target_path.is_file()
+                    ):
+                        raise PatchToolError(
+                            "Delete target missing at apply "
+                            f"time: {target_path}"
+                        )
+                    target_path.unlink()
+                else:
+                    raise PatchToolError(
+                        f"Unknown patch operation: {operation}"
+                    )
 
-                written_files.append(str(target_path))
+                changed_files.append(str(target_path))
 
         except Exception as e:
-            # Restore every file to its original state.
-            for target_path, _, existed, original_bytes in reversed(prepared):
+            rollback_errors: list[str] = []
+
+            for (
+                operation,
+                target_path,
+                existed,
+                original_bytes,
+                original_mode,
+            ) in reversed(applied):
                 try:
-                    if existed:
-                        target_path.parent.mkdir(
-                            parents=True,
-                            exist_ok=True
-                        )
-                        target_path.write_bytes(original_bytes)
-                    elif target_path.exists():
-                        target_path.unlink()
-                except Exception:
-                    pass
+                    PatchTool._restore_item(
+                        target_path=target_path,
+                        existed=existed,
+                        original_bytes=original_bytes,
+                        original_mode=original_mode,
+                    )
+                except Exception as restore_exc:
+                    rollback_errors.append(
+                        f"{target_path}: {restore_exc}"
+                    )
+
+            if rollback_errors:
+                raise PatchToolError(
+                    "Multi-file patch failed and rollback "
+                    f"was incomplete: {e}. "
+                    "Rollback errors: "
+                    + "; ".join(rollback_errors)
+                ) from e
 
             raise PatchToolError(
-                f"Multi-file patch failed and was rolled back: {e}"
+                "Multi-file patch failed and was "
+                f"rolled back: {e}"
             ) from e
 
-        return written_files
+        return changed_files
 
     @staticmethod
-    def apply_file_patch(worktree_path: str, file_path: str, content: str) -> str:
+    def apply_file_patch(
+        worktree_path: str,
+        file_path: str,
+        content: str,
+    ) -> str:
         """Belirtilen dosyaya temizlenmiş içeriği yazar (yoksa oluşturur)."""
-        abs_base = os.path.abspath(worktree_path)
-        target_path = os.path.abspath(os.path.join(abs_base, file_path))
-        
-        # Güvenlik kontrolü: Dosya worktree dışına çıkmasın
+        target_path = PatchTool.resolve_safe_target(
+            worktree_path,
+            file_path,
+            must_exist=False,
+            for_delete=False,
+        )
+
+        target_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        cleaned_content = PatchTool._clean_markdown_fences(
+            content
+        )
+
         try:
-            pathlib.Path(target_path).relative_to(pathlib.Path(abs_base).resolve())
-        except ValueError:
-            raise PatchToolError(f"Access denied: Path is outside worktree -> {file_path}")
-
-        # Klasör yoksa oluştur
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-        # Markdown kalıntılarını temizle
-        cleaned_content = PatchTool._clean_markdown_fences(content)
-
-        try:
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(cleaned_content)
-            return target_path
+            target_path.write_text(
+                cleaned_content,
+                encoding="utf-8",
+            )
+            return str(target_path)
         except Exception as e:
-            raise PatchToolError(f"Failed to write patch to {file_path}: {str(e)}")
+            raise PatchToolError(
+                f"Failed to write patch to {file_path}: {str(e)}"
+            ) from e
