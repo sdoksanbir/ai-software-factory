@@ -52,6 +52,13 @@ from factory.task_command_models import (
 from factory.task_command_runner import (
     run_task_command,
 )
+from factory.task_secret_injection import (
+    TaskSecretUnavailableError,
+    resolve_task_command_secret_env,
+)
+from factory.task_secret_store import (
+    list_task_secret_names,
+)
 
 
 def _sanitized_provider_failure_feedback(
@@ -316,6 +323,9 @@ def run_agent_terminal_loop(
     system_prompt = (
         build_terminal_system_prompt()
     )
+    available_secret_names = (
+        list_task_secret_names(task_id)
+    )
 
     def _result(
         status: str,
@@ -385,6 +395,9 @@ def run_agent_terminal_loop(
             ),
             observations=observations,
             route_context=route_context,
+            available_secret_names=(
+                available_secret_names
+            ),
         )
 
         try:
@@ -675,6 +688,57 @@ def run_agent_terminal_loop(
             remaining_seconds,
         )
 
+        try:
+            approved_secret_env = (
+                resolve_task_command_secret_env(
+                    task_id,
+                    list(action.argv),
+                    action.cwd,
+                    required_secret_names=(
+                        available_secret_names
+                    ),
+                )
+            )
+        except TaskSecretUnavailableError as exc:
+            rejected_commands += 1
+            consecutive_failures += 1
+            observation = rejected_observation(
+                argv=list(action.argv),
+                cwd=action.cwd,
+                rejection_reason=str(exc),
+            )
+            observations.append(observation)
+            last_observation = observation
+            last_command_status = "rejected"
+            fingerprints_seen.append(fingerprint)
+            outcomes_seen.append("rejected")
+            fingerprint_counts[fingerprint] = (
+                prior_count + 1
+            )
+
+            if _detect_oscillation(
+                fingerprints_seen,
+                outcomes_seen,
+            ):
+                return _result(
+                    "stalled",
+                    reason="stall_oscillation",
+                )
+
+            if (
+                consecutive_failures
+                >= active_policy
+                .max_consecutive_command_failures
+            ):
+                return _result(
+                    "stalled",
+                    reason=(
+                        "max_consecutive_command_failures"
+                    ),
+                )
+
+            continue
+
         request = TaskCommandRequest(
             task_id=task_id,
             argv=list(action.argv),
@@ -682,8 +746,10 @@ def run_agent_terminal_loop(
             timeout_seconds=(
                 effective_command_timeout
             ),
-            env={},
-            secret_env_keys=[],
+            env=dict(approved_secret_env),
+            secret_env_keys=list(
+                approved_secret_env.keys()
+            ),
             allow_mutating=(
                 active_policy.allow_mutating
             ),

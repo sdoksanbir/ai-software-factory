@@ -12,6 +12,7 @@ import pytest
 from api import app as app_module
 from factory.database import get_connection
 from factory.task_command_models import (
+    ARGV_REDACTION_MASK,
     REDACTION_MASK,
     ExecutionBoundary,
     NetworkPolicy,
@@ -494,6 +495,47 @@ def test_secret_env_reaches_process_but_not_persisted(
         connection.close()
 
     assert secret not in blob
+
+
+def test_secret_bearing_argv_rejected_and_redacted(
+    tmp_path,
+    simulate_sandbox,
+):
+    db_path = tmp_path / "factory.db"
+    secret = "argv-leak-password-777"
+
+    result = _run(
+        tmp_path,
+        [
+            sys.executable,
+            "-c",
+            f"print({secret!r})",
+        ],
+        env={"MY_PASSWORD": secret},
+        secret_env_keys=["MY_PASSWORD"],
+        allow_mutating=True,
+        db_path=db_path,
+    )
+
+    assert result.status == "rejected"
+    assert secret not in result.argv
+    assert any(
+        ARGV_REDACTION_MASK in arg
+        for arg in result.argv
+    )
+    assert secret not in result.stderr
+    assert secret not in json.dumps(
+        result.to_dict()
+    )
+
+    stored = get_task_command(
+        result.command_id,
+        db_path=db_path,
+    )
+    assert stored is not None
+    assert secret not in json.dumps(stored)
+    # Rejected before sandbox launch.
+    assert simulate_sandbox == []
 
 
 def test_secret_echo_in_stdout_is_masked(

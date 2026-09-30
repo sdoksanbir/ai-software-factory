@@ -41,6 +41,7 @@ MAX_CAPTURE_CHARS = 100_000
 MAX_ARG_COUNT = 64
 MAX_ARG_LENGTH = 2000
 REDACTION_MASK = "******"
+ARGV_REDACTION_MASK = "[REDACTED]"
 
 # Case-insensitive substrings for request.env secret detection.
 SENSITIVE_ENV_KEY_MARKERS = (
@@ -225,10 +226,17 @@ def collect_secret_values(
 def redact_text(
     text: str,
     secret_values: list[str] | None,
+    *,
+    mask: str | None = None,
 ) -> str:
     if not text or not secret_values:
         return text or ""
 
+    replacement = (
+        REDACTION_MASK
+        if mask is None
+        else mask
+    )
     redacted = text
 
     # Longer secrets first to avoid partial overlap issues.
@@ -240,10 +248,33 @@ def redact_text(
         if secret:
             redacted = redacted.replace(
                 secret,
-                REDACTION_MASK,
+                replacement,
             )
 
     return redacted
+
+
+def redact_argv(
+    argv: list[str] | tuple[str, ...] | None,
+    secret_values: list[str] | None,
+) -> list[str]:
+    """Redact secret substrings from argv tokens.
+
+    Used before persisting rejected secret-bearing argv.
+    """
+    tokens = list(argv or [])
+
+    if not secret_values:
+        return tokens
+
+    return [
+        redact_text(
+            token,
+            secret_values,
+            mask=ARGV_REDACTION_MASK,
+        )
+        for token in tokens
+    ]
 
 
 def truncate_capture(

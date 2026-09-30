@@ -1815,3 +1815,206 @@ def test_django_admin_reject_then_replan_to_python_module(
         and row["argv"][0] == "django-admin"
         for row in history
     )
+
+
+def test_controller_injects_secret_for_createsuperuser():
+    from factory.task_secret_store import (
+        reset_task_secret_store_for_tests,
+        set_task_secrets,
+    )
+
+    reset_task_secret_store_for_tests()
+    secret = "loop-secret-pw-55"
+    set_task_secrets(
+        "TASK-SEC-1",
+        {"user_password": secret},
+    )
+
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        return _success_result(argv=list(req.argv))
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "manage.py",
+                        "createsuperuser",
+                        "--noinput",
+                        "--username",
+                        "admin",
+                        "--email",
+                        "a@b.c",
+                    ],
+                    "cwd": "edusen",
+                    "reason": "create admin",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": ["python", "--version"],
+                    "cwd": None,
+                    "reason": "unrelated",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "done",
+                    "summary": "created",
+                }
+            ),
+        ]
+    )
+
+    try:
+        result = run_agent_terminal_loop(
+            project_path="/repo",
+            task_id="TASK-SEC-1",
+            prompt=(
+                "projeye superuser olustur "
+                "[SECRET:user_password]"
+            ),
+            model_route=SimpleNamespace(model="m"),
+            model_client=object(),
+            policy=build_execute_terminal_policy(),
+            command_runner=fake_runner,
+            decision_caller=decider,
+        )
+    finally:
+        reset_task_secret_store_for_tests()
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 2
+
+    create_req = runner_calls[0]["request"]
+    assert create_req.env == {
+        "DJANGO_SUPERUSER_PASSWORD": secret,
+    }
+    assert create_req.secret_env_keys == [
+        "DJANGO_SUPERUSER_PASSWORD",
+    ]
+    assert secret not in create_req.argv
+
+    version_req = runner_calls[1]["request"]
+    assert version_req.env == {}
+    assert version_req.secret_env_keys == []
+
+    first_prompt = decider.calls[0]["user_prompt"]
+    assert "user_password" in first_prompt
+    assert "AVAILABLE CONTROLLER SECRETS" in (
+        first_prompt
+    )
+    assert secret not in first_prompt
+    assert secret not in json.dumps(
+        result.to_dict()
+    )
+
+
+def test_missing_required_secret_rejects_safely():
+    from factory.task_secret_injection import (
+        MISSING_TASK_SECRET_MESSAGE,
+    )
+    from factory.task_secret_store import (
+        reset_task_secret_store_for_tests,
+        set_task_secrets,
+        clear_task_secrets,
+    )
+
+    reset_task_secret_store_for_tests()
+    set_task_secrets(
+        "TASK-SEC-2",
+        {"user_password": "will-clear"},
+    )
+
+    # Capture names at loop start, then clear so
+    # required_secret_names still expects the secret.
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        return _success_result(argv=list(req.argv))
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "manage.py",
+                        "createsuperuser",
+                        "--noinput",
+                    ],
+                    "cwd": None,
+                    "reason": "create",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "cannot continue",
+                }
+            ),
+        ]
+    )
+
+    clear_task_secrets("TASK-SEC-2")
+    # Re-seed names expectation path: set then clear
+    # after loop starts is hard; instead set names by
+    # re-adding then clearing inside decision.
+    set_task_secrets(
+        "TASK-SEC-2",
+        {"user_password": "temp-visible-name"},
+    )
+
+    cleared = {"done": False}
+
+    class ClearingDecider(ScriptedDecider):
+        def __call__(self, **kwargs) -> str:
+            if not cleared["done"]:
+                clear_task_secrets("TASK-SEC-2")
+                cleared["done"] = True
+            return super().__call__(**kwargs)
+
+    clearing = ClearingDecider(decider.scripts)
+
+    try:
+        result = run_agent_terminal_loop(
+            project_path="/repo",
+            task_id="TASK-SEC-2",
+            prompt="create superuser",
+            model_route=SimpleNamespace(model="m"),
+            model_client=object(),
+            policy=build_execute_terminal_policy(),
+            command_runner=fake_runner,
+            decision_caller=clearing,
+        )
+    finally:
+        reset_task_secret_store_for_tests()
+
+    assert runner_calls == []
+    assert result.status in {
+        "failed",
+        "stalled",
+    }
+    obs = result.last_observation
+    assert obs is not None
+    assert (
+        MISSING_TASK_SECRET_MESSAGE
+        in (obs.rejection_reason or "")
+    )
+    assert "temp-visible-name" not in json.dumps(
+        result.to_dict()
+    )
+    assert "will-clear" not in json.dumps(
+        result.to_dict()
+    )

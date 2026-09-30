@@ -34,6 +34,7 @@ from factory.task_command_models import (
     TaskCommandSandboxRuntimeError,
     TaskCommandValidationError,
     collect_secret_values,
+    redact_argv,
     redact_text,
     resolve_secret_env_keys,
     truncate_capture,
@@ -1473,10 +1474,18 @@ def run_task_command(
             save_task_command(**save_kwargs)
         return result
 
+    def _persistable_argv(
+        values: list[str] | None = None,
+    ) -> list[str]:
+        """Argv safe for persistence / observations."""
+        secrets = values if values is not None else secret_values
+        return redact_argv(original_argv, secrets)
+
     def _rejected(
         reason: str,
         *,
         level: PermissionLevel | None = None,
+        argv_secret_values: list[str] | None = None,
     ) -> TaskCommandResult:
         finished_at = _utcnow_iso()
         duration_ms = int(
@@ -1490,7 +1499,9 @@ def run_task_command(
         result = TaskCommandResult(
             command_id=command_id,
             task_id=request.task_id,
-            argv=original_argv,
+            argv=_persistable_argv(
+                argv_secret_values
+            ),
             cwd=cwd_label,
             permission_level=(
                 level or permission_level
@@ -1536,7 +1547,7 @@ def run_task_command(
         result = TaskCommandResult(
             command_id=command_id,
             task_id=request.task_id,
-            argv=original_argv,
+            argv=_persistable_argv(),
             cwd=cwd_label,
             permission_level=permission_level.value,
             started_at=started_at,
@@ -1563,6 +1574,10 @@ def run_task_command(
         extra_env,
         secret_keys,
     )
+    # Populate early so rejection paths can redact.
+    secret_values = list(
+        secret_values_for_argv_check
+    )
 
     for arg in argv:
         for secret in secret_values_for_argv_check:
@@ -1570,6 +1585,9 @@ def run_task_command(
                 return _rejected(
                     "Secret deger argv icinde bulunamaz; "
                     "env kullanin.",
+                    argv_secret_values=(
+                        secret_values_for_argv_check
+                    ),
                 )
 
     try:

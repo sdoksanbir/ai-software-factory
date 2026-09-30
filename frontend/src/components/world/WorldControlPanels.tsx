@@ -39,6 +39,7 @@ type Props = {
   agentExecutions: AgentExecution[]
   controlCenter: ControlCenterStatus | null
   prompt: string
+  userPassword: string
   maxAttempts: number
   taskModelChoice: string
   submitting: boolean
@@ -54,6 +55,7 @@ type Props = {
   onSelectTask: (taskId: string) => void
   onSelectProject: (projectId: string) => void
   onPromptChange: (value: string) => void
+  onUserPasswordChange: (value: string) => void
   onMaxAttemptsChange: (value: number) => void
   onTaskModelChoiceChange: (value: string) => void
   onCreateTask: (event: React.FormEvent<HTMLFormElement>) => void
@@ -101,6 +103,7 @@ export function WorldControlPanels({
   agentExecutions,
   controlCenter,
   prompt,
+  userPassword,
   maxAttempts,
   taskModelChoice,
   submitting,
@@ -116,6 +119,7 @@ export function WorldControlPanels({
   onSelectTask,
   onSelectProject,
   onPromptChange,
+  onUserPasswordChange,
   onMaxAttemptsChange,
   onTaskModelChoiceChange,
   onCreateTask,
@@ -298,6 +302,28 @@ export function WorldControlPanels({
                   }
                   placeholder="Ajan ekibinin yapmasını istediğin işi yaz..."
                 />
+              </label>
+
+              <label className="world-form-wide">
+                <span>
+                  Gizli parola (isteğe bağlı)
+                </span>
+
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={userPassword}
+                  onChange={(event) =>
+                    onUserPasswordChange(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Parolayı görev metnine yazmayın."
+                />
+
+                <small>
+                  Parolayı görev metnine yazmayın.
+                </small>
               </label>
 
               <label>

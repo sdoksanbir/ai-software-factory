@@ -59,6 +59,7 @@ type Props = {
   selectedTaskId: string | null
   selectedProjectId: string | null
   prompt: string
+  userPassword: string
   maxAttempts: number
   taskModelChoice: string
   submitting: boolean
@@ -72,6 +73,7 @@ type Props = {
   projectDeleting: boolean
   onSelectProject: (projectId: string) => void
   onPromptChange: (value: string) => void
+  onUserPasswordChange: (value: string) => void
   onMaxAttemptsChange: (value: number) => void
   onTaskModelChoiceChange: (value: string) => void
   onCreateTask: (event: FormEvent<HTMLFormElement>) => void
@@ -190,6 +192,7 @@ export function ReferenceDashboard({
   selectedTaskId,
   selectedProjectId,
   prompt,
+  userPassword,
   maxAttempts,
   taskModelChoice,
   submitting,
@@ -203,6 +206,7 @@ export function ReferenceDashboard({
   projectDeleting,
   onSelectProject,
   onPromptChange,
+  onUserPasswordChange,
   onMaxAttemptsChange,
   onTaskModelChoiceChange,
   onCreateTask,
@@ -905,6 +909,7 @@ export function ReferenceDashboard({
               agentExecutions={agentExecutions}
               controlCenter={controlCenter}
               prompt={prompt}
+              userPassword={userPassword}
               maxAttempts={maxAttempts}
               taskModelChoice={taskModelChoice}
               submitting={submitting}
@@ -919,6 +924,7 @@ export function ReferenceDashboard({
               onSelectTask={onSelectTask}
               onSelectProject={onSelectProject}
               onPromptChange={onPromptChange}
+              onUserPasswordChange={onUserPasswordChange}
               onMaxAttemptsChange={onMaxAttemptsChange}
               onTaskModelChoiceChange={onTaskModelChoiceChange}
               onCreateTask={onCreateTask}
@@ -1046,6 +1052,7 @@ export function ReferenceDashboard({
           agentExecutions={agentExecutions}
           controlCenter={controlCenter}
           prompt={prompt}
+          userPassword={userPassword}
           maxAttempts={maxAttempts}
           taskModelChoice={taskModelChoice}
           submitting={submitting}
@@ -1060,6 +1067,7 @@ export function ReferenceDashboard({
           onSelectTask={onSelectTask}
           onSelectProject={onSelectProject}
           onPromptChange={onPromptChange}
+          onUserPasswordChange={onUserPasswordChange}
           onMaxAttemptsChange={onMaxAttemptsChange}
           onTaskModelChoiceChange={onTaskModelChoiceChange}
           onCreateTask={onCreateTask}

@@ -610,6 +610,8 @@ function App() {
     useState<string | null>(null)
 
   const [prompt, setPrompt] = useState("")
+  const [userPassword, setUserPassword] =
+    useState("")
   const [maxAttempts, setMaxAttempts] = useState(2)
 
   const [showTaskComposer, setShowTaskComposer] =
@@ -1352,9 +1354,11 @@ function App() {
         selectedProject.project_id,
         taskModelChoice || null,
         selectedTaskId,
+        userPassword.trim() || null,
       )
 
       setPrompt("")
+      setUserPassword("")
       setShowTaskComposer(false)
       setSelectedTaskId(task.task_id)
 
@@ -1992,6 +1996,26 @@ function App() {
                 placeholder="AI ajan\u0131na g\u00f6revini yaz..."
               />
 
+              <label className="task-secret-field">
+                <span>
+                  {"Gizli parola (iste\u011fe ba\u011fl\u0131)"}
+                </span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={userPassword}
+                  onChange={(event) =>
+                    setUserPassword(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="Parolay\u0131 g\u00f6rev metnine yazmay\u0131n."
+                />
+                <small>
+                  {"Parolay\u0131 g\u00f6rev metnine yazmay\u0131n."}
+                </small>
+              </label>
+
               <div className="task-model-field">
                 <span>
                   {"Model"}
@@ -2201,6 +2225,7 @@ function App() {
           selectedTaskId={selectedTaskId}
           selectedProjectId={selectedProjectId}
           prompt={prompt}
+          userPassword={userPassword}
           maxAttempts={maxAttempts}
           taskModelChoice={taskModelChoice}
           submitting={submitting}
@@ -2214,6 +2239,7 @@ function App() {
           projectDeleting={projectDeleting}
           onSelectProject={setSelectedProjectId}
           onPromptChange={setPrompt}
+          onUserPasswordChange={setUserPassword}
           onMaxAttemptsChange={setMaxAttempts}
           onTaskModelChoiceChange={setTaskModelChoice}
           onCreateTask={handleCreateTask}

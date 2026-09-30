@@ -16,6 +16,8 @@ export type Task = {
   started_at: string | null
   task_kind?: TaskKind | null
   related_task_id?: string | null
+  /** Capability names only — never secret values. */
+  secret_names?: string[]
 }
 
 export type Project = {
@@ -299,7 +301,18 @@ export function createTask(
   projectId: string,
   model: string | null = null,
   relatedTaskId: string | null = null,
+  userPassword: string | null = null,
 ) {
+  const secrets =
+    userPassword && userPassword.length > 0
+      ? [
+          {
+            name: "user_password",
+            value: userPassword,
+          },
+        ]
+      : undefined
+
   return request<Task>("/tasks", {
     method: "POST",
     body: JSON.stringify({
@@ -308,6 +321,7 @@ export function createTask(
       project_id: projectId,
       model,
       related_task_id: relatedTaskId,
+      ...(secrets ? { secrets } : {}),
     }),
   })
 }

@@ -25,7 +25,8 @@ You do not control permission, network, sandbox, timeout,
 Docker, dependency volume, or host/sandbox selection.
 Those are enforced by the controller and TaskCommandRunner.
 Never invent or request permission_level, execution_boundary,
-network_policy, allow_mutating, or host execution authority.
+network_policy, allow_mutating, env, secret_env_keys, or host
+execution authority.
 
 Available action_type values:
 - run_command
@@ -181,6 +182,9 @@ def build_terminal_user_prompt(
     route_context: (
         AgentTerminalRouteContext | None
     ) = None,
+    available_secret_names: (
+        list[str] | tuple[str, ...] | None
+    ) = None,
 ) -> str:
     recent = list(observations)[
         -MAX_RECENT_OBSERVATIONS:
@@ -219,6 +223,39 @@ def build_terminal_user_prompt(
             else "(none)"
         )
 
+        secret_names = [
+            str(name).strip()
+            for name in (
+                available_secret_names or []
+            )
+            if str(name).strip()
+        ]
+
+        if secret_names:
+            secret_lines = [
+                f"- {name}"
+                for name in secret_names
+            ]
+            secret_block = (
+                "AVAILABLE CONTROLLER SECRETS:\n"
+                + "\n".join(secret_lines)
+                + "\n"
+                "Values are hidden. Do not ask for, "
+                "guess, or put secret values in argv.\n"
+                "The controller injects approved secrets "
+                "only for approved operations.\n"
+                "For Django createsuperuser use:\n"
+                '["python","manage.py","createsuperuser",'
+                '"--noinput","--username","<username>",'
+                '"--email","<email>"]\n'
+                "Do not include the password in argv."
+            )
+        else:
+            secret_block = (
+                "AVAILABLE CONTROLLER SECRETS:\n"
+                "(none)"
+            )
+
         remaining_steps = max(
             0,
             policy.max_agent_steps - steps_used,
@@ -234,6 +271,7 @@ def build_terminal_user_prompt(
             f"{prompt}\n\n"
             "OPTIONAL ROUTE HINTS:\n"
             f"{route_block}\n\n"
+            f"{secret_block}\n\n"
             "CURRENT STEP / BUDGET:\n"
             f"steps_used={steps_used}\n"
             f"remaining_steps={remaining_steps}\n"

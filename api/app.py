@@ -108,6 +108,13 @@ from factory.task_read_results import (
 from factory.task_model_preferences import (
     set_task_model_preference,
 )
+from factory.task_secret_store import (
+    TaskSecretStoreError,
+    clear_task_secrets,
+    scrub_prompt_with_secrets,
+    set_task_secrets,
+    validate_secret_items,
+)
 from factory.schemas import TaskSpec, TaskStatus
 from factory.state import TaskStateMachine
 
@@ -290,12 +297,20 @@ class ModelTestRequest(BaseModel):
     prompt: str
 
 
+class TaskSecretInput(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    value: str = Field(min_length=1, max_length=2048)
+
+
 class TaskCreateRequest(BaseModel):
     prompt: str = Field(min_length=1)
     max_attempts: int = Field(default=2, ge=1, le=5)
     project_id: str | None = None
     model: str | None = None
     related_task_id: str | None = None
+    # Optional controller-owned secrets. Values are
+    # never echoed in TaskCreateResponse / list APIs.
+    secrets: list[TaskSecretInput] | None = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -311,6 +326,10 @@ class TaskCreateResponse(BaseModel):
     started_at: str | None = None
     task_kind: str | None = None
     related_task_id: str | None = None
+    # Capability names only — never values.
+    secret_names: list[str] = Field(
+        default_factory=list
+    )
 
 
 
@@ -1825,38 +1844,76 @@ def create_task(
 
             related_task_id = related_raw
 
+    try:
+        secret_map = validate_secret_items(
+            [
+                item.model_dump()
+                for item in (
+                    request.secrets or []
+                )
+            ]
+            if request.secrets
+            else None
+        )
+    except TaskSecretStoreError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
     while True:
         task_id = f"TASK-{random.randint(1000, 9999)}"
         if task_id not in TASKS:
             break
 
+    scrubbed_prompt = scrub_prompt_with_secrets(
+        request.prompt,
+        secret_map,
+    )
+    secret_names = sorted(secret_map.keys())
+
+    # Register secrets before making the task
+    # runnable. On any later failure, clear them.
+    if secret_map:
+        try:
+            set_task_secrets(task_id, secret_map)
+        except TaskSecretStoreError as exc:
+            clear_task_secrets(task_id)
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+
     task = TaskCreateResponse(
         task_id=task_id,
         status="queued",
-        prompt=request.prompt,
+        prompt=scrubbed_prompt,
         max_attempts=request.max_attempts,
         project_id=selected_project["project_id"],
         started_at=datetime.now(timezone.utc).isoformat(),
         related_task_id=related_task_id,
+        secret_names=secret_names,
     )
 
-    TASKS[task_id] = task
+    try:
+        TASKS[task_id] = task
 
+        set_task_model_preference(
+            task_id,
+            request.model,
+        )
+        persist_task(task)
 
-    set_task_model_preference(
-
-        task_id,
-
-        request.model,
-
-    )
-    persist_task(task)
-
-    TASK_LOGS[task_id] = []
-    append_task_log(
-        task_id,
-        "Görev sıraya alındı.",
-    )
+        TASK_LOGS[task_id] = []
+        append_task_log(
+            task_id,
+            "Görev sıraya alındı.",
+        )
+    except Exception:
+        clear_task_secrets(task_id)
+        TASKS.pop(task_id, None)
+        TASK_LOGS.pop(task_id, None)
+        raise
 
     background_tasks.add_task(
         run_task_for_api,
