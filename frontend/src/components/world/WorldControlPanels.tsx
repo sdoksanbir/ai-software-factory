@@ -59,8 +59,18 @@ type Props = {
   onCreateTask: (event: React.FormEvent<HTMLFormElement>) => void
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
-  onCreateProject: (event: React.FormEvent<HTMLFormElement>) => void
-  onCreateNewProject: (event: React.FormEvent<HTMLFormElement>) => void
+  onCreateProject: (payload: {
+    name: string
+    path: string
+    initGit?: boolean
+  }) => void
+  onCreateNewProject: (payload: {
+    name: string
+    parentPath: string
+    initGit?: boolean
+    createReadme?: boolean
+    createGitignore?: boolean
+  }) => void
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void

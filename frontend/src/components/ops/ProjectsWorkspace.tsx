@@ -3,7 +3,11 @@ import type {
   ControlCenterStatus,
   Task,
 } from "../../api"
-import { browseProjectFolder, openProject } from "../../api"
+import {
+  browseProjectFolder,
+  inspectProjectPath,
+  openProject,
+} from "../../api"
 import { FactoryBear } from "../factory/FactoryBear"
 import { OpsIcon } from "./opsIcons"
 import "../factory/FactoryVisuals.css"
@@ -33,8 +37,18 @@ type Props = {
   onSelectProject: (projectId: string) => void
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
-  onCreateProject: (event: React.FormEvent<HTMLFormElement>) => void
-  onCreateNewProject: (event: React.FormEvent<HTMLFormElement>) => void
+  onCreateProject: (payload: {
+    name: string
+    path: string
+    initGit?: boolean
+  }) => void
+  onCreateNewProject: (payload: {
+    name: string
+    parentPath: string
+    initGit?: boolean
+    createReadme?: boolean
+    createGitignore?: boolean
+  }) => void
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void
@@ -146,6 +160,103 @@ function projectCreateErrorTr(message: string) {
       "Proje artık mevcut değil.",
   }
   return map[message] ?? message
+}
+
+const RESERVED_WINDOWS_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
+])
+
+function hasInvalidProjectNameChar(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.charCodeAt(0)
+    if (code < 32) return true
+    if ('<>:"/\\|?*'.includes(ch)) return true
+  }
+  return false
+}
+
+/** Mirrors factory.project_creator.validate_project_name */
+function validateProjectName(name: string): string {
+  const clean = name.trim()
+  if (!clean) {
+    throw new Error("Proje adı boş olamaz.")
+  }
+  if (clean === "." || clean === "..") {
+    throw new Error("Geçersiz proje adı.")
+  }
+  if (hasInvalidProjectNameChar(clean)) {
+    throw new Error(
+      'Proje adı şu karakterleri içeremez: < > : " / \\ | ? *',
+    )
+  }
+  if (clean.endsWith(" ") || clean.endsWith(".")) {
+    throw new Error("Proje adı boşluk veya nokta ile bitemez.")
+  }
+  const stem = clean.split(".", 1)[0].toUpperCase()
+  if (RESERVED_WINDOWS_NAMES.has(stem)) {
+    throw new Error(
+      `Bu proje adı Windows tarafından ayrılmıştır: ${clean}`,
+    )
+  }
+  return clean
+}
+
+/** Mirrors factory.project_creator.project_name_slug */
+function projectNameSlug(name: string): string {
+  const clean = validateProjectName(name)
+  let slug = clean.replace(/\s+/g, "-").replace(/^[.-]+|[.-]+$/g, "")
+  if (!slug) {
+    throw new Error("Geçersiz proje adı.")
+  }
+  const stem = slug.split(".", 1)[0].toUpperCase()
+  if (RESERVED_WINDOWS_NAMES.has(stem)) {
+    throw new Error(
+      `Bu proje adı Windows tarafından ayrılmıştır: ${slug}`,
+    )
+  }
+  if (hasInvalidProjectNameChar(slug)) {
+    throw new Error(
+      'Proje adı şu karakterleri içeremez: < > : " / \\ | ? *',
+    )
+  }
+  return slug
+}
+
+function tryProjectNameSlug(name: string): {
+  slug: string | null
+  error: string | null
+} {
+  try {
+    return { slug: projectNameSlug(name), error: null }
+  } catch (err) {
+    return {
+      slug: null,
+      error: err instanceof Error ? err.message : "Geçersiz proje adı.",
+    }
+  }
+}
+
+function joinPath(parent: string, child: string) {
+  const normalizedParent = parent.replace(/[\\/]+$/, "")
+  const sep = parent.includes("\\") ? "\\" : "/"
+  return `${normalizedParent}${sep}${child}`
+}
+
+function folderBasename(path: string) {
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean)
+  return parts[parts.length - 1] ?? ""
+}
+
+function pathsMatch(a: string, b: string) {
+  return (
+    a.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() ===
+    b.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+  )
 }
 
 function taskStateLabel(state: string) {
@@ -357,8 +468,8 @@ export function ProjectsWorkspace({
   tasks,
   selectedProjectId,
   controlCenter,
-  newProjectName,
-  newProjectPath,
+  newProjectName: _newProjectName,
+  newProjectPath: _newProjectPath,
   projectSubmitting,
   projectCreateError,
   projectSettingsName,
@@ -366,8 +477,8 @@ export function ProjectsWorkspace({
   projectSettingsSaving,
   projectDeleting,
   onSelectProject,
-  onNewProjectNameChange,
-  onNewProjectPathChange,
+  onNewProjectNameChange: _onNewProjectNameChange,
+  onNewProjectPathChange: _onNewProjectPathChange,
   onCreateProject,
   onCreateNewProject,
   onProjectSettingsNameChange,
@@ -384,6 +495,24 @@ export function ProjectsWorkspace({
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [createAttempted, setCreateAttempted] = useState(false)
   const [browsingFolder, setBrowsingFolder] = useState(false)
+  const [localValidationError, setLocalValidationError] = useState<
+    string | null
+  >(null)
+  // NEW mode owned state
+  const [newProjectNameLocal, setNewProjectNameLocal] = useState("")
+  const [newProjectParentPath, setNewProjectParentPath] = useState("")
+  const [initGit, setInitGit] = useState(true)
+  const [createReadme, setCreateReadme] = useState(true)
+  const [createGitignore, setCreateGitignore] = useState(true)
+  // EXISTING mode owned state
+  const [existingProjectRootPath, setExistingProjectRootPath] = useState("")
+  const [existingHasGit, setExistingHasGit] = useState<boolean | null>(
+    null,
+  )
+  const [existingCharacteristics, setExistingCharacteristics] = useState<
+    string[]
+  >([])
+  const [inspectingPath, setInspectingPath] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<ProjectItem | null>(
     null,
   )
@@ -605,27 +734,69 @@ export function ProjectsWorkspace({
     }
   }
 
+  function resetExistingInspect() {
+    setExistingHasGit(null)
+    setExistingCharacteristics([])
+  }
+
+  function clearComposerLocalState() {
+    setNewProjectNameLocal("")
+    setNewProjectParentPath("")
+    setExistingProjectRootPath("")
+    setInitGit(true)
+    setCreateReadme(true)
+    setCreateGitignore(true)
+    resetExistingInspect()
+    setLocalValidationError(null)
+    setCreateAttempted(false)
+  }
+
+  async function inspectExistingRoot(path: string) {
+    const clean = path.trim()
+    if (!clean) {
+      resetExistingInspect()
+      return
+    }
+
+    setInspectingPath(true)
+    try {
+      const info = await inspectProjectPath(clean)
+      setExistingHasGit(Boolean(info.has_git))
+      setExistingCharacteristics(info.characteristics ?? [])
+    } catch {
+      resetExistingInspect()
+    } finally {
+      setInspectingPath(false)
+    }
+  }
+
   async function handleBrowseFolder() {
     setBrowsingFolder(true)
+    setLocalValidationError(null)
     try {
-      const result = await browseProjectFolder()
+      const result = await browseProjectFolder({
+        title:
+          createMode === "new"
+            ? "Ebeveyn klasör seç"
+            : "Proje kök klasörü seç",
+      })
       const selectedPath = result.path?.trim()
       if (!selectedPath) {
         return
       }
 
-      onNewProjectPathChange(selectedPath)
-
-      if (!newProjectName.trim()) {
-        const parts = selectedPath
-          .replace(/\\/g, "/")
-          .split("/")
-          .filter(Boolean)
-        const folderName = parts[parts.length - 1]
-        if (folderName) {
-          onNewProjectNameChange(folderName)
+      if (createMode === "existing") {
+        setExistingProjectRootPath(selectedPath)
+        if (typeof result.has_git === "boolean") {
+          setExistingHasGit(result.has_git)
+          setExistingCharacteristics(result.characteristics ?? [])
+        } else {
+          await inspectExistingRoot(selectedPath)
         }
+        return
       }
+
+      setNewProjectParentPath(selectedPath)
     } catch {
       // Kullanıcı iptal ettiyse veya diyalog açılamadıysa sessiz geç.
     } finally {
@@ -633,18 +804,120 @@ export function ProjectsWorkspace({
     }
   }
 
+  const nameValidation = useMemo(
+    () => tryProjectNameSlug(newProjectNameLocal),
+    [newProjectNameLocal],
+  )
+
+  const plannedTargetPath = useMemo(() => {
+    if (createMode !== "new") return ""
+    const parent = newProjectParentPath.trim()
+    if (!parent || !nameValidation.slug) return ""
+    return joinPath(parent, nameValidation.slug)
+  }, [createMode, newProjectParentPath, nameValidation.slug])
+
+  const registeredPathConflict = useMemo(() => {
+    const candidate =
+      createMode === "new"
+        ? plannedTargetPath
+        : existingProjectRootPath.trim()
+    if (!candidate) return false
+    return projects.some((project) =>
+      pathsMatch(project.path, candidate),
+    )
+  }, [
+    createMode,
+    plannedTargetPath,
+    existingProjectRootPath,
+    projects,
+  ])
+
   function handleCreateProjectSubmit(
     event: React.FormEvent<HTMLFormElement>,
   ) {
-    projectCountAtSubmit.current = projects.length
-    setCreateAttempted(true)
+    event.preventDefault()
 
-    if (createMode === "new") {
-      onCreateNewProject(event)
+    if (createMode === "existing") {
+      if (existingHasGit !== true) {
+        setCreateAttempted(true)
+        setLocalValidationError(
+          existingHasGit === false
+            ? "Git bulunamadı. 'Git Oluştur ve Ekle' düğmesini kullanın."
+            : "Önce geçerli bir proje kök klasörü seçin.",
+        )
+        return
+      }
+      handleAddExisting(false)
       return
     }
 
-    onCreateProject(event)
+    projectCountAtSubmit.current = projects.length
+    setCreateAttempted(true)
+    setLocalValidationError(null)
+
+    const cleanName = newProjectNameLocal.trim()
+    const cleanParent = newProjectParentPath.trim()
+
+    if (!cleanName) {
+      setLocalValidationError("Proje adı zorunludur.")
+      return
+    }
+    if (nameValidation.error) {
+      setLocalValidationError(nameValidation.error)
+      return
+    }
+    if (!cleanParent) {
+      setLocalValidationError("Ebeveyn klasör zorunludur.")
+      return
+    }
+    if (!nameValidation.slug) {
+      setLocalValidationError("Geçerli bir proje adı girin.")
+      return
+    }
+    if (registeredPathConflict) {
+      setLocalValidationError(
+        "Bu proje yolu Factory'de zaten kayıtlı.",
+      )
+      return
+    }
+
+    onCreateNewProject({
+      name: cleanName,
+      parentPath: cleanParent,
+      initGit,
+      createReadme,
+      createGitignore,
+    })
+  }
+
+  function handleAddExisting(initGitOnAdd: boolean) {
+    projectCountAtSubmit.current = projects.length
+    setCreateAttempted(true)
+    setLocalValidationError(null)
+
+    const cleanPath = existingProjectRootPath.trim()
+    if (!cleanPath) {
+      setLocalValidationError("Proje kök klasörü zorunludur.")
+      return
+    }
+    if (registeredPathConflict) {
+      setLocalValidationError(
+        "Bu proje yolu Factory'de zaten kayıtlı.",
+      )
+      return
+    }
+
+    const derivedName = folderBasename(cleanPath)
+    if (!derivedName) {
+      setLocalValidationError("Proje adı türetilemedi.")
+      return
+    }
+
+    onCreateProject({
+      name: derivedName,
+      path: cleanPath,
+      initGit: initGitOnAdd,
+    })
   }
 
   useEffect(() => {
@@ -653,10 +926,36 @@ export function ProjectsWorkspace({
       projects.length > projectCountAtSubmit.current
     ) {
       setShowComposer(false)
-      setCreateAttempted(false)
+      clearComposerLocalState()
     }
   }, [createAttempted, projects.length])
 
+  useEffect(() => {
+    if (createMode !== "existing") {
+      resetExistingInspect()
+      return
+    }
+
+    const path = existingProjectRootPath.trim()
+    if (!path) {
+      resetExistingInspect()
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void inspectExistingRoot(path)
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createMode, existingProjectRootPath])
+
+  useEffect(() => {
+    if (!showComposer) {
+      setCreateAttempted(false)
+      setLocalValidationError(null)
+    }
+  }, [showComposer])
 
   return (
     <div
@@ -1055,103 +1354,278 @@ export function ProjectsWorkspace({
 
         {showComposer && (
           <form
-            className="projects-composer"
+            className="projects-composer projects-composer-v2"
             onSubmit={handleCreateProjectSubmit}
           >
-            <div className="projects-create-mode">
+            <div className="projects-create-mode" role="tablist">
               <button
                 type="button"
+                role="tab"
+                aria-selected={createMode === "new"}
                 className={createMode === "new" ? "active" : ""}
-                onClick={() => setCreateMode("new")}
+                onClick={() => {
+                  setCreateMode("new")
+                  setLocalValidationError(null)
+                  setCreateAttempted(false)
+                  resetExistingInspect()
+                }}
               >
                 Yeni Proje Oluştur
               </button>
 
               <button
                 type="button"
+                role="tab"
+                aria-selected={createMode === "existing"}
                 className={createMode === "existing" ? "active" : ""}
-                onClick={() => setCreateMode("existing")}
+                onClick={() => {
+                  setCreateMode("existing")
+                  setLocalValidationError(null)
+                  setCreateAttempted(false)
+                }}
               >
                 Mevcut Proje Ekle
               </button>
             </div>
 
-            <label>
-              <span>Proje adı</span>
-              <input
-                value={newProjectName}
-                onChange={(event) =>
-                  onNewProjectNameChange(event.target.value)
-                }
-                placeholder={
-                  createMode === "new"
-                    ? "Yeni proje"
-                    : "Mevcut proje"
-                }
-              />
-            </label>
+            {createMode === "new" ? (
+              <div className="projects-composer-panel">
+                <label>
+                  <span>Proje adı</span>
+                  <input
+                    value={newProjectNameLocal}
+                    onChange={(event) =>
+                      setNewProjectNameLocal(event.target.value)
+                    }
+                    placeholder="Örn: my-app"
+                    required
+                  />
+                </label>
+                {newProjectNameLocal.trim() && nameValidation.error ? (
+                  <div className="projects-composer-error" role="alert">
+                    <strong>Geçersiz proje adı</strong>
+                    <span>{nameValidation.error}</span>
+                  </div>
+                ) : null}
 
-            <label>
-              <span>
-                {createMode === "new"
-                  ? "Konum (ana klasör)"
-                  : "Mevcut Git repo yolu"}
-              </span>
+                <label className="projects-composer-path-field">
+                  <span>Ebeveyn klasör</span>
+                  <div className="projects-path-picker">
+                    <input
+                      value={newProjectParentPath}
+                      onChange={(event) =>
+                        setNewProjectParentPath(event.target.value)
+                      }
+                      placeholder="D:\AI-Projects"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="projects-browse-btn"
+                      onClick={() => void handleBrowseFolder()}
+                      disabled={browsingFolder}
+                    >
+                      {browsingFolder
+                        ? "Açılıyor..."
+                        : "Ebeveyn klasör seç"}
+                    </button>
+                  </div>
+                </label>
 
-              <input
-                value={newProjectPath}
-                onChange={(event) =>
-                  onNewProjectPathChange(event.target.value)
-                }
-                placeholder={
-                  createMode === "new"
-                    ? "D:\\AI-Projects"
-                    : "D:\\AI-Projects\\mevcut-proje"
-                }
-              />
-            </label>
+                <div className="projects-composer-preview" aria-live="polite">
+                  <span>Oluşturulacak proje yolu</span>
+                  <strong>
+                    {plannedTargetPath ||
+                      (nameValidation.error
+                        ? "Geçerli bir proje adı girildiğinde önizleme görünür"
+                        : "Proje adı ve ebeveyn klasör girildiğinde önizleme görünür")}
+                  </strong>
+                </div>
 
-            <button
-              type="button"
-              className="projects-create-browse"
-              onClick={() => void handleBrowseFolder()}
-              disabled={browsingFolder}
-            >
-              {browsingFolder
-                ? "Klasör açılıyor..."
-                : createMode === "new"
-                  ? "Ana Klasör Seç"
-                  : "Repo Klasörü Seç"}
-            </button>
+                <p className="projects-composer-help">
+                  Seçtiğiniz ebeveyn klasör içinde yeni bir proje klasörü
+                  oluşturulur. Git deposu yeni oluşturulan klasörde
+                  başlatılır.
+                </p>
 
-            {createAttempted && projectCreateError && (
-              <div
-                className="projects-composer-error"
-                role="alert"
-              >
-                <strong>Proje oluşturulamadı</strong>
-                <span>
-                  {projectCreateErrorTr(projectCreateError)}
-                </span>
+                <div className="projects-composer-checks">
+                  <label className="projects-check">
+                    <input
+                      type="checkbox"
+                      checked={initGit}
+                      onChange={(event) => setInitGit(event.target.checked)}
+                    />
+                    <span>Git deposu oluştur</span>
+                  </label>
+                  <label className="projects-check">
+                    <input
+                      type="checkbox"
+                      checked={createReadme}
+                      onChange={(event) =>
+                        setCreateReadme(event.target.checked)
+                      }
+                    />
+                    <span>README.md oluştur</span>
+                  </label>
+                  <label className="projects-check">
+                    <input
+                      type="checkbox"
+                      checked={createGitignore}
+                      onChange={(event) =>
+                        setCreateGitignore(event.target.checked)
+                      }
+                    />
+                    <span>.gitignore oluştur</span>
+                  </label>
+                </div>
+
+                {(createAttempted &&
+                  (localValidationError || projectCreateError)) ||
+                registeredPathConflict ? (
+                  <div className="projects-composer-error" role="alert">
+                    <strong>Proje oluşturulamadı</strong>
+                    <span>
+                      {projectCreateErrorTr(
+                        localValidationError ||
+                          projectCreateError ||
+                          "Bu proje yolu Factory'de zaten kayıtlı.",
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="projects-composer-actions">
+                  <button
+                    type="submit"
+                    className="projects-composer-primary"
+                    disabled={
+                      projectSubmitting ||
+                      !newProjectNameLocal.trim() ||
+                      !newProjectParentPath.trim() ||
+                      Boolean(nameValidation.error) ||
+                      registeredPathConflict
+                    }
+                  >
+                    {projectSubmitting
+                      ? "Oluşturuluyor..."
+                      : "Projeyi Oluştur"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="projects-composer-panel">
+                <label className="projects-composer-path-field">
+                  <span>Proje kök klasörü</span>
+                  <div className="projects-path-picker">
+                    <input
+                      value={existingProjectRootPath}
+                      onChange={(event) =>
+                        setExistingProjectRootPath(event.target.value)
+                      }
+                      placeholder="D:\AI-Projects\mevcut-proje"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="projects-browse-btn"
+                      onClick={() => void handleBrowseFolder()}
+                      disabled={browsingFolder}
+                    >
+                      {browsingFolder
+                        ? "Açılıyor..."
+                        : "Proje kök klasörü seç"}
+                    </button>
+                  </div>
+                </label>
+
+                <p className="projects-composer-help">
+                  Seçtiğiniz klasör doğrudan proje kökü olarak eklenir.
+                  Alt klasör oluşturulmaz.
+                </p>
+
+                <div className="projects-composer-status-row">
+                  <span className="projects-composer-status-label">
+                    Durum
+                  </span>
+                  <strong
+                    className={
+                      existingHasGit === true
+                        ? "tone-ok"
+                        : existingHasGit === false
+                          ? "tone-warn"
+                          : ""
+                    }
+                  >
+                    {inspectingPath
+                      ? "Kontrol ediliyor..."
+                      : existingHasGit === true
+                        ? "Git bulundu"
+                        : existingHasGit === false
+                          ? "Git bulunamadı"
+                          : existingProjectRootPath.trim()
+                            ? "Klasör seçildi"
+                            : "Klasör seçilmedi"}
+                  </strong>
+                  {existingCharacteristics.length > 0 ? (
+                    <em>{existingCharacteristics.join(" · ")}</em>
+                  ) : null}
+                </div>
+
+                {existingHasGit === false ? (
+                  <div className="projects-composer-info" role="status">
+                    Bu klasörde Git deposu bulunamadı. İstersen bu mevcut
+                    klasörde Git deposu oluşturabilirsin.
+                  </div>
+                ) : null}
+
+                {(createAttempted &&
+                  (localValidationError || projectCreateError)) ||
+                registeredPathConflict ? (
+                  <div className="projects-composer-error" role="alert">
+                    <strong>Proje eklenemedi</strong>
+                    <span>
+                      {projectCreateErrorTr(
+                        localValidationError ||
+                          projectCreateError ||
+                          "Bu proje yolu Factory'de zaten kayıtlı.",
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="projects-composer-actions">
+                  <button
+                    type="button"
+                    className="projects-composer-primary"
+                    disabled={
+                      projectSubmitting ||
+                      !existingProjectRootPath.trim() ||
+                      registeredPathConflict ||
+                      existingHasGit === false
+                    }
+                    onClick={() => handleAddExisting(false)}
+                  >
+                    {projectSubmitting ? "Ekleniyor..." : "Projeyi Ekle"}
+                  </button>
+                  {existingHasGit === false ? (
+                    <button
+                      type="button"
+                      className="projects-composer-secondary"
+                      disabled={
+                        projectSubmitting ||
+                        !existingProjectRootPath.trim() ||
+                        registeredPathConflict
+                      }
+                      onClick={() => handleAddExisting(true)}
+                    >
+                      {projectSubmitting
+                        ? "Ekleniyor..."
+                        : "Git Oluştur ve Ekle"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             )}
-
-            <button
-              type="submit"
-              disabled={
-                projectSubmitting ||
-                !newProjectName.trim() ||
-                !newProjectPath.trim()
-              }
-            >
-              {projectSubmitting
-                ? createMode === "new"
-                  ? "Oluşturuluyor..."
-                  : "Ekleniyor..."
-                : createMode === "new"
-                  ? "Projeyi Oluştur"
-                  : "Mevcut Projeyi Ekle"}
-            </button>
           </form>
         )}
 
@@ -1276,7 +1750,7 @@ export function ProjectsWorkspace({
                           }}
                           disabled={projectDeleting}
                         >
-                          Sil
+                          Projeyi Kaldır
                         </button>
                       </div>
                     </div>

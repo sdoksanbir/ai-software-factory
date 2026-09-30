@@ -345,11 +345,39 @@ export function listProjects() {
 }
 
 
-export function browseProjectFolder() {
-  return request<{ path: string | null }>(
+export function browseProjectFolder(options?: {
+  title?: string
+}) {
+  return request<{
+    path: string | null
+    has_git?: boolean | null
+    suggested_name?: string | null
+    characteristics?: string[]
+  }>(
     "/projects/browse-folder",
     {
       method: "POST",
+      body: JSON.stringify({
+        title: options?.title ?? null,
+      }),
+    },
+  )
+}
+
+export type ProjectPathInspect = {
+  path: string
+  exists: boolean
+  has_git: boolean
+  suggested_name?: string | null
+  characteristics?: string[]
+}
+
+export function inspectProjectPath(path: string) {
+  return request<ProjectPathInspect>(
+    "/projects/inspect-path",
+    {
+      method: "POST",
+      body: JSON.stringify({ path }),
     },
   )
 }
@@ -358,12 +386,14 @@ export function browseProjectFolder() {
 export function createProject(
   name: string,
   path: string,
+  options: { initGit?: boolean } = {},
 ) {
   return request<Project>("/projects", {
     method: "POST",
     body: JSON.stringify({
       name,
       path,
+      init_git: options.initGit ?? false,
     }),
   })
 }
@@ -371,12 +401,20 @@ export function createProject(
 export function createNewProject(
   name: string,
   parentPath: string,
+  options: {
+    initGit?: boolean
+    createReadme?: boolean
+    createGitignore?: boolean
+  } = {},
 ) {
   return request<Project>("/projects/create-new", {
     method: "POST",
     body: JSON.stringify({
       name,
       parent_path: parentPath,
+      init_git: options.initGit ?? true,
+      create_readme: options.createReadme ?? true,
+      create_gitignore: options.createGitignore ?? true,
     }),
   })
 }

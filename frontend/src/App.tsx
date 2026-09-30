@@ -1372,24 +1372,16 @@ function App() {
   async function handleBrowseProjectFolder() {
     setBrowsingFolder(true)
     try {
-      const result = await browseProjectFolder()
+      const result = await browseProjectFolder({
+        title: "Ebeveyn klasör seç",
+      })
       const selectedPath = result.path?.trim()
       if (!selectedPath) {
         return
       }
 
+      // Rail composer is new-project mode: path is the parent directory.
       setNewProjectPath(selectedPath)
-
-      if (!newProjectName.trim()) {
-        const parts = selectedPath
-          .replace(/\\/g, "/")
-          .split("/")
-          .filter(Boolean)
-        const folderName = parts[parts.length - 1]
-        if (folderName) {
-          setNewProjectName(folderName)
-        }
-      }
     } catch {
       // iptal / diyalog hatası
     } finally {
@@ -1397,16 +1389,13 @@ function App() {
     }
   }
 
-  async function handleCreateProject(
-    event: FormEvent,
-  ) {
-    event.preventDefault()
-
-    const cleanName =
-      newProjectName.trim()
-
-    const cleanPath =
-      newProjectPath.trim()
+  async function handleCreateProject(payload: {
+    name: string
+    path: string
+    initGit?: boolean
+  }) {
+    const cleanName = payload.name.trim()
+    const cleanPath = payload.path.trim()
 
     if (!cleanName || !cleanPath) {
       return
@@ -1416,17 +1405,15 @@ function App() {
     setError(null)
 
     try {
-      const project =
-        await createProject(
-          cleanName,
-          cleanPath,
-        )
+      const project = await createProject(
+        cleanName,
+        cleanPath,
+        { initGit: payload.initGit ?? false },
+      )
 
       await loadProjects()
 
-      setSelectedProjectId(
-        project.project_id,
-      )
+      setSelectedProjectId(project.project_id)
 
       setNewProjectName("")
       setNewProjectPath("")
@@ -1442,20 +1429,19 @@ function App() {
     }
   }
 
-  async function handleCreateNewProject(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault()
-
-    const cleanName =
-      newProjectName.trim()
-
-    const cleanParentPath =
-      newProjectPath.trim()
+  async function handleCreateNewProject(payload: {
+    name: string
+    parentPath: string
+    initGit?: boolean
+    createReadme?: boolean
+    createGitignore?: boolean
+  }) {
+    const cleanName = payload.name.trim()
+    const cleanParentPath = payload.parentPath.trim()
 
     if (!cleanName || !cleanParentPath) {
       setError(
-        "Proje adı ve ana klasör yolu zorunludur.",
+        "Proje ad\u0131 ve ebeveyn klas\u00f6r yolu zorunludur.",
       )
       return
     }
@@ -1464,17 +1450,19 @@ function App() {
     setError(null)
 
     try {
-      const project =
-        await createNewProject(
-          cleanName,
-          cleanParentPath,
-        )
+      const project = await createNewProject(
+        cleanName,
+        cleanParentPath,
+        {
+          initGit: payload.initGit ?? true,
+          createReadme: payload.createReadme ?? true,
+          createGitignore: payload.createGitignore ?? true,
+        },
+      )
 
       await loadProjects()
 
-      setSelectedProjectId(
-        project.project_id,
-      )
+      setSelectedProjectId(project.project_id)
 
       setNewProjectName("")
       setNewProjectPath("")
@@ -1483,7 +1471,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Yeni proje oluşturulamadı.",
+          : "Yeni proje olu\u015fturulamad\u0131.",
       )
     } finally {
       setProjectSubmitting(false)
@@ -1871,9 +1859,13 @@ function App() {
           {showProjectComposer && (
             <form
               className="rail-form"
-              onSubmit={
-                handleCreateNewProject
-              }
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleCreateNewProject({
+                  name: newProjectName,
+                  parentPath: newProjectPath,
+                })
+              }}
             >
               <input
                 value={newProjectName}
@@ -1889,7 +1881,7 @@ function App() {
                 <input
                   value={newProjectPath}
                   readOnly
-                  placeholder="Proje klas\u00f6r\u00fc se\u00e7"
+                  placeholder="Ebeveyn klas\u00f6r se\u00e7"
                   title={newProjectPath || undefined}
                 />
                 <button

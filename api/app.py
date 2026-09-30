@@ -30,7 +30,6 @@ from factory.database import (
     create_project as db_create_project,
     delete_project as db_delete_project,
     get_project as db_get_project,
-    get_project_by_path as db_get_project_by_path,
     list_projects as db_list_projects,
     update_project as db_update_project,
 )
@@ -48,7 +47,13 @@ from factory.pipeline import build_task_pipeline
 from factory.orchestrator import Orchestrator
 from factory.project_creator import (
     create_new_git_project,
+    find_project_by_canonical_path,
+    init_git_in_existing_folder,
+    inspect_project_folder,
+    normalize_project_path_for_storage,
+    path_has_git,
     planned_new_project_path,
+    remove_newly_created_project_dir,
 )
 from factory.models import ModelClient
 from factory.agents.providers.model_client import (
@@ -126,8 +131,12 @@ def open_local_project_folder(
     )
 
 
-def pick_local_project_folder() -> str | None:
+def pick_local_project_folder(
+    title: str = "Proje klasörünü seç",
+) -> str | None:
     """Tek bir modern klasör seçici açar; iptalde None döner."""
+    dialog_title = str(title or "").strip() or "Proje klasörünü seç"
+
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -139,7 +148,7 @@ def pick_local_project_folder() -> str | None:
         except Exception:
             pass
         selected = filedialog.askdirectory(
-            title="Proje klasörünü seç",
+            title=dialog_title,
             mustexist=True,
         )
         root.destroy()
@@ -149,10 +158,11 @@ def pick_local_project_folder() -> str | None:
 
     # Tk açılamazsa (nadir): modern Windows diyalogu — eski tree diyaloğu yok
     if os.name == "nt":
+        safe_title = dialog_title.replace("'", "''")
         script = (
             "Add-Type -AssemblyName System.Windows.Forms; "
             "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-            "$dialog.Description = 'Proje klasörünü seç'; "
+            f"$dialog.Description = '{safe_title}'; "
             "$dialog.UseDescriptionForTitle = $true; "
             "$dialog.ShowNewFolderButton = $true; "
             "try { $dialog.AutoUpgradeEnabled = $true } catch {}; "
@@ -183,8 +193,31 @@ def pick_local_project_folder() -> str | None:
     return None
 
 
+class BrowseFolderRequest(BaseModel):
+    title: str | None = None
+
+
 class BrowseFolderResponse(BaseModel):
     path: str | None = None
+    has_git: bool | None = None
+    suggested_name: str | None = None
+    characteristics: list[str] = Field(
+        default_factory=list
+    )
+
+
+class ProjectInspectRequest(BaseModel):
+    path: str = Field(min_length=1)
+
+
+class ProjectInspectResponse(BaseModel):
+    path: str
+    exists: bool = True
+    has_git: bool = False
+    suggested_name: str | None = None
+    characteristics: list[str] = Field(
+        default_factory=list
+    )
 
 
 def open_local_project_terminal(
@@ -446,11 +479,15 @@ class TaskGraphRunnableResponse(BaseModel):
 class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     path: str = Field(min_length=1)
+    init_git: bool = False
 
 
 class ProjectNewRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     parent_path: str = Field(min_length=1)
+    init_git: bool = True
+    create_readme: bool = True
+    create_gitignore: bool = True
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -501,14 +538,18 @@ def project_has_runtime_active_tasks(
 
 def normalize_and_validate_project_path(
     project_path: str,
+    *,
+    require_git: bool = True,
 ) -> str:
-    normalized = os.path.normpath(
-        os.path.abspath(
-            os.path.expanduser(
-                project_path.strip()
-            )
+    try:
+        normalized = normalize_project_path_for_storage(
+            project_path
         )
-    )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     if not os.path.isdir(normalized):
         raise HTTPException(
@@ -516,12 +557,7 @@ def normalize_and_validate_project_path(
             detail="Seçilen klasör bulunamadı.",
         )
 
-    git_marker = os.path.join(
-        normalized,
-        ".git",
-    )
-
-    if not os.path.exists(git_marker):
+    if require_git and not path_has_git(normalized):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -531,6 +567,15 @@ def normalize_and_validate_project_path(
         )
 
     return normalized
+
+
+def find_registered_project_by_path(
+    project_path: str,
+) -> dict | None:
+    return find_project_by_canonical_path(
+        project_path,
+        db_list_projects(),
+    )
 
 
 TASKS: dict[str, TaskCreateResponse] = {}
@@ -1007,11 +1052,57 @@ def run_task_for_api(task_id: str):
     "/projects/browse-folder",
     response_model=BrowseFolderResponse,
 )
-async def browse_project_folder_endpoint():
+async def browse_project_folder_endpoint(
+    request: BrowseFolderRequest = BrowseFolderRequest(),
+):
+    title = request.title
+
     selected = await asyncio.to_thread(
         pick_local_project_folder,
+        title or "Proje klasörünü seç",
     )
-    return BrowseFolderResponse(path=selected)
+    if not selected:
+        return BrowseFolderResponse(path=None)
+
+    try:
+        info = inspect_project_folder(selected)
+    except ValueError:
+        return BrowseFolderResponse(path=selected)
+
+    return BrowseFolderResponse(
+        path=info["path"],
+        has_git=bool(info.get("has_git")),
+        suggested_name=info.get("suggested_name"),
+        characteristics=list(
+            info.get("characteristics") or []
+        ),
+    )
+
+
+@app.post(
+    "/projects/inspect-path",
+    response_model=ProjectInspectResponse,
+)
+def inspect_project_path_endpoint(
+    request: ProjectInspectRequest,
+):
+    try:
+        info = inspect_project_folder(request.path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    return ProjectInspectResponse(
+        path=info["path"],
+        exists=bool(info.get("exists", True)),
+        has_git=bool(info.get("has_git")),
+        suggested_name=info.get("suggested_name"),
+        characteristics=list(
+            info.get("characteristics") or []
+        ),
+    )
 
 
 # NEW_PROJECT_CREATE_V1
@@ -1027,6 +1118,11 @@ def create_new_project_endpoint(
         planned_path = planned_new_project_path(
             request.parent_path,
             request.name,
+        )
+        parent_path = Path(
+            normalize_project_path_for_storage(
+                request.parent_path
+            )
         )
     except ValueError as exc:
         raise HTTPException(
@@ -1051,9 +1147,11 @@ def create_new_project_endpoint(
             ),
         )
 
-    planned_path_text = str(planned_path.resolve())
+    planned_path_text = normalize_project_path_for_storage(
+        str(planned_path)
+    )
 
-    existing = db_get_project_by_path(
+    existing = find_registered_project_by_path(
         planned_path_text
     )
     if existing is not None:
@@ -1068,6 +1166,9 @@ def create_new_project_endpoint(
         project_path = create_new_git_project(
             request.parent_path,
             request.name,
+            init_git=request.init_git,
+            create_readme=request.create_readme,
+            create_gitignore=request.create_gitignore,
         )
     except FileExistsError as exc:
         raise HTTPException(
@@ -1095,11 +1196,39 @@ def create_new_project_endpoint(
         if db_get_project(project_id) is None:
             break
 
-    row = db_create_project(
-        project_id,
-        name=request.name.strip(),
-        path=project_path,
-    )
+    try:
+        row = db_create_project(
+            project_id,
+            name=request.name.strip(),
+            path=project_path,
+        )
+    except Exception as exc:
+        cleanup_error: str | None = None
+        try:
+            remove_newly_created_project_dir(
+                Path(project_path),
+                expected_parent=parent_path,
+            )
+        except Exception as cleanup_exc:
+            cleanup_error = str(cleanup_exc)
+
+        if cleanup_error is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Factory kaydi basarisiz oldu. "
+                    "Bu istekte olusturulan proje klasoru geri alindi."
+                ),
+            ) from exc
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Factory kaydi basarisiz oldu ve temizleme "
+                "tamamlanamadi. Hedef klasor: "
+                f"{project_path}. {cleanup_error}"
+            ),
+        ) from exc
 
     return project_row_to_response(row)
 
@@ -1113,10 +1242,11 @@ def create_project_endpoint(
     request: ProjectCreateRequest,
 ):
     project_path = normalize_and_validate_project_path(
-        request.path
+        request.path,
+        require_git=False,
     )
 
-    existing = db_get_project_by_path(
+    existing = find_registered_project_by_path(
         project_path
     )
 
@@ -1126,6 +1256,42 @@ def create_project_endpoint(
             detail="Bu proje yolu zaten kayıtlı.",
         )
 
+    has_git = path_has_git(project_path)
+    git_initialized_now = False
+
+    if not has_git:
+        if not request.init_git:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Seçilen klasör bir Git deposu değil. "
+                    "Klasörün içinde .git bulunmalı."
+                ),
+            )
+        try:
+            project_path = init_git_in_existing_folder(
+                project_path
+            )
+            git_initialized_now = True
+        except FileExistsError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Git deposu olusturulamadi: "
+                    f"{exc}"
+                ),
+            ) from exc
+
     while True:
         project_id = (
             f"PROJECT-{random.randint(1000, 9999)}"
@@ -1134,11 +1300,29 @@ def create_project_endpoint(
         if db_get_project(project_id) is None:
             break
 
-    row = db_create_project(
-        project_id,
-        name=request.name.strip(),
-        path=project_path,
-    )
+    try:
+        row = db_create_project(
+            project_id,
+            name=request.name.strip(),
+            path=project_path,
+        )
+    except Exception as exc:
+        if git_initialized_now:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Git baslatildi ancak Factory kaydi "
+                    "basarisiz oldu. Kaynak dosyalar ve .git "
+                    "korundu. 'Projeyi Ekle' ile tekrar deneyin."
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Factory kaydi basarisiz oldu: "
+                f"{exc}"
+            ),
+        ) from exc
 
     return project_row_to_response(row)
 
@@ -1423,7 +1607,7 @@ def update_project_endpoint(
         request.path
     )
 
-    existing = db_get_project_by_path(
+    existing = find_registered_project_by_path(
         project_path
     )
 
