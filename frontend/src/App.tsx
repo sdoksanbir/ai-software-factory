@@ -2134,6 +2134,7 @@ function App() {
           tasks={tasks}
           liveLogs={liveLogs}
           agentExecutions={agentExecutions}
+          taskPlan={taskPlan}
           availableModels={availableModels}
           diff={diff}
           loadingDiff={loadingDiff}

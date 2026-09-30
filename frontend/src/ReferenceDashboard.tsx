@@ -4,6 +4,7 @@ import type {
   ControlCenterStatus,
   Task,
   TaskPipeline,
+  TaskPlanResponse,
 } from "./api"
 
 import type {
@@ -45,6 +46,7 @@ type Props = {
   tasks: Task[]
   liveLogs: string[]
   agentExecutions: AgentExecution[]
+  taskPlan: TaskPlanResponse | null
   availableModels: string[]
   diff: string
   loadingDiff: boolean
@@ -162,7 +164,8 @@ export function ReferenceDashboard({
   runningTasks,
   tasks,
   liveLogs,
-    agentExecutions,
+  agentExecutions,
+  taskPlan,
   availableModels,
   diff,
   loadingDiff,
@@ -576,6 +579,51 @@ export function ReferenceDashboard({
     projects.find((project) => project.project_id === selectedProjectId) ??
     null
 
+  const failedPlanStep =
+    taskPlan?.plan?.steps
+      ?.slice()
+      .reverse()
+      .find(
+        (step) =>
+          step.status === "failed" &&
+          typeof step.error === "string" &&
+          step.error.trim().length > 0,
+      ) ?? null
+
+  const failedExecution =
+    agentExecutions
+      .slice()
+      .reverse()
+      .find(
+        (execution) =>
+          execution.status === "failed" &&
+          !!execution.error?.trim(),
+      ) ?? null
+
+  const failureLog =
+    liveLogs
+      .slice()
+      .reverse()
+      .find((message) =>
+        /patch_failed|review_failed|test_failed|execution_failed|invalid_response|hata|failed|error|başarısız|basarisiz/i.test(
+          message,
+        ),
+      ) ?? null
+
+  const failureReason =
+    failedPlanStep?.error?.trim() ||
+    failedExecution?.error?.trim() ||
+    failureLog ||
+    "Görev başarısız oldu. Teknik ayrıntılar ve ham loglar aşağıda gösteriliyor."
+
+  const failureHeadline =
+    /patch_failed/i.test(failureReason) &&
+    /MultiFilePatch\.files|zero files|at least 1 item/i.test(
+      failureReason,
+    )
+      ? "Model geçerli bir dosya değişikliği üretmedi."
+      : "Görev tamamlanamadı"
+
   const systemOnline =
     !!controlCenter?.services.ollama.online ||
     !!controlCenter?.services.docker.online ||
@@ -742,26 +790,8 @@ export function ReferenceDashboard({
           <section className="task-approval-panel task-retry-panel task-status-under-pipeline">
             <div className="task-approval-copy">
               <span>GÖREV BAŞARISIZ</span>
-              <h2>Görev tamamlanamadı</h2>
-              <p>
-                {agentExecutions
-                  .slice()
-                  .reverse()
-                  .find(
-                    (execution) =>
-                      execution.status === "failed" &&
-                      !!execution.error,
-                  )?.error ??
-                  liveLogs
-                    .slice()
-                    .reverse()
-                    .find((message) =>
-                      /hata|failed|error|başarısız|basarisiz/i.test(
-                        message,
-                      ),
-                    ) ??
-                  "Görev başarısız oldu. Teknik ayrıntılar ve ham loglar aşağıda gösteriliyor."}
-              </p>
+              <h2>{failureHeadline}</h2>
+              <p>{failureReason}</p>
             </div>
 
             <div className="task-approval-actions">
