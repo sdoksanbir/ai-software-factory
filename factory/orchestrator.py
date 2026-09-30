@@ -376,11 +376,11 @@ class Orchestrator:
             "Görev çalıştırılabilir Python kodunda yeni davranış ekliyor veya mevcut davranışı değiştiriyorsa "
             "uygun pytest test dosyasını da files dizisine ekle veya güncelle. "
             "Testler gerçek davranışı doğrulamalı; yalnızca import veya smoke test yeterli değildir. "
-            "TASK_SCOPE_GUARD: G\u00f6rev kapsam\u0131 d\u0131\u015f\u0131ndaki dosyalara dokunma. "
-            "Kullan\u0131c\u0131 belirli bir dosya veya dosya ad\u0131 verdiyse \u00f6ncelikle yaln\u0131zca o dosyay\u0131 "
-            "ve davran\u0131\u015f\u0131 do\u011frulamak i\u00e7in gerekli test dosyas\u0131n\u0131 olu\u015ftur veya de\u011fi\u015ftir. "
-            "Mevcut altyap\u0131, orchestrator, sandbox, repo ara\u00e7lar\u0131 veya ba\u015fka ilgisiz dosyalar\u0131 "
-            "yaln\u0131zca g\u00f6rev bunu a\u00e7\u0131k\u00e7a gerektiriyorsa de\u011fi\u015ftir."
+            "TASK_SCOPE_GUARD: Görev kapsamı dışındaki dosyalara dokunma. "
+            "Kullanıcı belirli bir dosya veya dosya adı verdiyse öncelikle yalnızca o dosyayı "
+            "ve davranışı doğrulamak için gerekli test dosyasını oluştur veya değiştir. "
+            "Mevcut altyapı, orchestrator, sandbox, repo araçları veya başka ilgisiz dosyaları "
+            "yalnızca görev bunu açıkça gerektiriyorsa değiştir."
         )
 
         explicit_targets = self._extract_explicit_file_targets(prompt)

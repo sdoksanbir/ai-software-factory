@@ -1686,9 +1686,9 @@ def delete_project_endpoint(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Bu projeye ait aktif g\u00f6revler "
-                "bulundu\u011fu i\u00e7in proje "
-                "kald\u0131r\u0131lam\u0131yor."
+                "Bu projeye ait aktif görevler "
+                "bulunduğu için proje "
+                "kaldırılamıyor."
             ),
         )
 
@@ -2397,7 +2397,7 @@ def control_center_status(
         if project is None:
             raise HTTPException(
                 status_code=404,
-                detail="Proje bulunamad\u0131.",
+                detail="Proje bulunamadı.",
             )
 
         project_path = project["path"]

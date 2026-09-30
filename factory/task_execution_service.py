@@ -249,8 +249,8 @@ class TaskExecutionService:
                 model=requested_model,
                 profile="manual",
                 reason=(
-                    "Kullan\u0131c\u0131 taraf\u0131ndan "
-                    "manuel olarak se\u00e7ildi."
+                    "Kullanıcı tarafından "
+                    "manuel olarak seçildi."
                 ),
                 code_score=0,
             )

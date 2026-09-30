@@ -6,7 +6,7 @@ from typing import Any, Iterable
 PIPELINE_STAGES = [
     {
         "id": "task",
-        "label": "G\u00f6rev Al\u0131nd\u0131",
+        "label": "Görev Alındı",
     },
     {
         "id": "worktree",
@@ -34,7 +34,7 @@ PIPELINE_STAGES = [
     },
     {
         "id": "approval",
-        "label": "\u0130nsan Onay\u0131",
+        "label": "İnsan Onayı",
     },
 ]
 
@@ -109,19 +109,19 @@ def _mark_success_through(
 EXECUTE_PIPELINE_STAGES = [
     {
         "id": "task",
-        "label": "G\u00f6rev Al\u0131nd\u0131",
+        "label": "Görev Alındı",
     },
     {
         "id": "action_prepare",
-        "label": "Eylem Haz\u0131rl\u0131\u011f\u0131",
+        "label": "Eylem Hazırlığı",
     },
     {
         "id": "action_execute",
-        "label": "Yerel \u00c7al\u0131\u015ft\u0131rma",
+        "label": "Yerel Çalıştırma",
     },
     {
         "id": "completed",
-        "label": "Sonu\u00e7",
+        "label": "Sonuç",
     },
 ]
 
@@ -129,7 +129,7 @@ EXECUTE_PIPELINE_STAGES = [
 READ_PIPELINE_STAGES = [
     {
         "id": "task",
-        "label": "G\u00f6rev Al\u0131nd\u0131",
+        "label": "Görev Alındı",
     },
     {
         "id": "repo_analysis",
@@ -141,7 +141,7 @@ READ_PIPELINE_STAGES = [
     },
     {
         "id": "completed",
-        "label": "Tamamland\u0131",
+        "label": "Tamamlandı",
     },
 ]
 

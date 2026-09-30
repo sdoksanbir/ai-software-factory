@@ -440,7 +440,7 @@ export function ReferenceDashboard({
   const executeStations: PipelineStation[] = [
     {
       key: "execute-task",
-      label: "G\u00d6REV",
+      label: "GÖREV",
       lines: lineOrWait(
         selectedTask?.task_id,
         labelForStages(["task"]),
@@ -455,7 +455,7 @@ export function ReferenceDashboard({
     },
     {
       key: "execute-prepare",
-      label: "EYLEM HAZIRLI\u011eI",
+      label: "EYLEM HAZIRLIĞI",
       lines: lineOrWait(
         selectedTask?.model,
         labelForStages(["action_prepare"]),
@@ -470,7 +470,7 @@ export function ReferenceDashboard({
     },
     {
       key: "execute-run",
-      label: "YEREL \u00c7ALI\u015eTIRMA",
+      label: "YEREL ÇALIŞTIRMA",
       lines: lineOrWait(
         labelForStages(["action_execute"]),
         displayStatus(
@@ -484,11 +484,11 @@ export function ReferenceDashboard({
     },
     {
       key: "execute-result",
-      label: "SONU\u00c7",
+      label: "SONUÇ",
       lines: lineOrWait(
         labelForStages(["completed"]),
         selectedTask?.state === "completed"
-          ? "\u0130\u015flem tamamland\u0131"
+          ? "İşlem tamamlandı"
           : null,
         displayStatus(
           findBackendStages(["completed"])[0]

@@ -64,18 +64,18 @@ def _clip(text: str, limit: int) -> str:
 def normalize_prompt_for_match(prompt: str) -> str:
     translation = str.maketrans(
         {
-            "\u0131": "i",
-            "\u0130": "i",
-            "\u015f": "s",
-            "\u015e": "s",
-            "\u011f": "g",
-            "\u011e": "g",
-            "\u00fc": "u",
-            "\u00dc": "u",
-            "\u00f6": "o",
-            "\u00d6": "o",
-            "\u00e7": "c",
-            "\u00c7": "c",
+            "ı": "i",
+            "İ": "i",
+            "ş": "s",
+            "Ş": "s",
+            "ğ": "g",
+            "Ğ": "g",
+            "ü": "u",
+            "Ü": "u",
+            "ö": "o",
+            "Ö": "o",
+            "ç": "c",
+            "Ç": "c",
         }
     )
     return (

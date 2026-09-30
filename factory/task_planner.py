@@ -404,14 +404,14 @@ def _ensure_read_first(
             ]
 
     read_step = {
-        "title": "Mevcut yap\u0131y\u0131 incele",
+        "title": "Mevcut yapıyı incele",
         "instruction": (
-            "Kullan\u0131c\u0131 g\u00f6reviyle ilgili mevcut "
-            "repository yap\u0131s\u0131n\u0131, dosyalar\u0131, "
-            "API ba\u011flant\u0131lar\u0131n\u0131 ve test "
-            "altyap\u0131s\u0131n\u0131 incele. "
-            "De\u011fi\u015ftirilecek bile\u015fenleri belirle. "
-            "Bu ad\u0131mda dosya de\u011fi\u015ftirme."
+            "Kullanıcı göreviyle ilgili mevcut "
+            "repository yapısını, dosyaları, "
+            "API bağlantılarını ve test "
+            "altyapısını incele. "
+            "Değiştirilecek bileşenleri belirle. "
+            "Bu adımda dosya değiştirme."
         ),
         "kind": "read",
     }

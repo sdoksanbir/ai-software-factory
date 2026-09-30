@@ -46,23 +46,23 @@ import { ReferenceDashboard } from "./ReferenceDashboard"
 import "./theme/FactoryTheme.css"
 
 const stateLabels: Record<string, string> = {
-  queued: "S\u0131rada",
-  running: "\u0130\u015fleniyor",
+  queued: "Sırada",
+  running: "İşleniyor",
   ready_for_approval: "Onay Bekliyor",
-  approved: "Tamamland\u0131",
+  approved: "Tamamlandı",
   rejected: "Reddedildi",
-  failed: "Ba\u015far\u0131s\u0131z",
+  failed: "Başarısız",
 }
 
 const defaultPipeline = [
-  { id: "task", label: "Kullan\u0131c\u0131 G\u00f6revi" },
+  { id: "task", label: "Kullanıcı Görevi" },
   { id: "worktree", label: "Worktree" },
   { id: "repo_analysis", label: "Repo Analizi" },
   { id: "model", label: "Lokal Model" },
-  { id: "patch", label: "Patch Olu\u015fturma" },
+  { id: "patch", label: "Patch Oluşturma" },
   { id: "tests", label: "Docker Test" },
-  { id: "diff", label: "Diff Olu\u015fturma" },
-  { id: "approval", label: "\u0130nsan Onay\u0131" },
+  { id: "diff", label: "Diff Oluşturma" },
+  { id: "approval", label: "İnsan Onayı" },
 ]
 
 const pipelineTools: Record<string, string> = {
@@ -70,7 +70,7 @@ const pipelineTools: Record<string, string> = {
   worktree: "Git Worktree",
   repo_analysis: "Kod Analizi",
   model: "Ollama",
-  patch: "Patch Do\u011frulama",
+  patch: "Patch Doğrulama",
   tests: "Docker Sandbox",
   diff: "Git Diff",
   approval: "Manuel Onay",
@@ -564,7 +564,7 @@ function getStageIconName(
 }
 
 function formatTime(value: string | null) {
-  if (!value) return "\u2014"
+  if (!value) return "—"
 
   return new Intl.DateTimeFormat("tr-TR", {
     hour: "2-digit",
@@ -574,7 +574,7 @@ function formatTime(value: string | null) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "\u2014"
+  if (!value) return "—"
 
   return new Intl.DateTimeFormat("tr-TR", {
     dateStyle: "medium",
@@ -583,7 +583,7 @@ function formatDate(value: string | null) {
 }
 
 function formatBytes(value: number | null) {
-  if (value == null) return "\u2014"
+  if (value == null) return "—"
 
   const gb = value / 1024 / 1024 / 1024
 
@@ -695,7 +695,7 @@ function App() {
 
   const [modelTestPrompt, setModelTestPrompt] =
     useState(
-      "Python ile basit bir fibonacci fonksiyonu yaz ve k\u0131saca a\u00e7\u0131kla.",
+      "Python ile basit bir fibonacci fonksiyonu yaz ve kısaca açıkla.",
     )
 
   const [modelTestResponse, setModelTestResponse] =
@@ -863,7 +863,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Projeler y\u00fcklenemedi.",
+          : "Projeler yüklenemedi.",
       )
     }
   }, [])
@@ -905,7 +905,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "G\u00f6revler y\u00fcklenemedi.",
+          : "Görevler yüklenemedi.",
       )
     }
   }, [selectedProjectId])
@@ -1175,7 +1175,7 @@ function App() {
 
     if (!cleanName || !cleanPath) {
       setError(
-        "Proje ad\u0131 ve yolu zorunludur.",
+        "Proje adı ve yolu zorunludur.",
       )
       return
     }
@@ -1196,7 +1196,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Proje ayarlar\u0131 kaydedilemedi.",
+          : "Proje ayarları kaydedilemedi.",
       )
     } finally {
       setProjectSettingsSaving(false)
@@ -1216,14 +1216,14 @@ function App() {
       const message =
         err instanceof Error
           ? err.message
-          : "Proje kald\u0131r\u0131lamad\u0131."
+          : "Proje kaldırılamadı."
 
       if (
         message === "Project not found" ||
         message === "HTTP 404"
       ) {
         setError(
-          "Proje art\u0131k mevcut de\u011fil.",
+          "Proje artık mevcut değil.",
         )
         await loadProjects()
       } else if (
@@ -1233,14 +1233,14 @@ function App() {
         setError(
           message.includes("aktif")
             ? message
-            : "Bu projeye ait aktif g\u00f6revler bulundu\u011fu i\u00e7in proje kald\u0131r\u0131lam\u0131yor.",
+            : "Bu projeye ait aktif görevler bulunduğu için proje kaldırılamıyor.",
         )
       } else if (
         message.startsWith("HTTP 5") ||
         message === "HTTP 500"
       ) {
         setError(
-          "Proje kald\u0131r\u0131lamad\u0131.",
+          "Proje kaldırılamadı.",
         )
       } else {
         setError(message)
@@ -1261,7 +1261,7 @@ function App() {
 
     if (!prompt) {
       setModelTestError(
-        "Test promptu bo\u015f olamaz.",
+        "Test promptu boş olamaz.",
       )
       return
     }
@@ -1288,7 +1288,7 @@ function App() {
       const rawMessage =
         err instanceof Error
           ? err.message
-          : "Model testi ba\u015far\u0131s\u0131z oldu."
+          : "Model testi başarısız oldu."
 
       const normalized =
         rawMessage.toLowerCase()
@@ -1319,8 +1319,8 @@ function App() {
 
         setModelTestError(
           fallbackModel
-            ? `Model ba\u015flat\u0131lamad\u0131. GPU/CUDA veya bellek s\u0131n\u0131r\u0131na tak\u0131lm\u0131\u015f olabilir. Alternatif olarak ${fallbackModel} modelini deneyebilirsin.`
-            : "Model ba\u015flat\u0131lamad\u0131. GPU/CUDA veya bellek s\u0131n\u0131r\u0131na tak\u0131lm\u0131\u015f olabilir.",
+            ? `Model başlatılamadı. GPU/CUDA veya bellek sınırına takılmış olabilir. Alternatif olarak ${fallbackModel} modelini deneyebilirsin.`
+            : "Model başlatılamadı. GPU/CUDA veya bellek sınırına takılmış olabilir.",
         )
       } else {
         setModelTestError(rawMessage)
@@ -1367,7 +1367,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "G\u00f6rev olu\u015fturulamad\u0131.",
+          : "Görev oluşturulamadı.",
       )
     } finally {
       setSubmitting(false)
@@ -1427,7 +1427,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Proje olu\u015fturulamad\u0131.",
+          : "Proje oluşturulamadı.",
       )
     } finally {
       setProjectSubmitting(false)
@@ -1446,7 +1446,7 @@ function App() {
 
     if (!cleanName || !cleanParentPath) {
       setError(
-        "Proje ad\u0131 ve ebeveyn klas\u00f6r yolu zorunludur.",
+        "Proje adı ve ebeveyn klasör yolu zorunludur.",
       )
       return
     }
@@ -1476,7 +1476,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "Yeni proje olu\u015fturulamad\u0131.",
+          : "Yeni proje oluşturulamadı.",
       )
     } finally {
       setProjectSubmitting(false)
@@ -1505,13 +1505,13 @@ function App() {
 
       setDiff(
         result.diff ||
-          "De\u011fi\u015fiklik bulunamad\u0131.",
+          "Değişiklik bulunamadı.",
       )
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Diff al\u0131namad\u0131.",
+          : "Diff alınamadı.",
       )
     } finally {
       setLoadingDiff(false)
@@ -1555,7 +1555,7 @@ function App() {
       setError(
         err instanceof Error
           ? err.message
-          : "\u0130\u015flem tamamlanamad\u0131.",
+          : "İşlem tamamlanamadı.",
       )
     } finally {
       setActionLoading(false)
@@ -1736,9 +1736,9 @@ function App() {
 
             <small>
               Local-First
-              <i>{"\u2022"}</i>
+              <i>{"•"}</i>
               Build More
-              <i>{"\u2022"}</i>
+              <i>{"•"}</i>
               Your Machine, Your Rules
             </small>
           </div>
@@ -1774,7 +1774,7 @@ function App() {
             }}
           >
             <UiIcon name="tasks" />
-            {"G\u00f6revler"}
+            {"Görevler"}
           </button>
 
           <button
@@ -1830,14 +1830,14 @@ function App() {
           <div>
             <strong>
               {systemHealthy
-                ? "Sistem \u00c7al\u0131\u015f\u0131yor"
+                ? "Sistem Çalışıyor"
                 : "Sistem Kontrol Ediliyor"}
             </strong>
 
             <small>
               {systemHealthy
-                ? "T\u00fcm servisler haz\u0131r"
-                : "Servis durumlar\u0131n\u0131 kontrol et"}
+                ? "Tüm servisler hazır"
+                : "Servis durumlarını kontrol et"}
             </small>
           </div>
         </div>
@@ -1879,14 +1879,14 @@ function App() {
                     event.target.value,
                   )
                 }
-                placeholder="Proje ad\u0131"
+                placeholder="Proje adı"
               />
 
               <div className="rail-form-row rail-path-picker">
                 <input
                   value={newProjectPath}
                   readOnly
-                  placeholder="Ebeveyn klas\u00f6r se\u00e7"
+                  placeholder="Ebeveyn klasör seç"
                   title={newProjectPath || undefined}
                 />
                 <button
@@ -1901,8 +1901,8 @@ function App() {
                   }
                 >
                   {browsingFolder
-                    ? "Se\u00e7iliyor..."
-                    : "Klas\u00f6r Se\u00e7"}
+                    ? "Seçiliyor..."
+                    : "Klasör Seç"}
                 </button>
               </div>
 
@@ -1960,7 +1960,7 @@ function App() {
           id="task-list"
         >
           <div className="rail-heading">
-            <h2>{"G\u00f6revler"}</h2>
+            <h2>{"Görevler"}</h2>
 
             <button
               className="rail-add-button"
@@ -1974,7 +1974,7 @@ function App() {
                 !selectedProject
               }
             >
-              + {"Yeni G\u00f6rev"}
+              + {"Yeni Görev"}
             </button>
           </div>
 
@@ -1993,12 +1993,12 @@ function App() {
                   )
                 }
                 rows={4}
-                placeholder="AI ajan\u0131na g\u00f6revini yaz..."
+                placeholder="AI ajanına görevini yaz..."
               />
 
               <label className="task-secret-field">
                 <span>
-                  {"Gizli parola (iste\u011fe ba\u011fl\u0131)"}
+                  {"Gizli parola (isteğe bağlı)"}
                 </span>
                 <input
                   type="password"
@@ -2009,10 +2009,10 @@ function App() {
                       event.target.value,
                     )
                   }
-                  placeholder="Parolay\u0131 g\u00f6rev metnine yazmay\u0131n."
+                  placeholder="Parolayı görev metnine yazmayın."
                 />
                 <small>
-                  {"Parolay\u0131 g\u00f6rev metnine yazmay\u0131n."}
+                  {"Parolayı görev metnine yazmayın."}
                 </small>
               </label>
 
@@ -2077,8 +2077,8 @@ function App() {
                   }
                 >
                   {submitting
-                    ? "Ba\u015flat\u0131l\u0131yor"
-                    : "Ba\u015flat"}
+                    ? "Başlatılıyor"
+                    : "Başlat"}
                 </button>
               </div>
             </form>
@@ -2087,7 +2087,7 @@ function App() {
           <div className="task-rail-list">
             {tasks.length === 0 && (
               <div className="rail-empty">
-                {"Hen\u00fcz g\u00f6rev yok."}
+                {"Henüz görev yok."}
               </div>
             )}
 
@@ -2123,7 +2123,7 @@ function App() {
                     {stateLabels[
                       task.state
                     ] ?? task.state}
-                    <i>{"\u2022"}</i>
+                    <i>{"•"}</i>
                     {formatTime(
                       task.started_at,
                     )}
@@ -2136,7 +2136,7 @@ function App() {
 
         <section className="rail-section quick-actions">
           <h2>
-            {"H\u0131zl\u0131 \u0130\u015flemler"}
+            {"Hızlı İşlemler"}
           </h2>
 
           <button
@@ -2150,23 +2150,23 @@ function App() {
                 setError(
                   err instanceof Error
                     ? err.message
-                    : "Terminal a\u00e7\u0131lamad\u0131.",
+                    : "Terminal açılamadı.",
                 )
               })
             }}
           >
             <UiIcon name="terminal" />
-            {"Terminali A\u00e7"}
+            {"Terminali Aç"}
           </button>
 
           <button onClick={scrollToLogs}>
             <UiIcon name="logs" />
-            {"Loglar\u0131 G\u00f6r\u00fcnt\u00fcle"}
+            {"Logları Görüntüle"}
           </button>
 
           <button>
             <UiIcon name="settings" />
-            {"Ayarlar\u0131 D\u00fczenle"}
+            {"Ayarları Düzenle"}
           </button>
 
           <button
@@ -2266,7 +2266,7 @@ function App() {
                 </h1>
 
                 <p>
-                  {"Ollama \u00fczerinden bu makinede kullan\u0131labilir modeller."}
+                  {"Ollama üzerinden bu makinede kullanılabilir modeller."}
                 </p>
               </div>
 
@@ -2281,8 +2281,8 @@ function App() {
 
                 <strong>
                   {controlCenter?.services.ollama.online
-                    ? "Ollama \u00c7al\u0131\u015f\u0131yor"
-                    : "Ollama Kapal\u0131"}
+                    ? "Ollama Çalışıyor"
+                    : "Ollama Kapalı"}
                 </strong>
               </div>
             </div>
@@ -2305,9 +2305,9 @@ function App() {
               </div>
 
               <div>
-                <span>{"Se\u00e7ili Model"}</span>
+                <span>{"Seçili Model"}</span>
                 <strong>
-                  {selectedModel ?? "\u2014"}
+                  {selectedModel ?? "—"}
                 </strong>
               </div>
             </div>
@@ -2320,7 +2320,7 @@ function App() {
 
                     <div>
                       <strong>
-                        {"Model K\u00fct\u00fcphanesi"}
+                        {"Model Kütüphanesi"}
                       </strong>
 
                       <small>
@@ -2338,8 +2338,8 @@ function App() {
                   {availableModels.length === 0 && (
                     <div className="models-empty">
                       {controlCenter?.services.ollama.online
-                        ? "Kurulu Ollama modeli bulunamad\u0131."
-                        : "Ollama servisine ula\u015f\u0131lam\u0131yor."}
+                        ? "Kurulu Ollama modeli bulunamadı."
+                        : "Ollama servisine ulaşılamıyor."}
                     </div>
                   )}
 
@@ -2382,11 +2382,11 @@ function App() {
                     <UiIcon name="models" />
 
                     <strong>
-                      {"Model se\u00e7ilmedi"}
+                      {"Model seçilmedi"}
                     </strong>
 
                     <span>
-                      {"Detaylar\u0131 g\u00f6rmek i\u00e7in listeden bir model se\u00e7."}
+                      {"Detayları görmek için listeden bir model seç."}
                     </span>
                   </div>
                 ) : (
@@ -2409,12 +2409,12 @@ function App() {
 
                     <div className="selected-model-status">
                       <div>
-                        <span>{"Sa\u011fl\u0131k"}</span>
+                        <span>{"Sağlık"}</span>
 
                         <strong>
                           {controlCenter?.services.ollama.online
-                            ? "Haz\u0131r"
-                            : "Kapal\u0131"}
+                            ? "Hazır"
+                            : "Kapalı"}
                         </strong>
                       </div>
 
@@ -2424,7 +2424,7 @@ function App() {
                       </div>
 
                       <div>
-                        <span>{"\u00c7al\u0131\u015fma"}</span>
+                        <span>{"Çalışma"}</span>
                         <strong>Local</strong>
                       </div>
                     </div>
@@ -2439,7 +2439,7 @@ function App() {
                           </strong>
 
                           <span>
-                            {"Se\u00e7ili modele do\u011frudan prompt g\u00f6nder."}
+                            {"Seçili modele doğrudan prompt gönder."}
                           </span>
                         </div>
                       </div>
@@ -2453,7 +2453,7 @@ function App() {
                           )
                         }
                         placeholder={
-                          "Modele g\u00f6ndermek istedi\u011fin prompt..."
+                          "Modele göndermek istediğin prompt..."
                         }
                         rows={6}
                       />
@@ -2473,8 +2473,8 @@ function App() {
                           <UiIcon name="running" />
 
                           {modelTestRunning
-                            ? "Model \u00e7al\u0131\u015f\u0131yor..."
-                            : "Testi Ba\u015flat"}
+                            ? "Model çalışıyor..."
+                            : "Testi Başlat"}
                         </button>
 
                         {modelTestDuration != null && (
@@ -2519,7 +2519,7 @@ function App() {
         {error && (
           <div className="error-banner">
             <strong>
-              {"\u0130\u015flem Hatas\u0131"}
+              {"İşlem Hatası"}
             </strong>
 
             <span>{error}</span>
@@ -2542,12 +2542,12 @@ function App() {
               <div>
                 <h1>
                   {selectedProject?.name ??
-                    "Proje Se\u00e7"}
+                    "Proje Seç"}
                 </h1>
 
                 <p>
                   {selectedProject?.path ??
-                    "Sol panelden bir proje se\u00e7."}
+                    "Sol panelden bir proje seç."}
                 </p>
               </div>
             </div>
@@ -2571,7 +2571,7 @@ function App() {
               }}
             >
               <UiIcon name="open" />
-              {"Projeyi A\u00e7"}
+              {"Projeyi Aç"}
             </button>
           </div>
 
@@ -2587,7 +2587,7 @@ function App() {
               }
             >
               <UiIcon name="overview" />
-              {"Genel Bak\u0131\u015f"}
+              {"Genel Bakış"}
             </button>
 
             <button
@@ -2601,7 +2601,7 @@ function App() {
               }
             >
               <UiIcon name="running" />
-              {"\u00c7al\u0131\u015fan G\u00f6rev"}
+              {"Çalışan Görev"}
             </button>
 
             <button
@@ -2615,7 +2615,7 @@ function App() {
               }
             >
               <UiIcon name="history" />
-              {"Ge\u00e7mi\u015f"}
+              {"Geçmiş"}
             </button>
 
             <button
@@ -2629,7 +2629,7 @@ function App() {
               }
             >
               <UiIcon name="settings" />
-              {"Proje Ayarlar\u0131"}
+              {"Proje Ayarları"}
             </button>
           </nav>
         </section>
@@ -2759,12 +2759,12 @@ function App() {
             <div>
               <span className="task-id-title"><UiIcon name="task" />{" "}
                 {selectedTask?.task_id ??
-                  "G\u00f6rev Se\u00e7ilmedi"}
+                  "Görev Seçilmedi"}
               </span>
 
               <h2>
                 {selectedTask?.prompt ??
-                  "Pipeline durumunu g\u00f6rmek i\u00e7in bir g\u00f6rev se\u00e7."}
+                  "Pipeline durumunu görmek için bir görev seç."}
               </h2>
             </div>
 
@@ -2780,7 +2780,7 @@ function App() {
               </span>
 
               <small>
-                {"Ba\u015flang\u0131\u00e7:"}{" "}
+                {"Başlangıç:"}{" "}
                 {formatTime(
                   selectedTask?.started_at ??
                     null,
@@ -2819,13 +2819,13 @@ function App() {
                   <small className="pipeline-caption">
                     {stage.status === "success" ||
                     stage.status === "completed"
-                      ? "Tamamland\u0131"
+                      ? "Tamamlandı"
                       : stage.status === "active"
-                        ? "\u00c7al\u0131\u015f\u0131yor..."
+                        ? "Çalışıyor..."
                         : stage.status === "waiting"
                           ? "Onay Bekliyor"
                           : stage.status === "failed"
-                            ? "Ba\u015far\u0131s\u0131z"
+                            ? "Başarısız"
                             : "Bekliyor"}
                   </small>
                 </div>
@@ -3154,7 +3154,7 @@ function App() {
                               </strong>
 
                               <span>
-                                {"\u2192"}
+                                {"→"}
                               </span>
 
                               <strong>
@@ -3199,13 +3199,13 @@ function App() {
               <div>
                 <UiIcon name="logs" />
                 <strong>
-                  {"Canl\u0131 Loglar"}
+                  {"Canlı Loglar"}
                 </strong>
               </div>
 
               <label className="autosave-label">
                 <span className="toggle on" />
-                {"Otomatik Kayd\u0131rma"}
+                {"Otomatik Kaydırma"}
               </label>
             </div>
 
@@ -3242,8 +3242,8 @@ function App() {
               ) : (
                 <div className="console-empty">
                   {selectedTask
-                    ? "Hen\u00fcz log kayd\u0131 yok."
-                    : "Canl\u0131 loglar i\u00e7in bir g\u00f6rev se\u00e7."}
+                    ? "Henüz log kaydı yok."
+                    : "Canlı loglar için bir görev seç."}
                 </div>
               )}
             </div>
@@ -3273,7 +3273,7 @@ function App() {
               <div>
                 <UiIcon name="result" />
                 <strong>
-                  {"G\u00f6rev Sonucu"}
+                  {"Görev Sonucu"}
                 </strong>
               </div>
 
@@ -3287,7 +3287,7 @@ function App() {
                       selectedTask?.state ??
                         "queued"
                     ] ??
-                    "\u2014"}
+                    "—"}
               </span>
             </div>
 
@@ -3295,7 +3295,7 @@ function App() {
               <div className="read-result-panel">
                 <div className="read-result-head">
                   <span>
-                    {"AI Yan\u0131t\u0131"}
+                    {"AI Yanıtı"}
                   </span>
 
                   <strong>
@@ -3325,7 +3325,7 @@ function App() {
                   }
                 >
                   {selectedTask?.test_result ??
-                    "\u2014"}
+                    "—"}
                 </strong>
               </div>
 
@@ -3337,7 +3337,7 @@ function App() {
                 <strong>
                   {selectedTask
                     ? `${selectedTask.attempt}/${selectedTask.max_attempts}`
-                    : "\u2014"}
+                    : "—"}
                 </strong>
               </div>
 
@@ -3349,18 +3349,18 @@ function App() {
                 <strong>
                   {pipeline
                     ? `${pipeline.progress_percent}%`
-                    : "\u2014"}
+                    : "—"}
                 </strong>
               </div>
 
               <div>
                 <span>
-                  {"Model Kullan\u0131m\u0131"}
+                  {"Model Kullanımı"}
                 </span>
 
                 <strong>
                   {selectedTask?.model ??
-                    "\u2014"}
+                    "—"}
                 </strong>
               </div>
 
@@ -3371,7 +3371,7 @@ function App() {
 
                 <strong>
                   {controlCenter?.git
-                    .branch ?? "\u2014"}
+                    .branch ?? "—"}
                 </strong>
               </div>
 
@@ -3382,7 +3382,7 @@ function App() {
 
                 <strong>
                   {controlCenter?.git
-                    .commit ?? "\u2014"}
+                    .commit ?? "—"}
                 </strong>
               </div>
             </div>
@@ -3400,8 +3400,8 @@ function App() {
                 }
               >
                 {loadingDiff
-                  ? "Y\u00fckleniyor..."
-                  : "Diff'i G\u00f6r\u00fcnt\u00fcle"}
+                  ? "Yükleniyor..."
+                  : "Diff'i Görüntüle"}
               </button>
               )}
 
@@ -3419,7 +3419,7 @@ function App() {
                       )
                     }
                   >
-                    {"Onayla ve Birle\u015ftir"}
+                    {"Onayla ve Birleştir"}
                   </button>
 
                   <button
@@ -3469,7 +3469,7 @@ function App() {
                   LIVE TASKS
                 </span>
                 <h2>
-                  {"\u00c7al\u0131\u015fan G\u00f6revler"}
+                  {"Çalışan Görevler"}
                 </h2>
               </div>
 
@@ -3481,7 +3481,7 @@ function App() {
             <div className="tab-task-list">
               {runningTasks.length === 0 && (
                 <div className="tab-empty">
-                  {"Aktif veya onay bekleyen g\u00f6rev bulunmuyor."}
+                  {"Aktif veya onay bekleyen görev bulunmuyor."}
                 </div>
               )}
 
@@ -3504,7 +3504,7 @@ function App() {
                     <small>
                       {stateLabels[task.state] ??
                         task.state}
-                      {" \u2022 "}
+                      {" • "}
                       {formatTime(task.started_at)}
                     </small>
                   </div>
@@ -3522,7 +3522,7 @@ function App() {
                   TASK HISTORY
                 </span>
                 <h2>
-                  {"G\u00f6rev Ge\u00e7mi\u015fi"}
+                  {"Görev Geçmişi"}
                 </h2>
               </div>
 
@@ -3534,7 +3534,7 @@ function App() {
             <div className="tab-task-list">
               {historyTasks.length === 0 && (
                 <div className="tab-empty">
-                  {"Hen\u00fcz tamamlanm\u0131\u015f g\u00f6rev yok."}
+                  {"Henüz tamamlanmış görev yok."}
                 </div>
               )}
 
@@ -3557,7 +3557,7 @@ function App() {
                     <small>
                       {stateLabels[task.state] ??
                         task.state}
-                      {" \u2022 "}
+                      {" • "}
                       {formatDate(task.started_at)}
                     </small>
                   </div>
@@ -3575,14 +3575,14 @@ function App() {
                   PROJECT SETTINGS
                 </span>
                 <h2>
-                  {"Proje Ayarlar\u0131"}
+                  {"Proje Ayarları"}
                 </h2>
               </div>
             </div>
 
             {!selectedProject ? (
               <div className="tab-empty">
-                {"Ayarlar i\u00e7in bir proje se\u00e7."}
+                {"Ayarlar için bir proje seç."}
               </div>
             ) : (
               <form
@@ -3592,7 +3592,7 @@ function App() {
                 }
               >
                 <label>
-                  <span>{"Proje Ad\u0131"}</span>
+                  <span>{"Proje Adı"}</span>
 
                   <input
                     value={projectSettingsName}
@@ -3629,7 +3629,7 @@ function App() {
                     <span>Git Branch</span>
                     <strong>
                       {controlCenter?.git.branch ??
-                        "\u2014"}
+                        "—"}
                     </strong>
                   </div>
 
@@ -3637,7 +3637,7 @@ function App() {
                     <span>Commit</span>
                     <strong>
                       {controlCenter?.git.commit ??
-                        "\u2014"}
+                        "—"}
                     </strong>
                   </div>
 
@@ -3646,7 +3646,7 @@ function App() {
                     <strong>
                       {controlCenter?.git.available
                         ? "Git"
-                        : "\u2014"}
+                        : "—"}
                     </strong>
                   </div>
                 </div>
@@ -3660,7 +3660,7 @@ function App() {
                 >
                   {projectSettingsSaving
                     ? "Kaydediliyor..."
-                    : "Ayarlar\u0131 Kaydet"}
+                    : "Ayarları Kaydet"}
                 </button>
               </form>
             )}
@@ -3673,10 +3673,10 @@ function App() {
         <section className="right-panel resource-panel">
           <div className="right-panel-title">
             <strong>
-              {"Sistem Kaynaklar\u0131"}
+              {"Sistem Kaynakları"}
             </strong>
 
-            <span className="live-badge"><i className="live-dot" />{"Canl\u0131"}
+            <span className="live-badge"><i className="live-dot" />{"Canlı"}
             </span>
           </div>
 
@@ -3686,13 +3686,13 @@ function App() {
             <div>
               <strong>
                 {controlCenter
-                  ? `${controlCenter.system.cpu.logical_count ?? "\u2014"} Mant\u0131ksal CPU`
+                  ? `${controlCenter.system.cpu.logical_count ?? "—"} Mantıksal CPU`
                   : "Sistem CPU"}
               </strong>
 
               <small>
                 {controlCenter?.system.platform ??
-                  "\u2014"}{" "}
+                  "—"}{" "}
                 {controlCenter?.system.platform_release ??
                   ""}
               </small>
@@ -3702,7 +3702,7 @@ function App() {
           <div className="metric-block">
             <div>
               <span>
-                {"CPU Kullan\u0131m\u0131"}
+                {"CPU Kullanımı"}
               </span>
 
               <strong>
@@ -3713,7 +3713,7 @@ function App() {
                         .system.cpu
                         .used_percent,
                     )}%`
-                  : "\u2014"}
+                  : "—"}
               </strong>
             </div>
 
@@ -3734,7 +3734,7 @@ function App() {
           <div className="metric-block">
             <div>
               <span>
-                {"RAM Kullan\u0131m\u0131"}
+                {"RAM Kullanımı"}
               </span>
 
               <strong>
@@ -3747,7 +3747,7 @@ function App() {
                         .total_bytes ??
                         null,
                     )}`
-                  : "\u2014"}
+                  : "—"}
               </strong>
             </div>
 
@@ -3768,7 +3768,7 @@ function App() {
           <div className="metric-block">
             <div>
               <span>
-                {"Disk Kullan\u0131m\u0131"}
+                {"Disk Kullanımı"}
               </span>
 
               <strong>
@@ -3779,7 +3779,7 @@ function App() {
                         .system.disk
                         .used_percent,
                     )}%`
-                  : "\u2014"}
+                  : "—"}
               </strong>
             </div>
 
@@ -3842,14 +3842,14 @@ function App() {
                       <small>
                         {index === 0
                           ? "Aktif"
-                          : "Haz\u0131r"}
+                          : "Hazır"}
                       </small>
                     </div>
                   ),
                 )
             ) : (
               <div className="panel-empty">
-                {"Model bulunamad\u0131."}
+                {"Model bulunamadı."}
               </div>
             )}
           </div>
@@ -3887,8 +3887,8 @@ function App() {
               <small>
                 {controlCenter?.services
                   .ollama.online
-                  ? "\u00c7al\u0131\u015f\u0131yor"
-                  : "Kapal\u0131"}
+                  ? "Çalışıyor"
+                  : "Kapalı"}
               </small>
             </div>
 
@@ -3908,8 +3908,8 @@ function App() {
               <small>
                 {controlCenter?.services
                   .docker.online
-                  ? "\u00c7al\u0131\u015f\u0131yor"
-                  : "Kapal\u0131"}
+                  ? "Çalışıyor"
+                  : "Kapalı"}
               </small>
             </div>
 
@@ -3929,8 +3929,8 @@ function App() {
               <small>
                 {controlCenter?.git
                   .available
-                  ? "\u00c7al\u0131\u015f\u0131yor"
-                  : "Kapal\u0131"}
+                  ? "Çalışıyor"
+                  : "Kapalı"}
               </small>
             </div>
 
@@ -3941,7 +3941,7 @@ function App() {
               </strong>
               <i className="online" />
               <small>
-                {"\u00c7al\u0131\u015f\u0131yor"}
+                {"Çalışıyor"}
               </small>
             </div>
 
@@ -3959,8 +3959,8 @@ function App() {
               />
               <small>
                 {backendOnline
-                  ? "\u00c7al\u0131\u015f\u0131yor"
-                  : "Kapal\u0131"}
+                  ? "Çalışıyor"
+                  : "Kapalı"}
               </small>
             </div>
           </div>
@@ -3969,7 +3969,7 @@ function App() {
         <section className="right-panel quick-info">
           <div className="right-panel-title">
             <strong>
-              {"H\u0131zl\u0131 Bilgiler"}
+              {"Hızlı Bilgiler"}
             </strong>
           </div>
 
@@ -3980,24 +3980,24 @@ function App() {
 
             <strong>
               {selectedProject?.path ??
-                "\u2014"}
+                "—"}
             </strong>
           </div>
 
           <div>
             <span>
-              {"Aktif G\u00f6rev"}
+              {"Aktif Görev"}
             </span>
 
             <strong className="accent">
               {selectedTask?.task_id ??
-                "\u2014"}
+                "—"}
             </strong>
           </div>
 
           <div>
             <span>
-              {"Olu\u015fturulma"}
+              {"Oluşturulma"}
             </span>
 
             <strong>
@@ -4016,7 +4016,7 @@ function App() {
             <strong>
               {controlCenter
                 ? `${controlCenter.system.platform} ${controlCenter.system.platform_release}`
-                : "\u2014"}
+                : "—"}
             </strong>
           </div>
         </section>
@@ -4030,7 +4030,7 @@ function App() {
         </span>
 
         <span>
-          {"Daha iyi yaz\u0131l\u0131mlar, daha \u00f6zg\u00fcr geli\u015ftiriciler."}
+          {"Daha iyi yazılımlar, daha özgür geliştiriciler."}
         </span>
       </footer>
     </div>

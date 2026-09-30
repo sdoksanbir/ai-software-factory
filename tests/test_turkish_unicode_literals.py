@@ -21,10 +21,23 @@ TURKISH_PROBE = (
     "Türkçe: çğıöşü ÇĞİÖŞÜ — dosyasının çalıştırılması"
 )
 
-APP_PY = (
-    Path(__file__).resolve().parents[1]
-    / "api"
-    / "app.py"
+# Deliberate literal backslash-u input — must NOT be globally decoded.
+LITERAL_BACKSLASH_U = "\\u0131"
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+APP_PY = REPO_ROOT / "api" / "app.py"
+APP_TSX = REPO_ROOT / "frontend" / "src" / "App.tsx"
+PIPELINE_PY = REPO_ROOT / "factory" / "pipeline.py"
+
+# Visible escape forms that must not appear in user-facing prose source.
+FORBIDDEN_ESCAPE_FORMS = (
+    "\\u0131",
+    "\\u00f6",
+    "\\u015f",
+    "\\u011f",
+    "\\u00e7",
+    "\\u00fc",
 )
 
 
@@ -95,6 +108,7 @@ def client(tmp_path, monkeypatch):
 
 def test_app_py_source_has_utf8_turkish_literals():
     raw = APP_PY.read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")
     text = raw.decode("utf-8")
 
     assert "Görev bulunamadı." in text
@@ -103,11 +117,48 @@ def test_app_py_source_has_utf8_turkish_literals():
     assert "Ollama geçersiz JSON döndürdü." in text
     assert "Ollama yanıtı bulunamadı." in text
     assert "Model adı zorunludur." in text
+    assert "Proje bulunamadı." in text
+    assert "Bu projeye ait aktif görevler " in text
+    assert "bulunduğu için proje " in text
+    assert "kaldırılamıyor." in text
 
     # Symptom-1 style corruption must stay gone.
     assert "G?rev bulunamad?" not in text
     assert "a??lamad?" not in text
     assert "ula??lam?yor" not in text
+
+    # Source must use real UTF-8, not visible \\uXXXX prose.
+    for form in FORBIDDEN_ESCAPE_FORMS:
+        assert form not in text, form
+
+
+def test_frontend_app_tsx_source_has_utf8_turkish():
+    raw = APP_TSX.read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8")
+
+    assert 'queued: "Sırada"' in text
+    assert 'running: "İşleniyor"' in text
+    assert 'failed: "Başarısız"' in text
+    assert '"Kullanıcı Görevi"' in text
+    assert '"İnsan Onayı"' in text
+    assert "görevler yüklenemedi." in text or "Görevler yüklenemedi." in text
+
+    for form in FORBIDDEN_ESCAPE_FORMS:
+        assert form not in text, form
+
+
+def test_pipeline_source_has_utf8_labels():
+    text = PIPELINE_PY.read_text(encoding="utf-8")
+    assert '"Görev Alındı"' in text
+    assert '"İnsan Onayı"' in text
+    assert '"Eylem Hazırlığı"' in text
+    assert '"Yerel Çalıştırma"' in text
+    assert '"Sonuç"' in text
+    assert '"Tamamlandı"' in text
+
+    for form in FORBIDDEN_ESCAPE_FORMS:
+        assert form not in text, form
 
 
 def test_pipeline_404_detail_preserves_turkish(
@@ -155,3 +206,34 @@ def test_create_and_get_task_preserves_turkish_prompt(
     assert body["prompt"] == (
         "Türkçe: çğıöşü ÇĞİÖŞÜ — dosyasının çalıştırılması"
     )
+
+
+def test_literal_backslash_u_input_not_globally_decoded(
+    client,
+):
+    """User input that looks like \\u0131 must stay literal."""
+    test_client, project = client
+
+    created = test_client.post(
+        "/tasks",
+        json={
+            "prompt": LITERAL_BACKSLASH_U,
+            "max_attempts": 1,
+            "project_id": project["project_id"],
+        },
+    )
+
+    assert created.status_code == 202, created.text
+    payload = created.json()
+    assert payload["prompt"] == LITERAL_BACKSLASH_U
+    assert payload["prompt"] == "\\u0131"
+    assert payload["prompt"] != "ı"
+    assert "\\" in payload["prompt"]
+    assert payload["prompt"].startswith("\\u")
+
+    task_id = payload["task_id"]
+    fetched = test_client.get(f"/tasks/{task_id}")
+    assert fetched.status_code == 200
+    body = fetched.json()
+    assert body["prompt"] == "\\u0131"
+    assert body["prompt"] != "ı"

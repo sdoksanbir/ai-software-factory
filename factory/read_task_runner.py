@@ -506,18 +506,18 @@ def run_read_task(
 
     translation_table = str.maketrans(
         {
-            "\u0131": "i",
-            "\u0130": "i",
-            "\u015f": "s",
-            "\u015e": "s",
-            "\u011f": "g",
-            "\u011e": "g",
-            "\u00fc": "u",
-            "\u00dc": "u",
-            "\u00f6": "o",
-            "\u00d6": "o",
-            "\u00e7": "c",
-            "\u00c7": "c",
+            "ı": "i",
+            "İ": "i",
+            "ş": "s",
+            "Ş": "s",
+            "ğ": "g",
+            "Ğ": "g",
+            "ü": "u",
+            "Ü": "u",
+            "ö": "o",
+            "Ö": "o",
+            "ç": "c",
+            "Ç": "c",
         }
     )
 
@@ -777,11 +777,11 @@ def run_read_task(
     lowered = result.casefold()
 
     invalid_markers = (
-        "l\u00fctfen sorunuzu",
+        "lütfen sorunuzu",
         "sorunuzu belirtin",
-        "nas\u0131l yard\u0131mc\u0131 olabilirim",
-        "yan\u0131tlamak i\u00e7in haz\u0131r\u0131m",
-        "gibi g\u00f6r\u00fcn\u00fcyor",
+        "nasıl yardımcı olabilirim",
+        "yanıtlamak için hazırım",
+        "gibi görünüyor",
         "gibi gorunuyor",
         "olabilir",
         "muhtemelen",
