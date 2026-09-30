@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 
 from factory.database import (
+    ACTIVE_PROJECT_TASK_STATES,
     DEFAULT_DB_PATH,
     append_task_log as db_append_task_log,
     delete_task_diff as db_delete_task_diff,
@@ -23,6 +24,7 @@ from factory.database import (
     init_database,
     list_task_logs as db_list_task_logs,
     list_tasks as db_list_tasks,
+    project_has_active_tasks as db_project_has_active_tasks,
     save_task_diff as db_save_task_diff,
     upsert_task as db_upsert_task,
     create_project as db_create_project,
@@ -464,6 +466,11 @@ class ProjectResponse(BaseModel):
     updated_at: str | None = None
 
 
+class ProjectDeleteResponse(BaseModel):
+    project_id: str
+    deleted: bool = True
+
+
 def project_row_to_response(
     row: dict,
 ) -> ProjectResponse:
@@ -474,6 +481,22 @@ def project_row_to_response(
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
     )
+
+
+def project_has_runtime_active_tasks(
+    project_id: str,
+) -> bool:
+    """True if in-memory or DB tasks block deletion."""
+    for task in TASKS.values():
+        if (
+            getattr(task, "project_id", None)
+            == project_id
+            and getattr(task, "state", None)
+            in ACTIVE_PROJECT_TASK_STATES
+        ):
+            return True
+
+    return db_project_has_active_tasks(project_id)
 
 
 def normalize_and_validate_project_path(
@@ -1430,17 +1453,34 @@ def update_project_endpoint(
 
 @app.delete(
     "/projects/{project_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=ProjectDeleteResponse,
 )
 def delete_project_endpoint(
     project_id: str,
 ):
+    """Remove Factory project registration only.
+
+    Does not delete directories, repositories, worktrees,
+    or any filesystem content belonging to the project.
+    """
     current = db_get_project(project_id)
 
     if current is None:
         raise HTTPException(
             status_code=404,
             detail="Project not found",
+        )
+
+    if project_has_runtime_active_tasks(
+        project_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bu projeye ait aktif g\u00f6revler "
+                "bulundu\u011fu i\u00e7in proje "
+                "kald\u0131r\u0131lam\u0131yor."
+            ),
         )
 
     deleted = db_delete_project(project_id)
@@ -1451,7 +1491,10 @@ def delete_project_endpoint(
             detail="Project not found",
         )
 
-    return None
+    return ProjectDeleteResponse(
+        project_id=project_id,
+        deleted=True,
+    )
 
 
 @app.get("/health")

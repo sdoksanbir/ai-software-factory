@@ -605,10 +605,69 @@ def update_project(
         connection.close()
 
 
+# Non-terminal task states that block Factory project
+# registration removal. Historical/terminal tasks are
+# preserved (tasks.project_id has no FK CASCADE).
+ACTIVE_PROJECT_TASK_STATES = frozenset(
+    {
+        "queued",
+        "running",
+        "ready_for_approval",
+        "blocked",
+    }
+)
+
+
+def list_tasks_for_project(
+    project_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[dict]:
+    connection = get_connection(db_path)
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM tasks
+            WHERE project_id = ?
+            ORDER BY created_at DESC, task_id DESC
+            """,
+            (project_id,),
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        connection.close()
+
+
+def project_has_active_tasks(
+    project_id: str,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> bool:
+    for row in list_tasks_for_project(
+        project_id,
+        db_path=db_path,
+    ):
+        if (
+            row.get("state")
+            in ACTIVE_PROJECT_TASK_STATES
+        ):
+            return True
+
+    return False
+
+
 def delete_project(
     project_id: str,
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> bool:
+    """Remove Factory project registration only.
+
+    Deletes the projects row from the Factory database.
+    Must never touch project directories, git repos,
+    worktrees, or any filesystem paths.
+    """
     connection = get_connection(db_path)
 
     try:

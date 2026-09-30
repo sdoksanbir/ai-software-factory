@@ -400,21 +400,21 @@ export function updateProject(
 }
 
 
+export type ProjectDeleteResult = {
+  project_id: string
+  deleted: boolean
+}
+
+
 export function deleteProject(
   projectId: string,
 ) {
-  return fetch(
-    `${API_BASE}/projects/${projectId}`,
+  return request<ProjectDeleteResult>(
+    `/projects/${projectId}`,
     {
       method: "DELETE",
     },
-  ).then((response) => {
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}`,
-      )
-    }
-  })
+  )
 }
 
 

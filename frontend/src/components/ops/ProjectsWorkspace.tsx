@@ -29,6 +29,7 @@ type Props = {
   projectSettingsName: string
   projectSettingsPath: string
   projectSettingsSaving: boolean
+  projectDeleting: boolean
   onSelectProject: (projectId: string) => void
   onNewProjectNameChange: (value: string) => void
   onNewProjectPathChange: (value: string) => void
@@ -37,6 +38,7 @@ type Props = {
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void
+  onDeleteProject: (projectId: string) => Promise<void>
 }
 
 type CharacterKind =
@@ -140,6 +142,8 @@ function projectCreateErrorTr(message: string) {
       "Seçilen klasör bulunamadı.",
     "Project path is already registered":
       "Bu proje yolu zaten kayıtlı.",
+    "Project not found":
+      "Proje artık mevcut değil.",
   }
   return map[message] ?? message
 }
@@ -360,6 +364,7 @@ export function ProjectsWorkspace({
   projectSettingsName,
   projectSettingsPath,
   projectSettingsSaving,
+  projectDeleting,
   onSelectProject,
   onNewProjectNameChange,
   onNewProjectPathChange,
@@ -368,6 +373,7 @@ export function ProjectsWorkspace({
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
+  onDeleteProject,
 }: Props) {
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -378,6 +384,10 @@ export function ProjectsWorkspace({
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [createAttempted, setCreateAttempted] = useState(false)
   const [browsingFolder, setBrowsingFolder] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<ProjectItem | null>(
+    null,
+  )
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const projectCountAtSubmit = useRef(projects.length)
 
   const selected =
@@ -560,6 +570,41 @@ export function ProjectsWorkspace({
     }
   }
 
+  function requestDelete(project: ProjectItem) {
+    setDeleteError(null)
+    setPendingDelete(project)
+  }
+
+  function cancelDelete() {
+    if (projectDeleting) {
+      return
+    }
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete || projectDeleting) {
+      return
+    }
+
+    setDeleteError(null)
+
+    try {
+      await onDeleteProject(pendingDelete.project_id)
+      setPendingDelete(null)
+      setViewMode("list")
+    } catch (err) {
+      setDeleteError(
+        projectCreateErrorTr(
+          err instanceof Error
+            ? err.message
+            : "Proje kaldırılamadı.",
+        ),
+      )
+    }
+  }
+
   async function handleBrowseFolder() {
     setBrowsingFolder(true)
     try {
@@ -619,6 +664,56 @@ export function ProjectsWorkspace({
         viewMode === "details" ? " details-mode" : ""
       }`}
     >
+      {pendingDelete ? (
+        <div
+          className="projects-delete-overlay"
+          role="presentation"
+          onClick={cancelDelete}
+        >
+          <div
+            className="projects-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="projects-delete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="projects-delete-title">Projeyi Kaldır</h3>
+            <p className="projects-delete-name">
+              <strong>{pendingDelete.name}</strong>
+            </p>
+            <p>
+              Bu işlem projeyi yalnızca AI Software Factory listesinden
+              kaldırır. Bilgisayarınızdaki proje dosyaları silinmez.
+            </p>
+            {deleteError ? (
+              <p className="projects-delete-error" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="projects-delete-actions">
+              <button
+                type="button"
+                className="projects-delete-cancel"
+                onClick={cancelDelete}
+                disabled={projectDeleting}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                className="projects-delete-confirm"
+                onClick={() => {
+                  void confirmDelete()
+                }}
+                disabled={projectDeleting}
+              >
+                {projectDeleting ? "Kaldırılıyor..." : "Projeyi Kaldır"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {viewMode === "details" && selected ? (
         <div className="projects-details">
           <header className="projects-details-hero">
@@ -669,6 +764,14 @@ export function ProjectsWorkspace({
                   ? "Açılıyor..."
                   : "Projeyi Aç"}
                 <MiniIcon name="arrow" />
+              </button>
+              <button
+                type="button"
+                className="project-remove"
+                onClick={() => requestDelete(selected)}
+                disabled={projectDeleting}
+              >
+                Projeyi Kaldır
               </button>
             </div>
           </header>
@@ -841,6 +944,19 @@ export function ProjectsWorkspace({
                     : "Değişiklikleri Kaydet"}
                 </button>
               </form>
+              <div className="projects-danger-zone">
+                <p>
+                  Factory kaydını kaldırır; diskteki dosyalar korunur.
+                </p>
+                <button
+                  type="button"
+                  className="project-remove"
+                  onClick={() => requestDelete(selected)}
+                  disabled={projectDeleting}
+                >
+                  Projeyi Kaldır
+                </button>
+              </div>
             </section>
           </div>
         </div>
@@ -1149,6 +1265,19 @@ export function ProjectsWorkspace({
                         >
                           Ayrıntılar
                         </button>
+                        <button
+                          type="button"
+                          className="project-remove"
+                          title="Projeyi Kaldır"
+                          aria-label={`${project.name} projesini kaldır`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            requestDelete(project)
+                          }}
+                          disabled={projectDeleting}
+                        >
+                          Sil
+                        </button>
                       </div>
                     </div>
                   </article>
@@ -1267,6 +1396,21 @@ export function ProjectsWorkspace({
                 : "Değişiklikleri Kaydet"}
             </button>
           </form>
+          {selected ? (
+            <div className="projects-danger-zone">
+              <p>
+                Factory kaydını kaldırır; diskteki dosyalar korunur.
+              </p>
+              <button
+                type="button"
+                className="project-remove"
+                onClick={() => requestDelete(selected)}
+                disabled={projectDeleting}
+              >
+                Projeyi Kaldır
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section className="projects-side-card">

@@ -49,6 +49,7 @@ type Props = {
   projectSettingsName: string
   projectSettingsPath: string
   projectSettingsSaving: boolean
+  projectDeleting: boolean
   composerRequestId?: number
   onSelectTask: (taskId: string) => void
   onSelectProject: (projectId: string) => void
@@ -63,6 +64,7 @@ type Props = {
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: React.FormEvent<HTMLFormElement>) => void
+  onDeleteProject: (projectId: string) => Promise<void>
 }
 
 function taskStateLabel(state: string) {
@@ -99,6 +101,7 @@ export function WorldControlPanels({
   projectSettingsName,
   projectSettingsPath,
   projectSettingsSaving,
+  projectDeleting,
   composerRequestId = 0,
   onSelectTask,
   onSelectProject,
@@ -113,6 +116,7 @@ export function WorldControlPanels({
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
+  onDeleteProject,
 }: Props) {
   const [showTaskComposer, setShowTaskComposer] =
     useState(false)
@@ -432,18 +436,20 @@ export function WorldControlPanels({
             newProjectName={newProjectName}
             newProjectPath={newProjectPath}
             projectSubmitting={projectSubmitting}
-          projectCreateError={projectCreateError}
+            projectCreateError={projectCreateError}
             projectSettingsName={projectSettingsName}
             projectSettingsPath={projectSettingsPath}
             projectSettingsSaving={projectSettingsSaving}
+            projectDeleting={projectDeleting}
             onSelectProject={onSelectProject}
             onNewProjectNameChange={onNewProjectNameChange}
             onNewProjectPathChange={onNewProjectPathChange}
             onCreateProject={onCreateProject}
-          onCreateNewProject={onCreateNewProject}
+            onCreateNewProject={onCreateNewProject}
             onProjectSettingsNameChange={onProjectSettingsNameChange}
             onProjectSettingsPathChange={onProjectSettingsPathChange}
             onSaveProjectSettings={onSaveProjectSettings}
+            onDeleteProject={onDeleteProject}
           />
         </section>
       )}

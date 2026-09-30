@@ -12,6 +12,7 @@ import {
   createNewProject,
   createTask,
   browseProjectFolder,
+  deleteProject,
   getControlCenterStatus,
   getTaskDiff,
   getTaskAgentExecutions,
@@ -715,6 +716,8 @@ function App() {
 
   const [projectSettingsSaving, setProjectSettingsSaving] =
     useState(false)
+  const [projectDeleting, setProjectDeleting] =
+    useState(false)
 
   const selectedProject = useMemo(
     () =>
@@ -1195,6 +1198,55 @@ function App() {
       )
     } finally {
       setProjectSettingsSaving(false)
+    }
+  }
+
+  async function handleDeleteProject(
+    projectId: string,
+  ) {
+    setProjectDeleting(true)
+    setError(null)
+
+    try {
+      await deleteProject(projectId)
+      await loadProjects()
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Proje kald\u0131r\u0131lamad\u0131."
+
+      if (
+        message === "Project not found" ||
+        message === "HTTP 404"
+      ) {
+        setError(
+          "Proje art\u0131k mevcut de\u011fil.",
+        )
+        await loadProjects()
+      } else if (
+        message.includes("aktif") ||
+        message === "HTTP 409"
+      ) {
+        setError(
+          message.includes("aktif")
+            ? message
+            : "Bu projeye ait aktif g\u00f6revler bulundu\u011fu i\u00e7in proje kald\u0131r\u0131lam\u0131yor.",
+        )
+      } else if (
+        message.startsWith("HTTP 5") ||
+        message === "HTTP 500"
+      ) {
+        setError(
+          "Proje kald\u0131r\u0131lamad\u0131.",
+        )
+      } else {
+        setError(message)
+      }
+
+      throw err
+    } finally {
+      setProjectDeleting(false)
     }
   }
 
@@ -2166,6 +2218,7 @@ function App() {
           projectSettingsName={projectSettingsName}
           projectSettingsPath={projectSettingsPath}
           projectSettingsSaving={projectSettingsSaving}
+          projectDeleting={projectDeleting}
           onSelectProject={setSelectedProjectId}
           onPromptChange={setPrompt}
           onMaxAttemptsChange={setMaxAttempts}
@@ -2178,6 +2231,7 @@ function App() {
           onProjectSettingsNameChange={setProjectSettingsName}
           onProjectSettingsPathChange={setProjectSettingsPath}
           onSaveProjectSettings={handleProjectSettingsSave}
+          onDeleteProject={handleDeleteProject}
         />
 
         {activeMainView === "models" && (

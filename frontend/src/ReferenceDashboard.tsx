@@ -69,6 +69,7 @@ type Props = {
   projectSettingsName: string
   projectSettingsPath: string
   projectSettingsSaving: boolean
+  projectDeleting: boolean
   onSelectProject: (projectId: string) => void
   onPromptChange: (value: string) => void
   onMaxAttemptsChange: (value: number) => void
@@ -81,6 +82,7 @@ type Props = {
   onProjectSettingsNameChange: (value: string) => void
   onProjectSettingsPathChange: (value: string) => void
   onSaveProjectSettings: (event: FormEvent<HTMLFormElement>) => void
+  onDeleteProject: (projectId: string) => Promise<void>
 }
 
 type NavKey =
@@ -188,6 +190,7 @@ export function ReferenceDashboard({
   projectSettingsName,
   projectSettingsPath,
   projectSettingsSaving,
+  projectDeleting,
   onSelectProject,
   onPromptChange,
   onMaxAttemptsChange,
@@ -200,6 +203,7 @@ export function ReferenceDashboard({
   onProjectSettingsNameChange,
   onProjectSettingsPathChange,
   onSaveProjectSettings,
+  onDeleteProject,
 }: Props) {
   void onTasks
   void onSettings
@@ -901,6 +905,7 @@ export function ReferenceDashboard({
               projectSettingsName={projectSettingsName}
               projectSettingsPath={projectSettingsPath}
               projectSettingsSaving={projectSettingsSaving}
+              projectDeleting={projectDeleting}
               onSelectTask={onSelectTask}
               onSelectProject={onSelectProject}
               onPromptChange={onPromptChange}
@@ -914,6 +919,7 @@ export function ReferenceDashboard({
               onProjectSettingsNameChange={onProjectSettingsNameChange}
               onProjectSettingsPathChange={onProjectSettingsPathChange}
               onSaveProjectSettings={onSaveProjectSettings}
+              onDeleteProject={onDeleteProject}
             />
           </div>
         </div>
@@ -1040,6 +1046,7 @@ export function ReferenceDashboard({
           projectSettingsName={projectSettingsName}
           projectSettingsPath={projectSettingsPath}
           projectSettingsSaving={projectSettingsSaving}
+          projectDeleting={projectDeleting}
           onSelectTask={onSelectTask}
           onSelectProject={onSelectProject}
           onPromptChange={onPromptChange}
@@ -1053,6 +1060,7 @@ export function ReferenceDashboard({
           onProjectSettingsNameChange={onProjectSettingsNameChange}
           onProjectSettingsPathChange={onProjectSettingsPathChange}
           onSaveProjectSettings={onSaveProjectSettings}
+          onDeleteProject={onDeleteProject}
         />
           </div>
         )}
