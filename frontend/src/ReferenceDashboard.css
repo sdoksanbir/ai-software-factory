@@ -1758,7 +1758,7 @@
   opacity: 0.42;
 }
 
-/* TASK_OPS_PANEL_HOST_V1 — Activity | Technical | Terminal */
+/* TASK_OPS_PANEL_HOST_V1 — Activity | Terminal */
 
 .task-ops-panel-host {
   display: flex;
@@ -1833,25 +1833,6 @@
   border: none;
   border-radius: 0;
   background: transparent;
-}
-
-.task-ops-panel-body .task-tech-layout {
-  margin: 0 !important;
-  grid-column: auto !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  gap: 10px !important;
-  padding: 10px;
-}
-
-.task-ops-panel-body .task-tech-panel {
-  border-radius: 10px;
-}
-
-.task-ops-panel-body .task-tech-diff {
-  min-height: 180px;
-  max-height: 220px;
 }
 
 @media (max-width: 820px) {

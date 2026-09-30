@@ -204,7 +204,7 @@ export function ReferenceDashboard({
 
   const [activeNav, setActiveNav] = useState<NavKey>("overview")
   const [opsPanelTab, setOpsPanelTab] = useState<
-    "activity" | "technical" | "terminal"
+    "activity" | "terminal"
   >("activity")
   const [clock, setClock] = useState(() =>
     new Intl.DateTimeFormat("tr-TR", {
@@ -760,7 +760,7 @@ export function ReferenceDashboard({
                         message,
                       ),
                     ) ??
-                  "Görev başarısız oldu. Ayrıntılar için Teknik Ayrıntılar bölümünü kontrol edin."}
+                  "Görev başarısız oldu. Teknik ayrıntılar ve ham loglar aşağıda gösteriliyor."}
               </p>
             </div>
 
@@ -777,7 +777,7 @@ export function ReferenceDashboard({
           </section>
         )}
 
-        {/* TASK_OPS_PANELS_V1 — Activity | Technical | Terminal */}
+        {/* TASK_OPS_PANELS_V1 — Activity | Terminal */}
         <div className="task-operations-row">
           <div className="task-operations-live">
             <div className="task-ops-panel-host">
@@ -800,22 +800,6 @@ export function ReferenceDashboard({
                   onClick={() => setOpsPanelTab("activity")}
                 >
                   Activity
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  id="task-ops-tab-technical"
-                  aria-selected={opsPanelTab === "technical"}
-                  aria-controls="task-ops-panel-technical"
-                  className={
-                    opsPanelTab === "technical"
-                      ? "active"
-                      : undefined
-                  }
-                  onClick={() => setOpsPanelTab("technical")}
-                >
-                  Technical
                 </button>
 
                 <button
@@ -847,24 +831,6 @@ export function ReferenceDashboard({
                       pipeline={pipeline}
                       liveLogs={liveLogs}
                       agentExecutions={agentExecutions}
-                    />
-                  </div>
-                )}
-
-                {opsPanelTab === "technical" && (
-                  <div
-                    id="task-ops-panel-technical"
-                    role="tabpanel"
-                    aria-labelledby="task-ops-tab-technical"
-                  >
-                    <TaskTechnicalDetailsPanel
-                      selectedTask={selectedTask}
-                      agentExecutions={agentExecutions}
-                      liveLogs={liveLogs}
-                      diff={diff}
-                      loadingDiff={loadingDiff}
-                      onLoadDiff={onLoadDiff}
-                      taskKind={taskKind}
                     />
                   </div>
                 )}
@@ -921,6 +887,16 @@ export function ReferenceDashboard({
             />
           </div>
         </div>
+
+        <TaskTechnicalDetailsPanel
+          selectedTask={selectedTask}
+          agentExecutions={agentExecutions}
+          liveLogs={liveLogs}
+          diff={diff}
+          loadingDiff={loadingDiff}
+          onLoadDiff={onLoadDiff}
+          taskKind={taskKind}
+        />
 
         {/* TASK_RESULT_PANEL_V2 */}
         {(
