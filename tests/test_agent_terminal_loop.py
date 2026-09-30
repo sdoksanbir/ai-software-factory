@@ -12,7 +12,9 @@ import pytest
 
 from factory.agent_terminal_loop import (
     command_fingerprint,
+    is_deterministic_git_ls_files_discovery,
     is_deterministic_missing_path_failure,
+    is_successful_empty_discovery_result,
     run_agent_terminal_loop,
 )
 from factory.agent_terminal_models import (
@@ -569,6 +571,353 @@ def test_missing_path_blocks_identical_retry_then_recovers():
         missing_stderr in call["user_prompt"]
         for call in decider.calls[1:]
     )
+
+
+def test_git_ls_files_discovery_classifier():
+    assert is_deterministic_git_ls_files_discovery(
+        ["git", "ls-files", "*manage.py"]
+    )
+    assert is_deterministic_git_ls_files_discovery(
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "*manage.py",
+        ]
+    )
+    assert not is_deterministic_git_ls_files_discovery(
+        ["git", "status", "--short"]
+    )
+    assert not is_deterministic_git_ls_files_discovery(
+        ["python", "manage.py", "check"]
+    )
+    assert is_successful_empty_discovery_result(
+        status="succeeded",
+        exit_code=0,
+        stdout="",
+    )
+    assert is_successful_empty_discovery_result(
+        status="succeeded",
+        exit_code=0,
+        stdout="   \n",
+    )
+    assert not is_successful_empty_discovery_result(
+        status="succeeded",
+        exit_code=0,
+        stdout="ajan/manage.py\n",
+    )
+    assert not is_successful_empty_discovery_result(
+        status="failed",
+        exit_code=1,
+        stdout="",
+    )
+
+
+def test_empty_tracked_discovery_blocks_identical_retry():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        argv = list(req.argv)
+
+        if argv == ["git", "ls-files", "*manage.py"]:
+            return TaskCommandResult(
+                command_id=f"git-{len(runner_calls)}",
+                task_id="TASK-EMPTY-1",
+                argv=argv,
+                cwd=".",
+                permission_level=(
+                    PermissionLevel.EXECUTE_SAFE.value
+                ),
+                started_at="t0",
+                finished_at="t1",
+                duration_ms=2,
+                exit_code=0,
+                stdout="",
+                stderr="",
+                status="succeeded",
+                execution_boundary="HOST_SAFE",
+                network_policy=(
+                    NetworkPolicy.NETWORK_NONE.value
+                ),
+            )
+
+        if argv == [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "*manage.py",
+        ]:
+            return TaskCommandResult(
+                command_id=f"git-u-{len(runner_calls)}",
+                task_id="TASK-EMPTY-1",
+                argv=argv,
+                cwd=".",
+                permission_level=(
+                    PermissionLevel.EXECUTE_SAFE.value
+                ),
+                started_at="t0",
+                finished_at="t1",
+                duration_ms=2,
+                exit_code=0,
+                stdout="ajan/manage.py\n",
+                stderr="",
+                status="succeeded",
+                execution_boundary="HOST_SAFE",
+                network_policy=(
+                    NetworkPolicy.NETWORK_NONE.value
+                ),
+            )
+
+        raise AssertionError(
+            f"Unexpected command: {argv!r}"
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "tracked discovery",
+            }
+        ),
+        # Identical empty discovery — must not re-run.
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "repeat empty",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "untracked discovery",
+            }
+        ),
+        _action(
+            {
+                "action_type": "complete",
+                "reason": "found untracked manage.py",
+                "summary": "Untracked discovery worked.",
+            }
+        ),
+    ]
+    decider = ScriptedDecider(scripts)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-EMPTY-1",
+        prompt="find manage.py",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 2
+    assert list(runner_calls[0]["request"].argv) == [
+        "git",
+        "ls-files",
+        "*manage.py",
+    ]
+    assert list(runner_calls[1]["request"].argv) == [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "*manage.py",
+    ]
+    assert any(
+        "returned no matches" in call["user_prompt"]
+        for call in decider.calls[2:]
+    )
+
+
+def test_untracked_discovery_then_django_check_flow():
+    runner_calls: list[dict] = []
+
+    def fake_runner(**kwargs):
+        runner_calls.append(kwargs)
+        req = kwargs["request"]
+        argv = list(req.argv)
+        cwd = str(req.cwd or ".")
+
+        if argv == ["git", "ls-files", "*manage.py"]:
+            return TaskCommandResult(
+                command_id=f"tracked-{len(runner_calls)}",
+                task_id="TASK-AJAN-1",
+                argv=argv,
+                cwd=".",
+                permission_level=(
+                    PermissionLevel.EXECUTE_SAFE.value
+                ),
+                started_at="t0",
+                finished_at="t1",
+                duration_ms=2,
+                exit_code=0,
+                stdout="",
+                stderr="",
+                status="succeeded",
+                execution_boundary="HOST_SAFE",
+                network_policy=(
+                    NetworkPolicy.NETWORK_NONE.value
+                ),
+            )
+
+        if argv == [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "*manage.py",
+        ]:
+            return TaskCommandResult(
+                command_id=(
+                    f"untracked-{len(runner_calls)}"
+                ),
+                task_id="TASK-AJAN-1",
+                argv=argv,
+                cwd=".",
+                permission_level=(
+                    PermissionLevel.EXECUTE_SAFE.value
+                ),
+                started_at="t0",
+                finished_at="t1",
+                duration_ms=2,
+                exit_code=0,
+                stdout="ajan/manage.py\n",
+                stderr="",
+                status="succeeded",
+                execution_boundary="HOST_SAFE",
+                network_policy=(
+                    NetworkPolicy.NETWORK_NONE.value
+                ),
+            )
+
+        if (
+            argv[:3]
+            == ["python", "manage.py", "check"]
+            and cwd == "ajan"
+        ):
+            return _success_result(
+                argv=argv,
+                cwd="ajan",
+                command_id=f"check-{len(runner_calls)}",
+            )
+
+        raise AssertionError(
+            f"Unexpected command: argv={argv!r} cwd={cwd!r}"
+        )
+
+    scripts = [
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "tracked",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "git",
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "*manage.py",
+                ],
+                "cwd": None,
+                "reason": "untracked",
+            }
+        ),
+        _action(
+            {
+                "action_type": "run_command",
+                "argv": [
+                    "python",
+                    "manage.py",
+                    "check",
+                ],
+                "cwd": "ajan",
+                "reason": "from evidence",
+            }
+        ),
+        _action(
+            {
+                "action_type": "complete",
+                "reason": "django check ok",
+                "summary": "Found via untracked discovery.",
+            }
+        ),
+    ]
+    decider = ScriptedDecider(scripts)
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-AJAN-1",
+        prompt="django check",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert len(runner_calls) == 3
+    assert list(runner_calls[0]["request"].argv) == [
+        "git",
+        "ls-files",
+        "*manage.py",
+    ]
+    assert list(runner_calls[1]["request"].argv) == [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "*manage.py",
+    ]
+    assert list(runner_calls[2]["request"].argv) == [
+        "python",
+        "manage.py",
+        "check",
+    ]
+    assert runner_calls[2]["request"].cwd == "ajan"
+    # cwd must come from evidence, not prompt hardcoding
+    # in controller — scripts derive it from stdout.
+    assert "ajan/manage.py" in decider.calls[2][
+        "user_prompt"
+    ]
 
 
 def test_oscillation_stall():

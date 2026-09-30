@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from factory.agent_terminal_models import (
@@ -50,6 +51,7 @@ from factory.task_command_models import (
     TaskCommandValidationError,
 )
 from factory.task_command_runner import (
+    is_host_safe_git_argv,
     run_task_command,
 )
 from factory.task_secret_injection import (
@@ -107,6 +109,14 @@ _DETERMINISTIC_MISSING_PATH_FEEDBACK = (
     "change cwd or argv before retrying."
 )
 
+_EMPTY_DISCOVERY_FEEDBACK = (
+    "Discovery command succeeded but returned no "
+    "matches. Do not repeat the same query unchanged. "
+    "Try another safe discovery source, including "
+    "untracked non-ignored files, or change the "
+    "search pattern."
+)
+
 
 def is_deterministic_missing_path_failure(
     *,
@@ -134,6 +144,67 @@ def is_deterministic_missing_path_failure(
         marker in text
         for marker in _MISSING_PATH_STDERR_MARKERS
     )
+
+
+def is_deterministic_git_ls_files_discovery(
+    argv: Sequence[str],
+) -> bool:
+    """True for safe ``git ls-files`` discovery argv.
+
+    Targeted to deterministic repository discovery.
+    Does not classify arbitrary successful commands.
+    """
+    tokens = [str(part) for part in argv]
+
+    if not tokens:
+        return False
+
+    executable = Path(tokens[0]).name.casefold()
+
+    if executable not in {"git", "git.exe"}:
+        return False
+
+    # is_host_safe_git_argv expects subcommand argv
+    # without the git executable token.
+    return is_host_safe_git_argv(tokens[1:]) and (
+        _git_subcommand_is_ls_files(tokens[1:])
+    )
+
+
+def _git_subcommand_is_ls_files(
+    args: Sequence[str],
+) -> bool:
+    index = 0
+
+    while index < len(args):
+        lowered = str(args[index]).casefold()
+
+        if lowered == "--no-pager":
+            index += 1
+            continue
+
+        if lowered.startswith("-"):
+            return False
+
+        return lowered == "ls-files"
+
+    return False
+
+
+def is_successful_empty_discovery_result(
+    *,
+    status: str,
+    exit_code: int | None,
+    stdout: str,
+) -> bool:
+    """Success with empty stdout — discovery found nothing."""
+    if str(status or "") != "succeeded":
+        return False
+
+    if exit_code not in (0, None):
+        return False
+
+    return not str(stdout or "").strip()
 
 
 def command_fingerprint(
@@ -304,6 +375,9 @@ def run_agent_terminal_loop(
     outcomes_seen: list[str] = []
     fingerprint_counts: dict[str, int] = {}
     deterministic_missing_path_fps: set[str] = (
+        set()
+    )
+    deterministic_empty_discovery_fps: set[str] = (
         set()
     )
 
@@ -630,6 +704,42 @@ def run_agent_terminal_loop(
 
             continue
 
+        # Successful-but-empty deterministic discovery
+        # (e.g. git ls-files): identical retry is
+        # useless and must not re-run the subprocess.
+        if fingerprint in (
+            deterministic_empty_discovery_fps
+        ):
+            consecutive_invalid += 1
+            observation = rejected_observation(
+                argv=list(action.argv),
+                cwd=action.cwd,
+                rejection_reason=(
+                    "identical_empty_discovery_"
+                    "retry_blocked"
+                ),
+                controller_feedback=(
+                    _EMPTY_DISCOVERY_FEEDBACK
+                ),
+            )
+            observations.append(observation)
+            last_observation = observation
+
+            if (
+                consecutive_invalid
+                >= active_policy
+                .max_consecutive_invalid_actions
+            ):
+                return _result(
+                    "budget_exceeded",
+                    reason=(
+                        "max_consecutive_invalid_actions"
+                    ),
+                    summary=_EMPTY_DISCOVERY_FEEDBACK,
+                )
+
+            continue
+
         # Valid executable attempt resets invalid streak.
         consecutive_invalid = 0
 
@@ -892,6 +1002,31 @@ def run_agent_terminal_loop(
         if _is_success_status(status):
             successful_commands += 1
             consecutive_failures = 0
+
+            if (
+                is_deterministic_git_ls_files_discovery(
+                    action.argv
+                )
+                and is_successful_empty_discovery_result(
+                    status=status,
+                    exit_code=getattr(
+                        command_result,
+                        "exit_code",
+                        None,
+                    ),
+                    stdout=str(
+                        getattr(
+                            command_result,
+                            "stdout",
+                            "",
+                        )
+                        or ""
+                    ),
+                )
+            ):
+                deterministic_empty_discovery_fps.add(
+                    fingerprint
+                )
         elif _is_negative_status(status):
             if status == "rejected":
                 rejected_commands += 1

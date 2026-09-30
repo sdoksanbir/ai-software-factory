@@ -44,12 +44,23 @@ def test_system_prompt_capability_guidance():
 def test_system_prompt_repository_discovery_guidance():
     text = build_terminal_system_prompt()
     assert "Do not assume the repository root" in text
-    assert '["git","ls-files"]' in text
-    assert '*manage.py' in text
+    assert "untracked" in text.casefold()
+    assert "--others" in text
+    assert "--exclude-standard" in text
+    assert '["git","ls-files","*manage.py"]' in text
+    assert (
+        '["git","ls-files","--others",'
+        '"--exclude-standard","*manage.py"]'
+    ) in text
     assert '*package.json' in text
     assert '*pyproject.toml' in text
     assert '*Cargo.toml' in text
     assert "edusen" not in text
+    assert "hardcode a folder name" in text.casefold()
+    assert "empty stdout" in text.casefold() or (
+        "returned no" in text.casefold()
+        or "empty" in text.casefold()
+    )
     assert "change cwd or the" in text.casefold() or (
         "change cwd or argv" in text.casefold()
     )

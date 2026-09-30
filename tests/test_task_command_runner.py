@@ -1237,6 +1237,33 @@ def test_host_safe_git_rev_parse_and_ls_files():
     assert is_host_safe_git_argv(
         ["ls-files", "--cached"]
     )
+    assert is_host_safe_git_argv(
+        [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "*manage.py",
+        ]
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            ["ls-files", "*manage.py"],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
+    assert (
+        classify_permission_level(
+            "git",
+            [
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "*manage.py",
+            ],
+        )
+        == PermissionLevel.EXECUTE_SAFE
+    )
     assert (
         classify_execution_boundary(
             "git",
@@ -1250,6 +1277,30 @@ def test_host_safe_git_rev_parse_and_ls_files():
             ["ls-files", "--exclude-standard"],
         )
         == ExecutionBoundary.HOST_SAFE
+    )
+    assert (
+        classify_execution_boundary(
+            "git",
+            [
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "*manage.py",
+            ],
+        )
+        == ExecutionBoundary.HOST_SAFE
+    )
+    assert (
+        classify_network_policy(
+            "git",
+            [
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "*manage.py",
+            ],
+        )
+        == NetworkPolicy.NETWORK_NONE
     )
 
 

@@ -69,15 +69,32 @@ Do not assume the repository root contains framework or project
 marker files such as manage.py, package.json, pyproject.toml, or
 Cargo.toml. Nested project layouts are common.
 
+EXECUTE tasks often create new projects or files before any Git
+add/commit. Those paths are frequently untracked. Repository
+discovery must not assume all relevant files are tracked, and
+must not git add or commit merely to make discovery work.
+
 Before running a command that references a repository-relative
 file whose location has not been established by prior evidence,
 inspect the repository first. Prefer already-allowed safe Git
-discovery commands, for example:
-["git","ls-files"]
+discovery commands. Check BOTH tracked and untracked non-ignored
+files, for example:
 ["git","ls-files","*manage.py"]
+["git","ls-files","--others","--exclude-standard","*manage.py"]
 ["git","ls-files","*package.json"]
+["git","ls-files","--others","--exclude-standard","*package.json"]
 ["git","ls-files","*pyproject.toml"]
+["git","ls-files","--others","--exclude-standard","*pyproject.toml"]
 ["git","ls-files","*Cargo.toml"]
+["git","ls-files","--others","--exclude-standard","*Cargo.toml"]
+
+A successful discovery command with empty stdout is not evidence
+that the file is absent — only that that exact query matched
+nothing. Do not repeat the same discovery argv and cwd unchanged.
+If tracked ls-files is empty, try untracked non-ignored discovery
+(--others --exclude-standard), change the search pattern, or
+otherwise change the query before concluding the file does not
+exist.
 
 If discovery evidence shows a nested marker such as
 subdir/manage.py, prefer either a project-relative cwd for that
