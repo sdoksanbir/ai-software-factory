@@ -60,6 +60,33 @@ class ExecuteWorktreeSession:
     path: str
     repository_root: str
     before_guard: GitWorkingTreeGuard
+    # EXECUTE worktree fingerprint AFTER materialization
+    # and BEFORE the agent runs. Distinct from
+    # before_guard (main concurrency guard).
+    execute_baseline_guard: GitWorkingTreeGuard
+
+
+EXECUTE_ISOLATED_GIT_CHANGES_LOG = (
+    "EXECUTE left isolated Git-visible changes; "
+    "they were not applied to the main project."
+)
+
+
+def capture_execute_worktree_guard(
+    *,
+    worktree_path: str,
+    worktree_root: str,
+) -> GitWorkingTreeGuard:
+    """Fingerprint a linked EXECUTE worktree.
+
+    Uses a dedicated manager so ``repo_root`` resolves
+    to the worktree toplevel (not the main checkout).
+    """
+    manager = GitWorktreeManager(
+        project_path=worktree_path,
+        worktree_root=worktree_root,
+    )
+    return manager.capture_working_tree_guard()
 
 
 def _post_materialize_before_guard_recheck() -> None:
@@ -432,6 +459,15 @@ def prepare_execute_worktree(
                 "Project working tree changed while preparing "
                 "isolated execution; retry."
             )
+        # Baseline includes materialized dirty main
+        # state. Agent-produced changes are detected
+        # against this fingerprint, not against clean.
+        execute_baseline_guard = (
+            capture_execute_worktree_guard(
+                worktree_path=created.path,
+                worktree_root=git_manager.worktree_root,
+            )
+        )
     except Exception:
         if created is not None:
             try:
@@ -473,4 +509,5 @@ def prepare_execute_worktree(
         path=created.path,
         repository_root=created.repository_root,
         before_guard=before_guard,
+        execute_baseline_guard=execute_baseline_guard,
     )

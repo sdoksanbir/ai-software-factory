@@ -148,6 +148,10 @@ def _mock_execute_isolation(
                 head_sha="abc",
                 entries=(),
             ),
+            execute_baseline_guard=GitWorkingTreeGuard(
+                head_sha="abc",
+                entries=(),
+            ),
         )
 
     def fake_cleanup(
@@ -566,8 +570,14 @@ def test_execute_dispatches_to_agent_terminal_loop(
         "Agent Terminal tamamlandi:" in message
         for _tid, message in logs
     )
+    # Mocked worktree path cannot be fingerprinted;
+    # change detection fails open (no false positive).
+    assert not any(
+        "Git-visible changes" in message
+        for _tid, message in logs
+    )
     assert any(
-        "were not applied to the main project"
+        "EXECUTE change detection unavailable:"
         in message
         for _tid, message in logs
     )

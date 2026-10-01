@@ -11,11 +11,13 @@ from factory.agent_terminal_models import (
     build_execute_terminal_policy,
 )
 from factory.execute_worktree import (
+    EXECUTE_ISOLATED_GIT_CHANGES_LOG,
     ExecuteCleanupError,
     ExecuteConcurrencyError,
     ExecuteConflictError,
     ExecuteIsolationError,
     ExecuteWorktreeSession,
+    capture_execute_worktree_guard,
     cleanup_execute_worktree,
     prepare_execute_worktree,
 )
@@ -467,15 +469,39 @@ class TaskExecutionService:
                         f"{summary}"
                     ),
                 )
-                self._deps.append_log(
-                    task_id,
-                    (
-                        "EXECUTE produced isolated "
-                        "filesystem changes; they "
-                        "were not applied to the "
-                        "main project."
-                    ),
-                )
+                try:
+                    final_guard = (
+                        capture_execute_worktree_guard(
+                            worktree_path=(
+                                session.path
+                            ),
+                            worktree_root=(
+                                git_manager
+                                .worktree_root
+                            ),
+                        )
+                    )
+                except Exception as exc:
+                    # Informational only — never fail
+                    # a successful EXECUTE for this.
+                    self._deps.append_log(
+                        task_id,
+                        (
+                            "EXECUTE change detection "
+                            "unavailable: "
+                            f"{type(exc).__name__}."
+                        ),
+                    )
+                else:
+                    if (
+                        final_guard
+                        != session
+                        .execute_baseline_guard
+                    ):
+                        self._deps.append_log(
+                            task_id,
+                            EXECUTE_ISOLATED_GIT_CHANGES_LOG,
+                        )
 
                 self._release_and_run_dependents(
                     task_id

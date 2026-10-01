@@ -13,6 +13,7 @@ import subprocess
 import pytest
 
 from factory.execute_worktree import (
+    EXECUTE_ISOLATED_GIT_CHANGES_LOG,
     ExecuteConcurrencyError,
     ExecuteConflictError,
     cleanup_execute_worktree,
@@ -603,10 +604,381 @@ def test_service_passes_worktree_to_terminal_and_cleans(
     after = _snapshot_main(repo)
     assert after == before
     assert any(
-        "were not applied to the main project"
+        message == EXECUTE_ISOLATED_GIT_CHANGES_LOG
+        for _tid, message in logs
+    )
+
+
+def _stub_execute_routing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "route_task_semantic",
+        lambda prompt, **kwargs: SimpleNamespace(
+            kind="execute",
+            reason="execute",
+            intent="run_tests",
+            target=None,
+            framework=None,
+            confidence=1.0,
+            source="test",
+        ),
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "save_task_route",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "get_task_model_preference",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "route_model",
+        lambda prompt: SimpleNamespace(
+            model="m",
+            profile="p",
+            reason="r",
+            code_score=1,
+        ),
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "save_task_read_result",
+        lambda *a, **k: None,
+    )
+
+
+def _completed_terminal_result(
+    summary: str = "ok",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        status="completed",
+        summary=summary,
+        reason=summary,
+        steps_used=1,
+        commands_executed=1,
+        successful_commands=1,
+        failed_commands=0,
+        rejected_commands=0,
+        last_observation=None,
+    )
+
+
+def _run_execute_service(
+    *,
+    repo: Path,
+    wt_root: Path,
+    manager: GitWorktreeManager,
+    task_id: str,
+    monkeypatch,
+    terminal,
+) -> tuple[list, list]:
+    task = SimpleNamespace(
+        task_id=task_id,
+        prompt="execute",
+        max_attempts=2,
+        status="queued",
+        state="queued",
+        task_kind=None,
+        model=None,
+        attempt=0,
+        test_result=None,
+    )
+    orch = SimpleNamespace(
+        project_path=str(repo),
+        worktree_root=str(wt_root),
+        model_client=object(),
+        git_manager=manager,
+    )
+    logs: list = []
+    updates: list = []
+    _stub_execute_routing(monkeypatch)
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "run_agent_terminal_loop",
+        terminal,
+    )
+    deps = TaskExecutionDeps(
+        get_task=lambda tid: task,
+        iter_tasks=lambda: [(task.task_id, task)],
+        append_log=lambda tid, message: logs.append(
+            (tid, message)
+        ),
+        update_runtime=lambda tid, **kwargs: updates.append(
+            (tid, kwargs)
+        ),
+        evaluate_gate=lambda tid, _s: {
+            "task_id": tid,
+            "allowed": True,
+            "state": "allowed",
+            "graph_ids": [],
+            "blocked_graphs": [],
+            "failed_graphs": [],
+            "pending_dependencies": [],
+            "failed_dependencies": [],
+        },
+        build_orchestrator=lambda _t: orch,
+        approval_handler=lambda *a, **k: None,
+        progress_handler=lambda *a, **k: None,
+        cleanup_failed=lambda *a, **k: None,
+        release_dependents=lambda _tid: [],
+    )
+    TaskExecutionService(deps).run(task.task_id)
+    return logs, updates
+
+
+def test_prepare_baseline_includes_materialized_dirty_state(
+    tmp_path,
+):
+    """TASK-7825: dirty main is baseline, not new change."""
+    repo, _wt_root, manager = _make_repo(tmp_path)
+
+    (repo / "source.py").write_text(
+        "VALUE = staged\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "source.py")
+    (repo / "source.py").write_text(
+        "VALUE = unstaged\n",
+        encoding="utf-8",
+    )
+    (repo / "local-data.txt").write_text(
+        "local\n",
+        encoding="utf-8",
+    )
+    main_before = manager.capture_working_tree_guard()
+
+    session = prepare_execute_worktree(
+        manager,
+        "TASK-BASELINE",
+    )
+    try:
+        assert session.before_guard == main_before
+        assert session.execute_baseline_guard is not None
+        baseline_paths = {
+            entry.path
+            for entry in (
+                session.execute_baseline_guard.entries
+            )
+        }
+        assert "source.py" in baseline_paths
+        assert "local-data.txt" in baseline_paths
+        # Read-only re-capture must match baseline.
+        from factory.execute_worktree import (
+            capture_execute_worktree_guard,
+        )
+
+        final = capture_execute_worktree_guard(
+            worktree_path=session.path,
+            worktree_root=manager.worktree_root,
+        )
+        assert final == session.execute_baseline_guard
+    finally:
+        cleanup_execute_worktree(
+            manager,
+            path=session.path,
+            branch=session.branch,
+        )
+
+    assert (
+        manager.capture_working_tree_guard()
+        == main_before
+    )
+
+
+def test_readonly_execute_on_clean_main_skips_change_log(
+    tmp_path,
+    monkeypatch,
+):
+    repo, wt_root, manager = _make_repo(tmp_path)
+    before = _snapshot_main(repo)
+
+    def fake_terminal(**kwargs):
+        path = Path(kwargs["project_path"])
+        assert (path / "source.py").is_file()
+        return _completed_terminal_result("read-only")
+
+    logs, updates = _run_execute_service(
+        repo=repo,
+        wt_root=wt_root,
+        manager=manager,
+        task_id="TASK-RO-CLEAN",
+        monkeypatch=monkeypatch,
+        terminal=fake_terminal,
+    )
+
+    assert any(
+        kwargs.get("status") == "completed"
+        for _tid, kwargs in updates
+    )
+    assert not any(
+        message == EXECUTE_ISOLATED_GIT_CHANGES_LOG
+        for _tid, message in logs
+    )
+    assert not any(
+        "change detection unavailable" in message
+        for _tid, message in logs
+    )
+    assert any(
+        "cleanup tamamlandi" in message
+        for _tid, message in logs
+    )
+    assert _snapshot_main(repo) == before
+
+
+def test_readonly_execute_on_dirty_main_skips_change_log(
+    tmp_path,
+    monkeypatch,
+):
+    """TASK-7825 regression: materialized dirty ≠ produced."""
+    repo, wt_root, manager = _make_repo(tmp_path)
+
+    (repo / "source.py").write_text(
+        "VALUE = staged\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "source.py")
+    (repo / "source.py").write_text(
+        "VALUE = unstaged\n",
+        encoding="utf-8",
+    )
+    (repo / "local-data.txt").write_text(
+        "local\n",
+        encoding="utf-8",
+    )
+    before = _snapshot_main(repo)
+
+    def fake_terminal(**kwargs):
+        path = Path(kwargs["project_path"])
+        assert (path / "source.py").read_text(
+            encoding="utf-8"
+        ) == "VALUE = unstaged\n"
+        assert (path / "local-data.txt").read_text(
+            encoding="utf-8"
+        ) == "local\n"
+        return _completed_terminal_result(
+            "verified dirty materialization"
+        )
+
+    logs, updates = _run_execute_service(
+        repo=repo,
+        wt_root=wt_root,
+        manager=manager,
+        task_id="TASK-7825",
+        monkeypatch=monkeypatch,
+        terminal=fake_terminal,
+    )
+
+    assert any(
+        kwargs.get("status") == "completed"
+        for _tid, kwargs in updates
+    )
+    assert not any(
+        message == EXECUTE_ISOLATED_GIT_CHANGES_LOG
+        for _tid, message in logs
+    )
+    assert not any(
+        "filesystem changes" in message
+        for _tid, message in logs
+    )
+    assert any(
+        "cleanup tamamlandi" in message
+        for _tid, message in logs
+    )
+    assert _snapshot_main(repo) == before
+
+
+def test_execute_new_git_visible_change_logs_isolation(
+    tmp_path,
+    monkeypatch,
+):
+    repo, wt_root, manager = _make_repo(tmp_path)
+    before = _snapshot_main(repo)
+
+    def fake_terminal(**kwargs):
+        path = Path(kwargs["project_path"])
+        (path / "source.py").write_text(
+            "VALUE = execute-modified\n",
+            encoding="utf-8",
+        )
+        (path / "generated.txt").write_text(
+            "from-execute\n",
+            encoding="utf-8",
+        )
+        return _completed_terminal_result("wrote")
+
+    logs, _updates = _run_execute_service(
+        repo=repo,
+        wt_root=wt_root,
+        manager=manager,
+        task_id="TASK-NEW-CHG",
+        monkeypatch=monkeypatch,
+        terminal=fake_terminal,
+    )
+
+    assert any(
+        message == EXECUTE_ISOLATED_GIT_CHANGES_LOG
+        for _tid, message in logs
+    )
+    assert not (repo / "generated.txt").exists()
+    assert (repo / "source.py").read_text(
+        encoding="utf-8"
+    ) == "VALUE = 1\n"
+    assert _snapshot_main(repo) == before
+
+
+def test_execute_change_detection_failure_fails_open(
+    tmp_path,
+    monkeypatch,
+):
+    repo, wt_root, manager = _make_repo(tmp_path)
+    before = _snapshot_main(repo)
+
+    def fake_terminal(**kwargs):
+        return _completed_terminal_result("ok")
+
+    def boom_capture(**kwargs):
+        raise RuntimeError("guard exploded")
+
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "capture_execute_worktree_guard",
+        boom_capture,
+    )
+
+    logs, updates = _run_execute_service(
+        repo=repo,
+        wt_root=wt_root,
+        manager=manager,
+        task_id="TASK-GUARD-FAIL",
+        monkeypatch=monkeypatch,
+        terminal=fake_terminal,
+    )
+
+    assert any(
+        kwargs.get("status") == "completed"
+        for _tid, kwargs in updates
+    )
+    assert not any(
+        message == EXECUTE_ISOLATED_GIT_CHANGES_LOG
+        for _tid, message in logs
+    )
+    assert any(
+        "EXECUTE change detection unavailable: "
+        "RuntimeError."
         in message
         for _tid, message in logs
     )
+    assert any(
+        "cleanup tamamlandi" in message
+        for _tid, message in logs
+    )
+    assert not manager._branch_exists(
+        "execute/TASK-GUARD-FAIL"
+    )
+    assert _snapshot_main(repo) == before
 
 
 def test_service_cleans_up_when_terminal_raises(
