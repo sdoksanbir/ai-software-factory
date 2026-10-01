@@ -672,6 +672,37 @@ def persist_and_publish_approved_task(
     return current
 
 
+def persist_and_publish_rejected_task(
+    task_id: str,
+) -> TaskCreateResponse:
+    """
+    Durable reject commit before disposable worktree/branch cleanup.
+
+    Stage rejected status/state on a TaskCreateResponse copy, persist
+    that snapshot to SQLite first, then publish into the live TASKS
+    object only after the DB commit succeeds. On persistence failure the
+    live task stays ready_for_approval so evidence remains usable.
+    """
+    current = TASKS.get(task_id)
+
+    if current is None:
+        raise KeyError(f"Unknown task: {task_id}")
+
+    candidate = current.model_copy(
+        update={
+            "status": "rejected",
+            "state": "rejected",
+        }
+    )
+
+    persist_task(candidate)
+
+    current.status = "rejected"
+    current.state = "rejected"
+
+    return current
+
+
 def build_orchestrator_for_task(
     task: TaskCreateResponse,
 ) -> Orchestrator:
@@ -2610,8 +2641,8 @@ def reject_task(task_id: str):
     PROJECT_UNAVAILABLE_DETAIL = (
         "Görevin bağlı olduğu proje kullanılamıyor."
     )
-    REJECTION_FAILED_DETAIL = (
-        "Reddetme işlemi tamamlanamadı. "
+    REJECTION_PERSISTENCE_FAILED_DETAIL = (
+        "Reddetme durumu kaydedilemedi. "
         "Görev kayıtlarını kontrol edin."
     )
 
@@ -2658,6 +2689,8 @@ def reject_task(task_id: str):
 
     state_machine = context["state_machine"]
     wt_result = context["wt_result"]
+    worktree_path = wt_result.path
+    branch_name = wt_result.branch
 
     try:
         orchestrator = build_orchestrator_for_task(
@@ -2673,36 +2706,65 @@ def reject_task(task_id: str):
             detail=PROJECT_UNAVAILABLE_DETAIL,
         ) from exc
 
+    git_manager = orchestrator.git_manager
+
+    # PHASE 1 — Durable reject decision (SQLite is authoritative).
+    # Do not mutate live TASKS, cleanup evidence, or sync the state
+    # machine until this commit succeeds.
     try:
-        orchestrator.git_manager.remove_worktree(
-            wt_result.path,
-            force=True,
-        )
-
-        orchestrator.git_manager.delete_branch(
-            wt_result.branch,
-            force=True,
-        )
-
-        state_machine.transition(TaskStatus.REJECTED)
-
+        persist_and_publish_rejected_task(task_id)
     except Exception as exc:
         append_task_log(
             task_id,
-            f"Task rejection failed: {exc}",
+            f"Task rejection persistence failed: {exc}",
         )
         raise HTTPException(
             status_code=500,
-            detail=REJECTION_FAILED_DETAIL,
+            detail=REJECTION_PERSISTENCE_FAILED_DETAIL,
         ) from exc
 
-    update_task_runtime(
-        task_id,
-        status="rejected",
-        state="rejected",
-    )
+    # PHASE 2 — Ephemeral synchronization / disposable cleanup.
+    # Failures here must not invalidate the durable rejected DB commit.
+    try:
+        state_machine.transition(TaskStatus.REJECTED)
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Reject state-machine synchronization failed: "
+                f"{exc}"
+            ),
+        )
 
     TASK_CONTEXTS.pop(task_id, None)
+
+    try:
+        git_manager.remove_worktree(
+            worktree_path,
+            force=True,
+        )
+    except Exception as cleanup_exc:
+        append_task_log(
+            task_id,
+            (
+                "Reject cleanup warning: worktree cleanup failed: "
+                f"{cleanup_exc}"
+            ),
+        )
+
+    try:
+        git_manager.delete_branch(
+            branch_name,
+            force=True,
+        )
+    except Exception as cleanup_exc:
+        append_task_log(
+            task_id,
+            (
+                "Reject cleanup warning: branch cleanup failed: "
+                f"{cleanup_exc}"
+            ),
+        )
 
     append_task_log(
         task_id,

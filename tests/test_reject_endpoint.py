@@ -1,4 +1,4 @@
-"""Reject endpoint: user-safe HTTP details, technical logs only."""
+"""Reject endpoint: persist-first decision, best-effort cleanup."""
 
 from types import SimpleNamespace
 
@@ -20,14 +20,16 @@ REJECTION_CONTEXT_UNAVAILABLE_DETAIL = (
 PROJECT_UNAVAILABLE_DETAIL = (
     "Görevin bağlı olduğu proje kullanılamıyor."
 )
-REJECTION_FAILED_DETAIL = (
-    "Reddetme işlemi tamamlanamadı. "
+REJECTION_PERSISTENCE_FAILED_DETAIL = (
+    "Reddetme durumu kaydedilemedi. "
     "Görev kayıtlarını kontrol edin."
 )
 
 SECRET_PATH = r"C:\SECRET_PATH"
 SECRET_STDERR = "SECRET_STDERR"
 SECRET_BRANCH = "SECRET_BRANCH"
+SECRET_DB_PATH = r"C:\SECRET_DB_PATH"
+SECRET_SQL_ERROR = "SECRET_SQL_ERROR"
 INTERNAL_PROJECT_ID = "INTERNAL-PROJECT-ID"
 INTERNAL_STATE_MACHINE_SECRET = (
     "INTERNAL_STATE_MACHINE_SECRET"
@@ -37,6 +39,8 @@ LEAKAGE_SENTINELS = (
     SECRET_PATH,
     SECRET_STDERR,
     SECRET_BRANCH,
+    SECRET_DB_PATH,
+    SECRET_SQL_ERROR,
     INTERNAL_PROJECT_ID,
     INTERNAL_STATE_MACHINE_SECRET,
 )
@@ -62,12 +66,16 @@ class RecordingGitManager:
         remove_error=None,
         fail_delete_branch=False,
         delete_error=None,
+        worktree_exists=True,
+        branch_exists=True,
     ):
         self.calls = []
         self.fail_remove_worktree = fail_remove_worktree
         self.remove_error = remove_error
         self.fail_delete_branch = fail_delete_branch
         self.delete_error = delete_error
+        self.worktree_exists = worktree_exists
+        self.branch_exists = branch_exists
         self.cleaned_worktree = False
         self.deleted_branch = False
 
@@ -75,20 +83,31 @@ class RecordingGitManager:
         self.calls.append(
             ("remove_worktree", path, kwargs.get("force"))
         )
+        if not self.worktree_exists:
+            raise self.remove_error or GitOperationError(
+                f"Git command failed ("
+                f"'git worktree remove --force {path}'"
+                f"): is not a working tree"
+            )
         if self.fail_remove_worktree:
             raise self.remove_error or RuntimeError(
                 "cleanup failed"
             )
+        self.worktree_exists = False
         self.cleaned_worktree = True
 
     def delete_branch(self, branch, *args, **kwargs):
         self.calls.append(
             ("delete_branch", branch, kwargs.get("force"))
         )
+        if not self.branch_exists:
+            # Real delete_branch is missing-ok.
+            return
         if self.fail_delete_branch:
             raise self.delete_error or RuntimeError(
                 "cleanup failed"
             )
+        self.branch_exists = False
         self.deleted_branch = True
 
 
@@ -112,6 +131,8 @@ def _prepare_reject(
     git_manager,
     task_id="TASK-REJECT",
     state_machine=None,
+    fail_persist=False,
+    persist_error=None,
 ):
     task = app_module.TaskCreateResponse(
         task_id=task_id,
@@ -147,6 +168,7 @@ def _prepare_reject(
 
     logs = []
     persisted = []
+    persist_order = []
 
     monkeypatch.setattr(
         app_module,
@@ -157,6 +179,19 @@ def _prepare_reject(
     )
 
     def fake_persist_task(staged_task, **kwargs):
+        persist_order.append(
+            (
+                "persist",
+                staged_task.task_id,
+                staged_task.status,
+                staged_task.state,
+                app_module.TASKS[task_id].state,
+            )
+        )
+        if fail_persist:
+            raise persist_error or RuntimeError(
+                "persist failed"
+            )
         persisted.append(
             (
                 staged_task.task_id,
@@ -189,6 +224,7 @@ def _prepare_reject(
         logs,
         restore,
         persisted,
+        persist_order,
     )
 
 
@@ -201,6 +237,7 @@ def test_success_reject(monkeypatch):
         logs,
         restore,
         persisted,
+        persist_order,
     ) = _prepare_reject(
         monkeypatch,
         git_manager=git_manager,
@@ -228,6 +265,469 @@ def test_success_reject(monkeypatch):
         ]
         assert ("TASK-REJECT-OK", "rejected", "rejected") in (
             persisted
+        )
+        assert persist_order[0][0] == "persist"
+        assert persist_order[0][4] == "ready_for_approval"
+    finally:
+        restore()
+
+
+def test_worktree_cleanup_failure_still_rejects(
+    monkeypatch,
+):
+    secret_exc = GitOperationError(
+        "Git command failed ("
+        f"'git worktree remove --force {SECRET_PATH}'"
+        f"): {SECRET_STDERR}"
+    )
+    git_manager = RecordingGitManager(
+        fail_remove_worktree=True,
+        remove_error=secret_exc,
+    )
+    (
+        task,
+        state_machine,
+        wt_result,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-WT-FAIL",
+    )
+
+    try:
+        result = app_module.reject_task("TASK-WT-FAIL")
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert ("TASK-WT-FAIL", "rejected", "rejected") in (
+            persisted
+        )
+        assert "TASK-WT-FAIL" not in app_module.TASK_CONTEXTS
+        assert app_module.TaskStatus.REJECTED in (
+            state_machine.transitions
+        )
+        assert git_manager.cleaned_worktree is False
+        assert git_manager.deleted_branch is True
+        assert git_manager.calls == [
+            ("remove_worktree", wt_result.path, True),
+            ("delete_branch", wt_result.branch, True),
+        ]
+        assert any(
+            "Reject cleanup warning: worktree cleanup failed:"
+            in message
+            and SECRET_PATH in message
+            and SECRET_STDERR in message
+            for message in logs
+        )
+        assert SUCCESS_LOG in logs
+    finally:
+        restore()
+
+
+def test_branch_cleanup_failure_still_rejects(
+    monkeypatch,
+):
+    secret_exc = GitOperationError(
+        "Git command failed ("
+        f"'git branch -D {SECRET_BRANCH}'"
+        f"): {SECRET_STDERR}"
+    )
+    git_manager = RecordingGitManager(
+        fail_delete_branch=True,
+        delete_error=secret_exc,
+    )
+    (
+        task,
+        state_machine,
+        wt_result,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-BRANCH-FAIL",
+    )
+
+    try:
+        result = app_module.reject_task("TASK-BRANCH-FAIL")
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert ("TASK-BRANCH-FAIL", "rejected", "rejected") in (
+            persisted
+        )
+        assert "TASK-BRANCH-FAIL" not in (
+            app_module.TASK_CONTEXTS
+        )
+        assert git_manager.cleaned_worktree is True
+        assert git_manager.deleted_branch is False
+        assert git_manager.worktree_exists is False
+        assert git_manager.branch_exists is True
+        assert any(
+            "Reject cleanup warning: branch cleanup failed:"
+            in message
+            and SECRET_BRANCH in message
+            for message in logs
+        )
+        assert SUCCESS_LOG in logs
+        assert app_module.TaskStatus.REJECTED in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_both_cleanup_failures_still_rejects(monkeypatch):
+    git_manager = RecordingGitManager(
+        fail_remove_worktree=True,
+        remove_error=GitOperationError("wt boom"),
+        fail_delete_branch=True,
+        delete_error=GitOperationError("branch boom"),
+    )
+    (
+        task,
+        _sm,
+        wt_result,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-BOTH-CLEANUP-FAIL",
+    )
+
+    try:
+        result = app_module.reject_task(
+            "TASK-BOTH-CLEANUP-FAIL"
+        )
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert (
+            "TASK-BOTH-CLEANUP-FAIL",
+            "rejected",
+            "rejected",
+        ) in persisted
+        assert git_manager.calls == [
+            ("remove_worktree", wt_result.path, True),
+            ("delete_branch", wt_result.branch, True),
+        ]
+        assert any(
+            "Reject cleanup warning: worktree cleanup failed:"
+            in message
+            for message in logs
+        )
+        assert any(
+            "Reject cleanup warning: branch cleanup failed:"
+            in message
+            for message in logs
+        )
+        assert SUCCESS_LOG in logs
+    finally:
+        restore()
+
+
+def test_state_machine_failure_still_rejects(monkeypatch):
+    git_manager = RecordingGitManager()
+    state_machine = FakeStateMachine(
+        fail_transition=True,
+        error=RuntimeError(INTERNAL_STATE_MACHINE_SECRET),
+    )
+    (
+        task,
+        _sm,
+        _wt,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-SM-FAIL",
+        state_machine=state_machine,
+    )
+
+    try:
+        result = app_module.reject_task("TASK-SM-FAIL")
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert ("TASK-SM-FAIL", "rejected", "rejected") in (
+            persisted
+        )
+        assert "TASK-SM-FAIL" not in app_module.TASK_CONTEXTS
+        assert git_manager.cleaned_worktree is True
+        assert git_manager.deleted_branch is True
+        assert any(
+            "Reject state-machine synchronization failed:"
+            in message
+            and INTERNAL_STATE_MACHINE_SECRET in message
+            for message in logs
+        )
+        assert SUCCESS_LOG in logs
+    finally:
+        restore()
+
+
+def test_db_persistence_failure_preserves_evidence(
+    monkeypatch,
+):
+    persist_error = RuntimeError(
+        f"sqlite write failed path={SECRET_DB_PATH} "
+        f"err={SECRET_SQL_ERROR}"
+    )
+    git_manager = RecordingGitManager()
+    (
+        task,
+        state_machine,
+        _wt,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-PERSIST-FAIL",
+        fail_persist=True,
+        persist_error=persist_error,
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.reject_task("TASK-PERSIST-FAIL")
+
+        assert exc_info.value.status_code == 500
+        assert (
+            exc_info.value.detail
+            == REJECTION_PERSISTENCE_FAILED_DETAIL
+        )
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "sqlite",
+            "persistence",
+            "Task rejection",
+        )
+        assert task.state == "ready_for_approval"
+        assert task.status == "waiting_approval"
+        assert "TASK-PERSIST-FAIL" in app_module.TASK_CONTEXTS
+        assert persisted == []
+        assert git_manager.calls == []
+        assert git_manager.cleaned_worktree is False
+        assert git_manager.deleted_branch is False
+        assert state_machine.transitions == []
+        assert SUCCESS_LOG not in logs
+        assert any(
+            "Task rejection persistence failed:" in message
+            and SECRET_DB_PATH in message
+            and SECRET_SQL_ERROR in message
+            for message in logs
+        )
+    finally:
+        restore()
+
+
+def test_memory_publish_only_after_db_persist(monkeypatch):
+    live_states_at_persist = []
+
+    git_manager = RecordingGitManager()
+    task, _sm, _wt, _logs, restore, _, _ = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-PUBLISH-ORDER",
+    )
+
+    def tracking_persist(staged_task, **kwargs):
+        live_states_at_persist.append(
+            app_module.TASKS["TASK-PUBLISH-ORDER"].state
+        )
+        assert staged_task.state == "rejected"
+        assert staged_task.status == "rejected"
+        assert (
+            app_module.TASKS["TASK-PUBLISH-ORDER"].state
+            == "ready_for_approval"
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "persist_task",
+        tracking_persist,
+    )
+
+    try:
+        app_module.reject_task("TASK-PUBLISH-ORDER")
+        assert live_states_at_persist == [
+            "ready_for_approval"
+        ]
+        assert task.state == "rejected"
+    finally:
+        restore()
+
+
+def test_partial_cleanup_no_longer_sticks_in_queue(
+    monkeypatch,
+):
+    """Former stuck bug: remove OK + branch fail left ready."""
+    git_manager = RecordingGitManager(
+        fail_delete_branch=True,
+        delete_error=GitOperationError("branch locked"),
+    )
+    task, _sm, _wt, logs, restore, _, _ = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-NO-STUCK",
+    )
+
+    try:
+        result = app_module.reject_task("TASK-NO-STUCK")
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.reject_task("TASK-NO-STUCK")
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == INVALID_REJECTION_STATE_DETAIL
+        )
+        assert any(
+            "Reject cleanup warning: branch cleanup failed:"
+            in message
+            for message in logs
+        )
+    finally:
+        restore()
+
+
+def test_approve_after_rejected_is_state_guarded(
+    monkeypatch,
+):
+    git_manager = RecordingGitManager(
+        fail_delete_branch=True,
+        delete_error=GitOperationError("branch locked"),
+    )
+    task, _sm, _wt, _logs, restore, _, _ = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-APPROVE-AFTER",
+    )
+
+    merge_calls = []
+
+    def boom_merge(*args, **kwargs):
+        merge_calls.append(True)
+        raise AssertionError("merge must not run")
+
+    git_manager.merge_branch = boom_merge
+    git_manager.get_status = boom_merge
+    git_manager.get_repository_head = boom_merge
+    git_manager.get_branch_head = boom_merge
+
+    try:
+        app_module.reject_task("TASK-APPROVE-AFTER")
+        assert task.state == "rejected"
+
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-APPROVE-AFTER",
+                background_tasks=SimpleNamespace(
+                    add_task=lambda *a, **k: None
+                ),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert merge_calls == []
+    finally:
+        restore()
+
+
+def test_worktree_already_absent_still_rejects(
+    monkeypatch,
+):
+    git_manager = RecordingGitManager(worktree_exists=False)
+    (
+        task,
+        _sm,
+        wt_result,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-WT-ABSENT",
+    )
+
+    try:
+        result = app_module.reject_task("TASK-WT-ABSENT")
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert ("TASK-WT-ABSENT", "rejected", "rejected") in (
+            persisted
+        )
+        assert git_manager.calls == [
+            ("remove_worktree", wt_result.path, True),
+            ("delete_branch", wt_result.branch, True),
+        ]
+        assert git_manager.deleted_branch is True
+        assert any(
+            "Reject cleanup warning: worktree cleanup failed:"
+            in message
+            for message in logs
+        )
+        assert SUCCESS_LOG in logs
+    finally:
+        restore()
+
+
+def test_branch_already_absent_still_rejects(monkeypatch):
+    git_manager = RecordingGitManager(branch_exists=False)
+    (
+        task,
+        _sm,
+        wt_result,
+        logs,
+        restore,
+        persisted,
+        _,
+    ) = _prepare_reject(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-BRANCH-ABSENT",
+    )
+
+    try:
+        result = app_module.reject_task("TASK-BRANCH-ABSENT")
+
+        assert result.state == "rejected"
+        assert task.state == "rejected"
+        assert (
+            "TASK-BRANCH-ABSENT",
+            "rejected",
+            "rejected",
+        ) in persisted
+        assert git_manager.cleaned_worktree is True
+        assert git_manager.calls == [
+            ("remove_worktree", wt_result.path, True),
+            ("delete_branch", wt_result.branch, True),
+        ]
+        assert SUCCESS_LOG in logs
+        assert not any(
+            "Reject cleanup warning: branch cleanup failed:"
+            in message
+            for message in logs
         )
     finally:
         restore()
@@ -279,7 +779,7 @@ def test_task_missing_user_safe_detail(monkeypatch):
 
 def test_wrong_state_user_safe_detail(monkeypatch):
     git_manager = RecordingGitManager()
-    task, _sm, _wt, logs, restore, _ = _prepare_reject(
+    task, _sm, _wt, logs, restore, _, _ = _prepare_reject(
         monkeypatch,
         git_manager=git_manager,
         task_id="TASK-WRONG-STATE",
@@ -315,7 +815,7 @@ def test_wrong_state_user_safe_detail(monkeypatch):
 
 def test_context_missing_user_safe_detail(monkeypatch):
     git_manager = RecordingGitManager()
-    task, _sm, _wt, logs, restore, _ = _prepare_reject(
+    task, _sm, _wt, logs, restore, _, _ = _prepare_reject(
         monkeypatch,
         git_manager=git_manager,
         task_id="TASK-NO-CONTEXT",
@@ -357,7 +857,7 @@ def test_orchestrator_project_failure_hides_project_id(
     monkeypatch,
 ):
     git_manager = RecordingGitManager()
-    task, _sm, _wt, logs, restore, _ = _prepare_reject(
+    task, _sm, _wt, logs, restore, _, _ = _prepare_reject(
         monkeypatch,
         git_manager=git_manager,
         task_id="TASK-NO-PROJECT",
@@ -398,135 +898,8 @@ def test_orchestrator_project_failure_hides_project_id(
         restore()
 
 
-def test_worktree_remove_failure_scrubbed(monkeypatch):
-    secret_exc = GitOperationError(
-        "Git command failed ("
-        f"'git worktree remove --force {SECRET_PATH}'"
-        f"): {SECRET_STDERR}"
-    )
-    git_manager = RecordingGitManager(
-        fail_remove_worktree=True,
-        remove_error=secret_exc,
-    )
-    task, state_machine, _wt, logs, restore, _ = (
-        _prepare_reject(
-            monkeypatch,
-            git_manager=git_manager,
-            task_id="TASK-WT-FAIL",
-        )
-    )
-
-    try:
-        with pytest.raises(HTTPException) as exc_info:
-            app_module.reject_task("TASK-WT-FAIL")
-
-        assert exc_info.value.status_code == 500
-        assert (
-            exc_info.value.detail == REJECTION_FAILED_DETAIL
-        )
-        _assert_no_http_leakage(
-            exc_info.value.detail,
-            "git worktree",
-            "Rejection failed",
-        )
-        assert any(
-            "Task rejection failed:" in message
-            and SECRET_PATH in message
-            and SECRET_STDERR in message
-            for message in logs
-        )
-        assert task.state == "ready_for_approval"
-        assert app_module.TaskStatus.REJECTED not in (
-            state_machine.transitions
-        )
-        assert SUCCESS_LOG not in logs
-    finally:
-        restore()
-
-
-def test_branch_delete_failure_scrubbed(monkeypatch):
-    secret_exc = GitOperationError(
-        "Git command failed ("
-        f"'git branch -D {SECRET_BRANCH}'"
-        f"): {SECRET_STDERR}"
-    )
-    git_manager = RecordingGitManager(
-        fail_delete_branch=True,
-        delete_error=secret_exc,
-    )
-    task, state_machine, _wt, logs, restore, _ = (
-        _prepare_reject(
-            monkeypatch,
-            git_manager=git_manager,
-            task_id="TASK-BRANCH-FAIL",
-        )
-    )
-
-    try:
-        with pytest.raises(HTTPException) as exc_info:
-            app_module.reject_task("TASK-BRANCH-FAIL")
-
-        assert exc_info.value.status_code == 500
-        assert (
-            exc_info.value.detail == REJECTION_FAILED_DETAIL
-        )
-        _assert_no_http_leakage(
-            exc_info.value.detail,
-            "git branch",
-            "Rejection failed",
-        )
-        assert any(
-            "Task rejection failed:" in message
-            and SECRET_BRANCH in message
-            for message in logs
-        )
-        assert git_manager.cleaned_worktree is True
-        assert git_manager.deleted_branch is False
-        assert task.state == "ready_for_approval"
-        assert app_module.TaskStatus.REJECTED not in (
-            state_machine.transitions
-        )
-    finally:
-        restore()
-
-
-def test_state_machine_failure_scrubbed(monkeypatch):
-    git_manager = RecordingGitManager()
-    state_machine = FakeStateMachine(
-        fail_transition=True,
-        error=RuntimeError(INTERNAL_STATE_MACHINE_SECRET),
-    )
-    task, _sm, _wt, logs, restore, _ = _prepare_reject(
-        monkeypatch,
-        git_manager=git_manager,
-        task_id="TASK-SM-FAIL",
-        state_machine=state_machine,
-    )
-
-    try:
-        with pytest.raises(HTTPException) as exc_info:
-            app_module.reject_task("TASK-SM-FAIL")
-
-        assert exc_info.value.status_code == 500
-        assert (
-            exc_info.value.detail == REJECTION_FAILED_DETAIL
-        )
-        _assert_no_http_leakage(exc_info.value.detail)
-        assert any(
-            "Task rejection failed:" in message
-            and INTERNAL_STATE_MACHINE_SECRET in message
-            for message in logs
-        )
-        assert git_manager.cleaned_worktree is True
-        assert git_manager.deleted_branch is True
-        assert task.state == "ready_for_approval"
-        assert SUCCESS_LOG not in logs
-    finally:
-        restore()
-
-
 def test_status_code_regression(monkeypatch):
-    """missing→404, wrong/context/project→409, cleanup→500."""
+    """Pre-durable→404/409/500; post-durable secondary→200."""
     logs = []
     monkeypatch.setattr(
         app_module,
@@ -554,7 +927,7 @@ def test_status_code_regression(monkeypatch):
         app_module.TASK_CONTEXTS.update(old_contexts)
 
     git_manager = RecordingGitManager()
-    task, _sm, _wt, _logs, restore, _ = _prepare_reject(
+    task, _sm, _wt, _logs, restore, _, _ = _prepare_reject(
         monkeypatch,
         git_manager=git_manager,
         task_id="TASK-STATUS-CODES",
@@ -599,14 +972,170 @@ def test_status_code_regression(monkeypatch):
             app_module,
             "build_orchestrator_for_task",
             lambda _task: SimpleNamespace(
+                git_manager=RecordingGitManager()
+            ),
+        )
+
+        def boom_persist(staged_task, **kwargs):
+            raise RuntimeError(
+                f"{SECRET_DB_PATH}:{SECRET_SQL_ERROR}"
+            )
+
+        monkeypatch.setattr(
+            app_module,
+            "persist_task",
+            boom_persist,
+        )
+        with pytest.raises(HTTPException) as persist_fail:
+            app_module.reject_task("TASK-STATUS-CODES")
+        assert persist_fail.value.status_code == 500
+        assert (
+            persist_fail.value.detail
+            == REJECTION_PERSISTENCE_FAILED_DETAIL
+        )
+        _assert_no_http_leakage(persist_fail.value.detail)
+
+        # Restore successful persist; secondary failures → 200.
+        persisted = []
+
+        def ok_persist(staged_task, **kwargs):
+            persisted.append(staged_task.state)
+
+        monkeypatch.setattr(
+            app_module,
+            "persist_task",
+            ok_persist,
+        )
+        monkeypatch.setattr(
+            app_module,
+            "build_orchestrator_for_task",
+            lambda _task: SimpleNamespace(
                 git_manager=RecordingGitManager(
                     fail_remove_worktree=True,
-                    remove_error=GitOperationError("boom"),
+                    fail_delete_branch=True,
                 )
             ),
         )
-        with pytest.raises(HTTPException) as cleanup:
-            app_module.reject_task("TASK-STATUS-CODES")
-        assert cleanup.value.status_code == 500
+        app_module.TASK_CONTEXTS["TASK-STATUS-CODES"] = {
+            "state_machine": FakeStateMachine(
+                fail_transition=True,
+                error=RuntimeError("sm boom"),
+            ),
+            "wt_result": SimpleNamespace(
+                path=r"C:\wt",
+                branch="agent/x",
+            ),
+            "diff_output": "",
+        }
+        task.state = "ready_for_approval"
+        task.status = "waiting_approval"
+
+        result = app_module.reject_task("TASK-STATUS-CODES")
+        assert result.state == "rejected"
+        assert persisted == ["rejected"]
     finally:
         restore()
+
+
+def test_persist_and_publish_rejected_helper_order(
+    monkeypatch,
+):
+    task = app_module.TaskCreateResponse(
+        task_id="TASK-HELPER-ORDER",
+        status="waiting_approval",
+        prompt="helper",
+        max_attempts=2,
+        project_id="PROJECT-HELPER",
+        state="ready_for_approval",
+        model=None,
+        attempt=1,
+        test_result="passed",
+        started_at=None,
+        task_kind="write",
+    )
+    old_tasks = dict(app_module.TASKS)
+    app_module.TASKS["TASK-HELPER-ORDER"] = task
+
+    seen = []
+
+    def boom_persist(staged_task, **kwargs):
+        seen.append(
+            (
+                staged_task.state,
+                app_module.TASKS["TASK-HELPER-ORDER"].state,
+            )
+        )
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(
+        app_module,
+        "persist_task",
+        boom_persist,
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="db down"):
+            app_module.persist_and_publish_rejected_task(
+                "TASK-HELPER-ORDER"
+            )
+
+        assert seen == [
+            ("rejected", "ready_for_approval")
+        ]
+        assert task.state == "ready_for_approval"
+        assert task.status == "waiting_approval"
+    finally:
+        app_module.TASKS.clear()
+        app_module.TASKS.update(old_tasks)
+
+
+def test_persist_and_publish_rejected_helper_success(
+    monkeypatch,
+):
+    task = app_module.TaskCreateResponse(
+        task_id="TASK-HELPER-OK",
+        status="waiting_approval",
+        prompt="helper",
+        max_attempts=2,
+        project_id="PROJECT-HELPER",
+        state="ready_for_approval",
+        model=None,
+        attempt=1,
+        test_result="passed",
+        started_at=None,
+        task_kind="write",
+    )
+    old_tasks = dict(app_module.TASKS)
+    app_module.TASKS["TASK-HELPER-OK"] = task
+    order = []
+
+    def ok_persist(staged_task, **kwargs):
+        order.append(
+            (
+                "db",
+                staged_task.state,
+                app_module.TASKS["TASK-HELPER-OK"].state,
+            )
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "persist_task",
+        ok_persist,
+    )
+
+    try:
+        result = app_module.persist_and_publish_rejected_task(
+            "TASK-HELPER-OK"
+        )
+        order.append(
+            ("publish", result.state, task.state)
+        )
+        assert order == [
+            ("db", "rejected", "ready_for_approval"),
+            ("publish", "rejected", "rejected"),
+        ]
+        assert result is task
+    finally:
+        app_module.TASKS.clear()
+        app_module.TASKS.update(old_tasks)
