@@ -193,3 +193,94 @@ def test_low_confidence_html_prototype_fallback_write():
 
     assert route.kind == "write"
     assert route.source == "deterministic_fallback"
+
+
+def test_git_tag_command_is_execute_command():
+    client = FakeModelClient(
+        '{"kind":"execute","intent":"execute_command",'
+        '"target":"git tag e2e-execute-mutation-test",'
+        '"confidence":0.97,'
+        '"reason":"Generic komut calistirma istendi."}'
+    )
+
+    route = route_task_semantic(
+        "git tag e2e-execute-mutation-test komutunu çalıştır.",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.intent == "execute_command"
+    assert route.source == "semantic"
+
+
+def test_python_script_invocation_is_execute_command():
+    client = FakeModelClient(
+        '{"kind":"execute","intent":"execute_command",'
+        '"target":"script.py","confidence":0.96,'
+        '"reason":"Script calistirma istendi."}'
+    )
+
+    route = route_task_semantic(
+        "python script.py çalıştır",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.intent == "execute_command"
+    assert route.source == "semantic"
+
+
+def test_real_test_request_remains_run_tests():
+    client = FakeModelClient(
+        '{"kind":"execute","intent":"run_tests",'
+        '"target":null,"confidence":0.98,'
+        '"reason":"Test suite calistirilacak."}'
+    )
+
+    route = route_task_semantic(
+        "testleri çalıştır",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.intent == "run_tests"
+    assert route.source == "semantic"
+
+
+def test_system_prompt_covers_execute_command_semantics():
+    client = FakeModelClient(
+        '{"kind":"execute","intent":"execute_command",'
+        '"confidence":0.95,"reason":"komut"}'
+    )
+
+    route_task_semantic(
+        "git tag e2e-execute-mutation-test komutunu çalıştır.",
+        model_client=client,
+    )
+
+    assert len(client.calls) == 1
+    system_prompt = client.calls[0]["system_prompt"]
+    assert "execute_command" in system_prompt
+    assert (
+        "git tag e2e-execute-mutation-test komutunu calistir"
+        in system_prompt
+    )
+    assert "python script.py calistir" in system_prompt
+    assert "run_tests yalnizca" in system_prompt
+    assert "generic komut calistirma" in system_prompt.casefold()
+
+
+def test_unsupported_intent_falls_back_to_unknown():
+    client = FakeModelClient(
+        '{"kind":"execute","intent":"not_a_real_intent",'
+        '"confidence":0.99,"reason":"desteklenmeyen intent"}'
+    )
+
+    route = route_task_semantic(
+        "python script.py çalıştır",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.intent == "unknown"
+    assert route.source == "semantic"

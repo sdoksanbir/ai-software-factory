@@ -21,6 +21,7 @@ VALID_INTENTS = {
     "ensure_pip",
     "package_install",
     "framework_scaffold",
+    "execute_command",
     "run_tests",
     "run_build",
     "unknown",
@@ -171,9 +172,16 @@ def route_task_semantic(
         "WRITE: repository dosyasi/kodu/README/config icerigini "
         "olusturma, degistirme, silme veya refactor etme. "
         "EXECUTE: proje ortaminda gercek bir eylem calistirma; "
-        "paket kurma, venv olusturma, pip hazirlama, test/build calistirma. "
+        "paket kurma, venv olusturma, pip hazirlama, test/build calistirma "
+        "veya belirli bir komut/program/script calistirma. "
         "Bir urun veya kutuphane adi tek basina sinifi belirlemez; "
         "fiilin ve tum cumlenin anlamina bak. "
+        "execute_command: ozel kategorilere girmeyen generic komut/program/"
+        "script calistirma. "
+        "run_tests yalnizca gercek test/test suite/test runner calistirma "
+        "istegi icindir; generic komut calistirma icin kullanma. "
+        "Komut adinda 'test' gecmesi tek basina run_tests demek degildir. "
+        "run_build yalnizca acik build istegi icindir. "
         "Ornekler: "
         "'Django nedir?' => read/explain_or_inspect. "
         "'Django'nun en son surumunu kur' => execute/package_install, target django. "
@@ -181,6 +189,10 @@ def route_task_semantic(
         "'venv olustur' => execute/create_virtualenv. "
         "'pip kur' => execute/ensure_pip. "
         "'testleri calistir' => execute/run_tests. "
+        "'npm run build calistir' => execute/run_build. "
+        "'git tag e2e-execute-mutation-test komutunu calistir' "
+        "=> execute/execute_command. "
+        "'python script.py calistir' => execute/execute_command. "
         "'Bu klasorde okulprojesi adinda yeni bir Django projesi olustur' "
         "=> execute/framework_scaffold, framework django, target okulprojesi. "
         "Bir framework projesi olusturma istegini package_install olarak "
@@ -189,7 +201,8 @@ def route_task_semantic(
         "JSON semasi: "
         '{"kind":"read|write|execute",'
         '"intent":"explain_or_inspect|code_change|create_virtualenv|'
-        'ensure_pip|package_install|framework_scaffold|run_tests|run_build|unknown",'
+        'ensure_pip|package_install|framework_scaffold|execute_command|'
+        'run_tests|run_build|unknown",'
         '"target":"hedef veya null",'
         '"framework":"framework veya null",'
         '"confidence":0.0,'
