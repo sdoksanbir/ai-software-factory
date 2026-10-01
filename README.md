@@ -1,232 +1,472 @@
-## AI Software Factory
+# AI Software Factory
 
-This repository contains the source code for the AI Software Factory project. The project aims to create a system where AI can generate and execute tasks in a controlled and secure manner. Below are the instructions to set up and run the project.
+AI Software Factory, farklı yapay zekâ ajanlarını ve yerel/cloud modelleri tek bir kontrollü yürütme katmanında yöneten bir geliştirme ortamıdır.
 
-### Prerequisites
+Bu depo artık projenin **aktif ve devam edilecek ana sürümünü** temsil eder.
 
-- Python 3.10 or higher
-- Node.js and npm
-- Git
-- Ollama (AI model server)
+## Temel mimari
 
-### Setup
+Sistem şu ana bileşenlerden oluşur:
 
-1. **Clone the Repository**
+- **Agent Router / Provider Adapter**
+  - Ollama
+  - OpenRouter
+  - Codex / Gemini gibi ek sağlayıcı adaptörleri
+- **READ / WRITE / EXECUTE görev ayrımı**
+- **Agent Terminal Loop**
+  - güvenli komut seçimi
+  - hata sonrası yeniden planlama
+  - komut geçmişi
+- **Git + worktree izolasyonu**
+  - WRITE görevleri ana çalışma dizininde doğrudan değişiklik yapmaz
+- **Docker sandbox**
+  - proje kodu güvenli sınır içinde çalıştırılır
+  - terminal görevleri için kalıcı Python dependency volume desteği vardır
+- **Handoff / Checkpoint**
+  - ajanlar arası görev devri ve durum kaydı
+- **İnsan onayı**
+  - WRITE görevi doğrulanmadan ana dala uygulanmaz
+- **FastAPI backend**
+- **React + TypeScript + Vite frontend**
+- **SQLite**
+  - görev, plan, komut, checkpoint ve diğer çalışma kayıtları
 
-   ```bash
-   git clone https://github.com/sdoksanbir/ai-software-factory.git
-   cd ai-software-factory
-   ```
+## Güncel doğrulama durumu
 
-2. **Install Backend Dependencies**
+Bu sürümde:
 
-   ```bash
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   ```
+- Backend testleri: **1022 passed, 12 skipped**
+- Frontend production build: başarılı
+- Frontend lint: **0 error**
+- Git çalışma ağacı: temiz
 
-3. **Install Frontend Dependencies**
+---
 
-   ```bash
-   cd frontend
-   npm install
-   cd ..
-   ```
+# Başka bir bilgisayara kurulum
 
-4. **Start Ollama Server**
+Aşağıdaki adımlar Windows 11 + PowerShell içindir.
 
-   ```bash
-   ollama start
-   ```
+## 1. Gerekli programlar
 
-5. **Run Backend**
+Bilgisayarda şunlar kurulu olmalıdır:
 
-   ```bash
-   .\.venv\Scripts\Activate.ps1
-   python -m uvicorn api.app:app --host 127.0.0.1 --port 8000
-   ```
+### Git
 
-6. **Run Frontend**
+Kontrol:
 
-   ```bash
-   cd frontend
-   npm run dev
-   ```
+~~~powershell
+git --version
+~~~
 
-### Testing
+### Python
 
-To run specific tests, use the following commands:
+Bu proje **Python 3.14.x** ile test edilmiştir.
 
-```bash
-python -m pytest tests/test_task_step_handlers.py -q
-```
+Kontrol:
 
-For multi-step infrastructure tests:
+~~~powershell
+python --version
+~~~
 
-```bash
-python -m pytest \
-    tests/test_task_execution_dispatcher.py \
-    tests/test_multi_step_task_runner.py \
-    tests/test_task_step_executor.py \
-    tests/test_task_step_handlers.py \
-    -q
-```
+Windows Python Launcher kullanıyorsanız:
 
-### Git Worktree
+~~~powershell
+py --version
+~~~
 
-To check active AI tasks' worktrees:
+### Node.js + npm
 
-```bash
- git worktree list
-```
+Frontend Vite 8 kullanır.
 
-### Git Status
+Vite 8 için en az:
 
-Before starting work and committing:
+- Node.js 20.19+
+- veya Node.js 22.12+
 
-```bash
- git status
-```
+Kontrol:
 
-### GitHub Push
+~~~powershell
+node --version
+npm --version
+~~~
 
-To push changes to GitHub:
+### Docker Desktop
 
-```bash
- git add .
- git commit -m "Descriptive commit message"
- git push
-```
+Docker Desktop açık ve çalışıyor olmalıdır.
 
-### Security
+Kontrol:
 
-AI does not directly modify the `master` branch.
+~~~powershell
+docker version
+~~~
 
-### Task States
+### Ollama
 
-Tasks can have various states such as `queued`, `running`, `failed`, `ready_for_approval`, `approved`, and `rejected`.
+Yerel modelleri kullanmak için Ollama kurulmalıdır.
 
-### Human Approval
+Kontrol:
 
-Successful WRITE tasks are not automatically merged into the `master` branch.
+~~~powershell
+ollama --version
+~~~
 
-### Dynamic Task Plan UI
+---
 
-The frontend dynamically retrieves the task plan from the backend.
+## 2. Projeyi GitHub'dan klonla
 
-### Checkpoints
+~~~powershell
+git clone https://github.com/sdoksanbir/ai-software-factory.git
+cd ai-software-factory
+~~~
 
-At FAZ 17, the system has the following features:
+Kontrol:
 
-- Multi-step planning
-- Multi-step execution
-- Persistent task plans
-- Per-step retry
-- Resume
-- Scoped verification
-- Requirement guard
-- Human approval
-- Dynamic plan UI
+~~~powershell
+git status
+~~~
 
-### Long-term Goal
+---
 
-The goal is to create a system where different AI agents can take over tasks.
+## 3. Python sanal ortamını oluştur
 
-### Development Principles
+İlk kurulumda önce sanal ortam oluşturulmalıdır.
 
-- AI should not work directly on the `master` branch.
-- Each WRITE task should use an isolated worktree.
-- Model output should be verified before application.
-- File scope should be limited as much as possible.
-- Tests should not introduce new behaviors based on user requirements.
-- Completed multi-step steps should not be retried.
-- Task state and plan information should be persistent.
-- Human approval should be required before merging.
-- Local models should be used as much as possible.
-- Provider dependencies should be minimized.
+~~~powershell
+python -m venv .venv
+~~~
 
-### Quick Start
+Python Launcher ile:
 
-For daily use:
+~~~powershell
+py -3.14 -m venv .venv
+~~~
 
-**Backend:**
+Aktifleştir:
 
-```bash
- cd C:\Users\sdoks\Documents\ai-software-factory
- .\.venv\Scripts\Activate.ps1
- python -m uvicorn api.app:app --host 127.0.0.1 --port 8000
-```
+~~~powershell
+.\.venv\Scripts\Activate.ps1
+~~~
 
-**Frontend:**
+PowerShell script çalıştırmayı engellerse yalnızca mevcut terminal için:
 
-```bash
- cd C:\Users\sdoks\Documents\ai-software-factory\frontend
- npm run dev
-```
+~~~powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\.venv\Scripts\Activate.ps1
+~~~
 
-**Ollama Control:**
+---
 
-```bash
- ollama list
-```
+## 4. Backend bağımlılıklarını kur
 
-### Repository
+Önce pip'i güncelle:
 
-```text
+~~~powershell
+python -m pip install --upgrade pip
+~~~
+
+Sonra:
+
+~~~powershell
+python -m pip install -r requirements.txt
+~~~
+
+### requirements.txt içeriği
+
+Ana bağımlılıklar:
+
+- pydantic
+- litellm
+- PyYAML
+- python-dotenv
+- fastapi
+- uvicorn
+- httpx
+- psutil
+- docker
+- rich
+- pytest
+
+---
+
+## 5. Frontend bağımlılıklarını kur
+
+Projede frontend/package-lock.json bulunduğu için temiz ve tekrar üretilebilir kurulumda npm ci kullanılır:
+
+~~~powershell
+npm --prefix frontend ci
+~~~
+
+Kontrol:
+
+~~~powershell
+npm --prefix frontend run build
+~~~
+
+---
+
+## 6. Docker sandbox imajını oluştur
+
+AI Software Factory varsayılan olarak şu Docker image adını kullanır:
+
+~~~text
+ai-factory-python-test
+~~~
+
+Repoda bunun için Dockerfile vardır.
+
+Proje kökünde:
+
+~~~powershell
+docker build `
+  -f docker/ai-factory-python-test.Dockerfile `
+  -t ai-factory-python-test `
+  .
+~~~
+
+Kontrol:
+
+~~~powershell
+docker image inspect ai-factory-python-test
+~~~
+
+Bu image WRITE doğrulama sandbox'ı ve terminal yürütme altyapısı için temel Python ortamını sağlar.
+
+---
+
+## 7. Ollama modellerini kur
+
+Mevcut config.yaml içindeki yerel fallback modelleri:
+
+~~~text
+qwen2.5-coder:14b
+qwen3:14b
+~~~
+
+İndir:
+
+~~~powershell
+ollama pull qwen2.5-coder:14b
+ollama pull qwen3:14b
+~~~
+
+Kontrol:
+
+~~~powershell
+ollama list
+~~~
+
+Ollama servisi çalışmıyorsa:
+
+~~~powershell
+ollama serve
+~~~
+
+Windows'ta Ollama uygulaması zaten arka planda çalışıyorsa ayrıca ollama serve açmanız gerekmez.
+
+Varsayılan adres:
+
+~~~text
+http://127.0.0.1:11434
+~~~
+
+---
+
+## 8. OpenRouter kullanacaksan API anahtarı ekle
+
+config.yaml içinde OpenRouter rotaları da vardır.
+
+OpenRouter kullanacaksan proje kökünde bir .env dosyası oluştur:
+
+~~~text
+OPENROUTER_API_KEY=buraya_api_anahtari
+~~~
+
+.env Git tarafından takip edilmez.
+
+API anahtarlarını hiçbir zaman repoya commit etmeyin.
+
+---
+
+# Programı çalıştırma
+
+İki ayrı PowerShell terminali açın.
+
+## Terminal 1 — Backend
+
+~~~powershell
+cd C:\PROJE_YOLU\ai-software-factory
+.\.venv\Scripts\Activate.ps1
+
+python -m uvicorn api.app:app `
+  --host 127.0.0.1 `
+  --port 8000
+~~~
+
+Backend:
+
+~~~text
+http://127.0.0.1:8000
+~~~
+
+## Terminal 2 — Frontend
+
+~~~powershell
+cd C:\PROJE_YOLU\ai-software-factory
+
+npm --prefix frontend run dev
+~~~
+
+Vite varsayılan olarak genellikle:
+
+~~~text
+http://localhost:5173
+~~~
+
+adresini kullanır.
+
+Frontend /api isteklerini otomatik olarak http://127.0.0.1:8000 adresindeki backend'e yönlendirir.
+
+---
+
+# Kurulum sonrası sağlık kontrolü
+
+## Backend bağımlılıkları
+
+~~~powershell
+python -c "import fastapi, uvicorn, litellm, psutil, dotenv; print('Python dependencies OK')"
+~~~
+
+## Docker
+
+~~~powershell
+docker version
+docker image inspect ai-factory-python-test
+~~~
+
+## Ollama
+
+~~~powershell
+ollama list
+~~~
+
+## Frontend
+
+~~~powershell
+npm --prefix frontend run build
+npm --prefix frontend run lint
+~~~
+
+---
+
+# Testler
+
+Tüm backend testleri:
+
+~~~powershell
+python -m pytest -q --tb=short
+~~~
+
+Önemli approval / WRITE testleri:
+
+~~~powershell
+python -m pytest `
+  tests/test_approval_merge_invariant.py `
+  tests/test_multi_step_task_runner.py `
+  -q
+~~~
+
+Frontend:
+
+~~~powershell
+npm --prefix frontend run build
+npm --prefix frontend run lint
+~~~
+
+---
+
+# Proje verileri
+
+SQLite veritabanı varsayılan olarak proje içindeki data/ alanında oluşturulur.
+
+Veritabanı dosyaları Git'e gönderilmez:
+
+~~~text
+data/*.db
+data/*.db-wal
+data/*.db-shm
+~~~
+
+Bu nedenle başka bilgisayara temiz kurulum yaptığınızda kaynak kod gelir fakat eski yerel görev veritabanı otomatik olarak gelmez.
+
+Eski görev geçmişini de taşımak isterseniz ilgili SQLite dosyasını ayrıca kopyalamanız gerekir.
+
+---
+
+# Güvenlik yaklaşımı
+
+- Model doğrudan shell yetkisi almaz.
+- Terminal komutları controller tarafından sınıflandırılır.
+- Dangerous komutlar reddedilir.
+- Proje kodu gereken durumlarda Docker sandbox içinde çalışır.
+- WRITE görevleri ayrı Git worktree içinde yürütülür.
+- Gizli bilgiler modelin serbestçe belirlediği env değişkenleri olarak verilmez.
+- Approval öncesi final Git diff boşsa WRITE görevi başarısız sayılır.
+- Approval sırasında merge sonucu Git ancestry ile doğrulanır.
+
+---
+
+# Günlük kullanım
+
+Backend:
+
+~~~powershell
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn api.app:app --host 127.0.0.1 --port 8000
+~~~
+
+Frontend:
+
+~~~powershell
+npm --prefix frontend run dev
+~~~
+
+Ollama:
+
+~~~powershell
+ollama list
+~~~
+
+Docker:
+
+~~~powershell
+docker ps
+~~~
+
+---
+
+# Güncelleme
+
+Başka bilgisayarda projeyi daha sonra güncellemek için:
+
+~~~powershell
+git pull
+python -m pip install -r requirements.txt
+npm --prefix frontend ci
+~~~
+
+Eğer sandbox Dockerfile veya Python bağımlılıkları değiştiyse image'ı yeniden oluşturun:
+
+~~~powershell
+docker build `
+  -f docker/ai-factory-python-test.Dockerfile `
+  -t ai-factory-python-test `
+  .
+~~~
+
+---
+
+# Repository
+
 https://github.com/sdoksanbir/ai-software-factory
-```
 
-### Status
-
-The project is currently in active development.
-
-Current stable base:
-
-```text
-FAZ 17
-
-### Agent system test
-
-This section outlines the steps and considerations for testing the agent system within the AI Software Factory project. It includes guidelines for setting up test environments, running tests, and verifying the behavior of the agent system.
-
-#### Setup
-
-1. **Environment Preparation**
-   - Ensure all prerequisites are met.
-   - Clone the repository and set up the backend and frontend as described in the Setup section.
-
-2. **Test Environment Configuration**
-   - Use isolated worktrees for testing to avoid affecting the main branch.
-   - Configure the Ollama server for testing purposes.
-
-#### Running Tests
-
-1. **Unit Tests**
-   - Run individual unit tests using the `pytest` command as shown in the Testing section.
-
-2. **Integration Tests**
-   - Execute multi-step infrastructure tests to ensure the system behaves as expected across different components.
-
-#### Verification
-
-1. **Check Task States**
-   - Verify that tasks transition through expected states correctly.
-
-2. **Human Approval Workflow**
-   - Ensure that successful WRITE tasks require human approval before merging.
-
-3. **Dynamic UI Testing**
-   - Test the dynamic retrieval of task plans from the backend.
-
-#### Troubleshooting
-
-- **Common Issues**
-  - Ensure all dependencies are correctly installed.
-  - Verify that the Ollama server is running and accessible.
-  - Check for any errors in the logs during test execution.
-
-- **Resolution Steps**
-  - Review the error messages and logs for clues.
-  - Consult the documentation or seek assistance from the development team.
-
-By following these guidelines, you can effectively test the agent system within the AI Software Factory project and ensure its reliability and functionality.
+Bu depo AI Software Factory'nin aktif geliştirme sürümüdür.
