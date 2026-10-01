@@ -2598,30 +2598,62 @@ def approve_task(
     response_model=TaskCreateResponse,
 )
 def reject_task(task_id: str):
+    # User-facing HTTP details only. Technical exception text goes to
+    # task logs — never interpolate {exc} into these strings.
+    TASK_NOT_FOUND_DETAIL = "Görev bulunamadı."
+    INVALID_REJECTION_STATE_DETAIL = (
+        "Görev şu anda reddedilebilir durumda değil."
+    )
+    REJECTION_CONTEXT_UNAVAILABLE_DETAIL = (
+        "Reddetme için gerekli görev bağlamı geri yüklenemedi."
+    )
+    PROJECT_UNAVAILABLE_DETAIL = (
+        "Görevin bağlı olduğu proje kullanılamıyor."
+    )
+    REJECTION_FAILED_DETAIL = (
+        "Reddetme işlemi tamamlanamadı. "
+        "Görev kayıtlarını kontrol edin."
+    )
+
     task, context = ensure_approval_runtime(task_id)
 
     if task is None:
+        append_task_log(
+            task_id,
+            (
+                "Reject refused: task not found after SQLite "
+                f"recovery: {task_id}"
+            ),
+        )
         raise HTTPException(
             status_code=404,
-            detail=f"Task not found after SQLite recovery: {task_id}",
+            detail=TASK_NOT_FOUND_DETAIL,
         )
 
     if task.state != "ready_for_approval":
+        append_task_log(
+            task_id,
+            (
+                "Reject refused: task state is "
+                f"{task.state!r}, expected 'ready_for_approval'"
+            ),
+        )
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Task state is {task.state!r}, expected "
-                "'ready_for_approval'"
-            ),
+            detail=INVALID_REJECTION_STATE_DETAIL,
         )
 
     if context is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
+        append_task_log(
+            task_id,
+            (
                 "Approval runtime context could not be recovered from "
                 f"SQLite for {task_id}"
             ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=REJECTION_CONTEXT_UNAVAILABLE_DETAIL,
         )
 
     state_machine = context["state_machine"]
@@ -2632,9 +2664,13 @@ def reject_task(task_id: str):
             task
         )
     except KeyError as exc:
+        append_task_log(
+            task_id,
+            f"Reject orchestrator unavailable: {exc}",
+        )
         raise HTTPException(
             status_code=409,
-            detail=str(exc),
+            detail=PROJECT_UNAVAILABLE_DETAIL,
         ) from exc
 
     try:
@@ -2651,9 +2687,13 @@ def reject_task(task_id: str):
         state_machine.transition(TaskStatus.REJECTED)
 
     except Exception as exc:
+        append_task_log(
+            task_id,
+            f"Task rejection failed: {exc}",
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Rejection failed: {exc}",
+            detail=REJECTION_FAILED_DETAIL,
         ) from exc
 
     update_task_runtime(
