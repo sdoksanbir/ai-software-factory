@@ -58,25 +58,42 @@ class GitWorktreeManager:
         except ValueError:
             pass
 
-    def _run_git_command(self, args: list[str], cwd: Optional[str] = None) -> str:
-        """Yardımcı metod: subprocess ile git komutlarını çalıştırır ve çıktıyı döner."""
+    def _run_git_command_result(
+        self,
+        args: list[str],
+        cwd: Optional[str] = None,
+    ) -> subprocess.CompletedProcess:
+        """Run a git command without treating exit code 1 as a hard raise."""
         target_cwd = cwd if cwd else self.repo_root
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 ["git"] + args,
                 cwd=target_cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
-                check=True
+                check=False,
             )
-            return result.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            err_msg = e.stderr.strip() or e.stdout.strip()
-            raise GitOperationError(f"Git command failed ('git {' '.join(args)}'): {err_msg}") from e
         except FileNotFoundError as e:
-            raise GitOperationError("Git is not installed or not found in system PATH.") from e
+            raise GitOperationError(
+                "Git is not installed or not found in system PATH."
+            ) from e
+
+    def _run_git_command(self, args: list[str], cwd: Optional[str] = None) -> str:
+        """Yardımcı metod: subprocess ile git komutlarını çalıştırır ve çıktıyı döner."""
+        result = self._run_git_command_result(args, cwd=cwd)
+
+        if result.returncode != 0:
+            err_msg = (
+                (result.stderr or "").strip()
+                or (result.stdout or "").strip()
+            )
+            raise GitOperationError(
+                f"Git command failed ('git {' '.join(args)}'): {err_msg}"
+            )
+
+        return (result.stdout or "").strip()
 
     def _resolve_repository_root(self) -> str:
         """Verilen project_path veya alt klasörünün gerçek git kök dizinini (toplevel) bulur."""
@@ -230,6 +247,71 @@ class GitWorktreeManager:
 
         return self._run_git_command(["rev-parse", "HEAD"], cwd=abs_path)
 
+
+    def get_head(
+        self,
+        ref: str = "HEAD",
+        cwd: Optional[str] = None,
+    ) -> str:
+        """Resolve a ref to a full commit hash."""
+        return self._run_git_command(
+            ["rev-parse", ref],
+            cwd=cwd if cwd else self.repo_root,
+        )
+
+    def get_repository_head(self) -> str:
+        """Return the current HEAD commit of the main repository."""
+        return self.get_head("HEAD")
+
+    def get_branch_head(self, branch_name: str) -> str:
+        """Return the tip commit of a local branch."""
+        if not self._branch_exists(branch_name):
+            raise GitOperationError(
+                f"Branch does not exist: {branch_name}"
+            )
+
+        return self.get_head(branch_name)
+
+    def is_ancestor(
+        self,
+        maybe_ancestor: str,
+        maybe_descendant: str,
+    ) -> bool:
+        """
+        Return whether maybe_ancestor is an ancestor of maybe_descendant
+        (inclusive of equal commits).
+
+        Exit-code semantics from `git merge-base --is-ancestor`:
+          0 → True (is ancestor)
+          1 → False (definitely not ancestor)
+          other → raise GitOperationError (fail closed)
+        """
+        result = self._run_git_command_result(
+            [
+                "merge-base",
+                "--is-ancestor",
+                maybe_ancestor,
+                maybe_descendant,
+            ],
+            cwd=self.repo_root,
+        )
+
+        if result.returncode == 0:
+            return True
+
+        if result.returncode == 1:
+            return False
+
+        err_msg = (
+            (result.stderr or "").strip()
+            or (result.stdout or "").strip()
+            or f"exit code {result.returncode}"
+        )
+        raise GitOperationError(
+            "Git ancestry check failed "
+            f"('git merge-base --is-ancestor {maybe_ancestor} "
+            f"{maybe_descendant}'): {err_msg}"
+        )
 
     def merge_branch(self, branch_name: str) -> str:
         """Verilen branch'i ana repository'de aktif branch'e birleştirir."""

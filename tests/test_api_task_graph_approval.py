@@ -8,6 +8,10 @@ import api.app as app_module
 class FakeGitManager:
     def __init__(self):
         self.calls = []
+        self._merged = False
+        self.target_before = "target-before"
+        self.task_head = "task-head"
+        self.target_after = "target-after"
 
     def get_status(self, path):
         self.calls.append(
@@ -15,10 +19,47 @@ class FakeGitManager:
         )
         return ""
 
+    def get_repository_head(self):
+        self.calls.append(
+            ("get_repository_head",)
+        )
+        if self._merged:
+            return self.target_after
+        return self.target_before
+
+    def get_branch_head(self, branch):
+        self.calls.append(
+            ("get_branch_head", branch)
+        )
+        return self.task_head
+
+    def is_ancestor(
+        self,
+        maybe_ancestor,
+        maybe_descendant,
+    ):
+        self.calls.append(
+            (
+                "is_ancestor",
+                maybe_ancestor,
+                maybe_descendant,
+            )
+        )
+        if maybe_ancestor == maybe_descendant:
+            return True
+        return (
+            maybe_ancestor == self.task_head
+            and maybe_descendant
+            == self.target_after
+            and self._merged
+        )
+
     def merge_branch(self, branch):
         self.calls.append(
             ("merge_branch", branch)
         )
+        self._merged = True
+        return self.target_after
 
     def remove_worktree(self, path):
         self.calls.append(
@@ -47,10 +88,12 @@ def test_approve_releases_blocked_dependent(
     parent_id = "TASK-1001"
     child_id = "TASK-1002"
 
-    parent = SimpleNamespace(
+    parent = app_module.TaskCreateResponse(
         task_id=parent_id,
+        status="waiting_approval",
+        prompt="parent",
+        max_attempts=2,
         state="ready_for_approval",
-        status="ready_for_approval",
     )
 
     child = SimpleNamespace(
@@ -99,43 +142,32 @@ def test_approve_releases_blocked_dependent(
         lambda _task: orchestrator,
     )
 
-    runtime_updates = []
+    persisted = []
 
-    def fake_update_task_runtime(
-        task_id,
-        **kwargs,
-    ):
-        runtime_updates.append(
+    def fake_persist_task(task, **kwargs):
+        persisted.append(
             (
-                task_id,
-                kwargs,
+                task.task_id,
+                task.status,
+                task.state,
             )
         )
 
-        task = app_module.TASKS[
-            task_id
-        ]
-
-        for key, value in (
-            kwargs.items()
-        ):
-            setattr(
-                task,
-                key,
-                value,
-            )
-
-        return task
-
     monkeypatch.setattr(
         app_module,
-        "update_task_runtime",
-        fake_update_task_runtime,
+        "persist_task",
+        fake_persist_task,
     )
 
     monkeypatch.setattr(
         app_module,
         "append_task_log",
+        lambda *_args, **_kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        app_module,
+        "capture_approved_task_memory",
         lambda *_args, **_kwargs: None,
     )
 
@@ -159,6 +191,13 @@ def test_approve_releases_blocked_dependent(
 
         assert parent.state == "approved"
         assert parent.status == "approved"
+        assert persisted == [
+            (
+                parent_id,
+                "approved",
+                "approved",
+            )
+        ]
 
         assert (
             app_module.TaskStatus.APPROVED

@@ -24,6 +24,9 @@ class FakeGitManager:
         self.merged = False
         self.committed = False
         self.cleaned = False
+        self._target_before = "target-before"
+        self._task_head = "task-head"
+        self._target_after = "merge-hash"
 
     def get_status(self, path):
         return "M factory/example.py"
@@ -36,6 +39,28 @@ class FakeGitManager:
         self.committed = True
         return "commit-hash"
 
+    def get_repository_head(self):
+        if self.merged:
+            return self._target_after
+        return self._target_before
+
+    def get_branch_head(self, branch):
+        return self._task_head
+
+    def is_ancestor(
+        self,
+        maybe_ancestor,
+        maybe_descendant,
+    ):
+        if maybe_ancestor == maybe_descendant:
+            return True
+        return (
+            self.merged
+            and maybe_ancestor == self._task_head
+            and maybe_descendant
+            == self._target_after
+        )
+
     def merge_branch(
         self,
         branch,
@@ -46,7 +71,7 @@ class FakeGitManager:
             )
 
         self.merged = True
-        return "merge-hash"
+        return self._target_after
 
     def remove_worktree(
         self,
@@ -64,15 +89,18 @@ class FakeGitManager:
     ):
         return None
 
+    def abort_merge(self):
+        return None
+
 
 def _task():
-    return SimpleNamespace(
+    return app_module.TaskCreateResponse(
         task_id="TASK-2451",
         status="waiting_approval",
-        state="ready_for_approval",
         prompt="Implement memory.",
         max_attempts=2,
         project_id="PROJECT-2451",
+        state="ready_for_approval",
         model=None,
         attempt=1,
         test_result="passed",
@@ -134,29 +162,10 @@ def _prepare(
         ),
     )
 
-    def update_task_runtime(
-        actual_task_id,
-        *,
-        status=None,
-        state=None,
-        **kwargs,
-    ):
-        actual = app_module.TASKS[
-            actual_task_id
-        ]
-
-        if status is not None:
-            actual.status = status
-
-        if state is not None:
-            actual.state = state
-
-        return actual
-
     monkeypatch.setattr(
         app_module,
-        "update_task_runtime",
-        update_task_runtime,
+        "persist_task",
+        lambda *_args, **_kwargs: None,
     )
 
     return (

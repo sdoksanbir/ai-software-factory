@@ -640,6 +640,35 @@ def persist_task(
     )
 
 
+def persist_and_publish_approved_task(
+    task_id: str,
+) -> TaskCreateResponse:
+    """
+    Durable approval commit for a verified Git merge.
+
+    Stage approved status/state on a TaskCreateResponse copy, persist
+    that snapshot to SQLite first, then publish into the live TASKS
+    object only after the DB commit succeeds. This keeps TASKS from
+    appearing approved when SQLite still has the prior state.
+    """
+    current = TASKS.get(task_id)
+
+    if current is None:
+        raise KeyError(f"Unknown task: {task_id}")
+
+    candidate = current.model_copy(
+        update={
+            "status": "approved",
+            "state": "approved",
+        }
+    )
+
+    persist_task(candidate)
+
+    current.status = "approved"
+    current.state = "approved"
+
+    return current
 
 
 def build_orchestrator_for_task(
@@ -2004,39 +2033,55 @@ def approve_task(
             detail=str(exc),
         ) from exc
 
+    git_manager = orchestrator.git_manager
+    NO_CHANGE_DETAIL = (
+        "Birleştirilecek yeni Git değişikliği bulunamadı."
+    )
+
+    # PHASE 1A — Before / during merge. abort_merge only here.
     try:
-        worktree_status = orchestrator.git_manager.get_status(
+        worktree_status = git_manager.get_status(
             wt_result.path
         )
 
         if worktree_status.strip():
-            orchestrator.git_manager.commit_all(
+            git_manager.commit_all(
                 wt_result.path,
                 f"{task_id}: AI generated changes",
             )
 
-        orchestrator.git_manager.merge_branch(
+        target_head_before = (
+            git_manager.get_repository_head()
+        )
+        task_head = git_manager.get_branch_head(
             wt_result.branch
         )
 
-        orchestrator.git_manager.remove_worktree(
-            wt_result.path
-        )
+        # Reject when the task tip is already in target history.
+        # Covers identical tips, behind branches, and already-merged commits.
+        if git_manager.is_ancestor(
+            task_head,
+            target_head_before,
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=NO_CHANGE_DETAIL,
+            )
 
-        orchestrator.git_manager.delete_branch(
+        git_manager.merge_branch(
             wt_result.branch
         )
 
-        state_machine.transition(TaskStatus.APPROVED)
+    except HTTPException:
+        # Controlled Git-phase rejections (including no-change).
+        raise
 
     except Exception as exc:
         # APPROVAL_MERGE_ABORT_V1
-        # Merge conflict veya merge sirasindaki baska bir Git hatasi,
-        # ana repository'yi yarim merge durumunda birakmamalidir.
+        # Only abort while merge is incomplete / conflicted.
         try:
-            orchestrator.git_manager.abort_merge()
+            git_manager.abort_merge()
         except Exception:
-            # Hata merge baslamadan once olustuysa aktif merge olmayabilir.
             pass
 
         raise HTTPException(
@@ -2047,11 +2092,79 @@ def approve_task(
             ),
         ) from exc
 
-    update_task_runtime(
-        task_id,
-        status="approved",
-        state="approved",
-    )
+    # PHASE 1B — Merge command returned successfully. Verify Git truth.
+    # A completed merge commit cannot be assumed undoable via merge --abort.
+    try:
+        target_head_after = (
+            git_manager.get_repository_head()
+        )
+
+        if not git_manager.is_ancestor(
+            task_head,
+            target_head_after,
+        ):
+            raise RuntimeError(
+                "task commit "
+                f"{task_head} is not an ancestor of "
+                f"target HEAD {target_head_after}"
+            )
+
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Post-merge verification failed after merge command "
+                f"completed: {exc}. Git target may already include the "
+                "merge; manual reconciliation inspection is required. "
+                "Branch/worktree evidence was preserved."
+            ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Git merge completed but post-merge verification "
+                f"failed: {exc}"
+            ),
+        ) from exc
+
+    # PHASE 2 — Persistent application commit (SQLite is authoritative).
+    # Git truth is already established. Never abort_merge from this point.
+    #
+    # Recovery note: if this persistence fails, Git already contains the
+    # task tip while DB still says ready_for_approval. Retrying approve
+    # may then hit the no-change gate. Preserve branch/worktree evidence
+    # and return a controlled 409; automatic reconciliation is out of scope.
+    try:
+        persist_and_publish_approved_task(task_id)
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Approval persistence failed after verified merge: "
+                f"{exc}. Git merge remains applied; task stays "
+                "ready_for_approval pending recovery."
+            ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Git merge succeeded but approval state "
+                f"persistence failed: {exc}"
+            ),
+        ) from exc
+
+    # PHASE 3 — Ephemeral synchronization / finalization.
+    # Failures here must not invalidate the durable approved DB commit.
+    try:
+        state_machine.transition(TaskStatus.APPROVED)
+    except Exception as exc:
+        append_task_log(
+            task_id,
+            (
+                "Approval state-machine synchronization warning: "
+                f"{exc}"
+            ),
+        )
 
     try:
         capture_approved_task_memory(
@@ -2072,6 +2185,23 @@ def approve_task(
         task_id,
         "Görev onaylandı ve ana dala birleştirildi.",
     )
+
+    try:
+        git_manager.remove_worktree(
+            wt_result.path
+        )
+        git_manager.delete_branch(
+            wt_result.branch
+        )
+    except Exception as cleanup_exc:
+        append_task_log(
+            task_id,
+            (
+                "Approval cleanup warning: merge is verified "
+                "and task remains approved, but worktree/branch "
+                f"cleanup failed: {cleanup_exc}"
+            ),
+        )
 
     released_dependents = (
         release_runnable_graph_dependents(
