@@ -7,6 +7,7 @@ import os
 import random
 import subprocess
 import sys
+import uuid
 from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2037,6 +2038,157 @@ def approve_task(
     NO_CHANGE_DETAIL = (
         "Birleştirilecek yeni Git değişikliği bulunamadı."
     )
+    LOCAL_CONFLICT_DETAIL = (
+        "yerel kullanıcı değişiklikleri ile task değişiklikleri çakışıyor."
+    )
+    CONCURRENT_CHANGE_DETAIL = (
+        "Approval sırasında repository'de yeni kullanıcı değişiklikleri "
+        "algılandı; otomatik rollback veri kaybı riski nedeniyle durduruldu."
+    )
+
+    local_snapshot = None
+    target_head_before = None
+    task_head = None
+    target_head_after = None
+
+    def _restore_local_snapshot_or_recover(
+        *,
+        context: str,
+    ) -> None:
+        """Restore Factory snapshot; never drop on failure."""
+        nonlocal local_snapshot
+        if local_snapshot is None:
+            return
+        try:
+            git_manager.restore_local_changes(
+                local_snapshot,
+                restore_index=True,
+            )
+        except Exception as restore_exc:
+            append_task_log(
+                task_id,
+                (
+                    f"{context}: failed to restore local user changes "
+                    f"from snapshot {local_snapshot.commit_sha} "
+                    f"({local_snapshot.label}): {restore_exc}. "
+                    "Snapshot was NOT dropped; manual recovery required."
+                ),
+            )
+            raise
+
+        try:
+            git_manager.drop_local_changes_snapshot(
+                local_snapshot
+            )
+            local_snapshot = None
+        except Exception as drop_exc:
+            append_task_log(
+                task_id,
+                (
+                    f"{context}: local user changes were restored, but "
+                    f"snapshot cleanup failed for "
+                    f"{local_snapshot.commit_sha}: {drop_exc}. "
+                    "No data loss; approval flow continues."
+                ),
+            )
+            local_snapshot = None
+
+    def _rollback_merge_and_restore_locals(
+        *,
+        reason: str,
+    ) -> None:
+        """
+        Undo a completed Factory merge commit and restore the pre-approval
+        local working tree. Fail closed on concurrent / unowned dirty paths
+        or working-tree fingerprint drift (same-owned-path races).
+        """
+        nonlocal local_snapshot
+        if (
+            target_head_before is None
+            or target_head_after is None
+        ):
+            raise RuntimeError(
+                "Cannot roll back merge without recorded HEAD bounds"
+            )
+
+        # Capture guard immediately after restore conflict, before any
+        # destructive rollback work. reset_repository_to re-verifies it.
+        expected_guard = git_manager.capture_working_tree_guard()
+
+        owned_paths: set[str] = set()
+        if local_snapshot is not None:
+            owned_paths |= git_manager.list_snapshot_owned_paths(
+                local_snapshot
+            )
+        owned_paths |= git_manager.list_commit_range_paths(
+            target_head_before,
+            target_head_after,
+        )
+
+        try:
+            git_manager.reset_repository_to(
+                target_head_before,
+                expected_current_head=target_head_after,
+                owned_paths=owned_paths,
+                expected_guard=expected_guard,
+                snapshot=local_snapshot,
+            )
+        except Exception as reset_exc:
+            from factory.tools.git_ops import UnsafeRollbackError
+
+            append_task_log(
+                task_id,
+                (
+                    f"{reason}: safe rollback refused "
+                    f"({reset_exc}). Snapshot "
+                    f"{getattr(local_snapshot, 'commit_sha', None)} "
+                    "was NOT dropped; merge HEAD may still include the "
+                    "task tip; branch/worktree evidence preserved."
+                ),
+            )
+            if isinstance(reset_exc, UnsafeRollbackError):
+                raise HTTPException(
+                    status_code=409,
+                    detail=CONCURRENT_CHANGE_DETAIL,
+                ) from reset_exc
+            raise
+
+        if local_snapshot is None:
+            return
+
+        try:
+            git_manager.restore_local_changes(
+                local_snapshot,
+                restore_index=True,
+            )
+        except Exception as restore_exc:
+            append_task_log(
+                task_id,
+                (
+                    f"{reason}: merge rolled back to "
+                    f"{target_head_before}, but restoring local user "
+                    f"changes from snapshot {local_snapshot.commit_sha} "
+                    f"({local_snapshot.label}) failed: {restore_exc}. "
+                    "Snapshot was NOT dropped; manual recovery required."
+                ),
+            )
+            raise
+
+        try:
+            git_manager.drop_local_changes_snapshot(
+                local_snapshot
+            )
+            local_snapshot = None
+        except Exception as drop_exc:
+            append_task_log(
+                task_id,
+                (
+                    f"{reason}: local user changes restored after "
+                    f"merge rollback, but snapshot cleanup failed for "
+                    f"{local_snapshot.commit_sha}: {drop_exc}."
+                ),
+            )
+            local_snapshot = None
 
     # PHASE 1A — Before / during merge. abort_merge only here.
     try:
@@ -2059,6 +2211,7 @@ def approve_task(
 
         # Reject when the task tip is already in target history.
         # Covers identical tips, behind branches, and already-merged commits.
+        # Run BEFORE touching the dirty main working tree.
         if git_manager.is_ancestor(
             task_head,
             target_head_before,
@@ -2068,12 +2221,59 @@ def approve_task(
                 detail=NO_CHANGE_DETAIL,
             )
 
+        main_status = git_manager.get_repository_status()
+        if main_status.strip():
+            snapshot_label = (
+                f"factory-approval-{task_id}-{uuid.uuid4().hex[:12]}"
+            )
+            try:
+                local_snapshot = (
+                    git_manager.preserve_local_changes(
+                        snapshot_label
+                    )
+                )
+            except Exception as preserve_exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Approval cancelled: could not safely preserve "
+                        "local user changes before merge: "
+                        f"{preserve_exc}"
+                    ),
+                ) from preserve_exc
+
+            remaining = git_manager.get_repository_status()
+            if remaining.strip():
+                try:
+                    _restore_local_snapshot_or_recover(
+                        context=(
+                            "Dirty-main preserve left repository dirty"
+                        ),
+                    )
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Approval cancelled: main repository remained "
+                        "dirty after preserving local changes."
+                    ),
+                )
+
         git_manager.merge_branch(
             wt_result.branch
         )
 
     except HTTPException:
         # Controlled Git-phase rejections (including no-change).
+        # No-change is raised before any stash, so local_snapshot is None.
+        if local_snapshot is not None:
+            try:
+                _restore_local_snapshot_or_recover(
+                    context="Approval HTTP rejection after preserve",
+                )
+            except Exception:
+                pass
         raise
 
     except Exception as exc:
@@ -2083,6 +2283,14 @@ def approve_task(
             git_manager.abort_merge()
         except Exception:
             pass
+
+        if local_snapshot is not None:
+            try:
+                _restore_local_snapshot_or_recover(
+                    context="Approval merge failure",
+                )
+            except Exception:
+                pass
 
         raise HTTPException(
             status_code=409,
@@ -2110,6 +2318,14 @@ def approve_task(
             )
 
     except Exception as exc:
+        if local_snapshot is not None:
+            try:
+                _restore_local_snapshot_or_recover(
+                    context="Post-merge verification failure",
+                )
+            except Exception:
+                pass
+
         append_task_log(
             task_id,
             (
@@ -2126,6 +2342,66 @@ def approve_task(
                 f"failed: {exc}"
             ),
         ) from exc
+
+    # PHASE 1C — Restore preserved local user changes onto merged HEAD.
+    # Conflicts here mean approval must NOT persist; roll merge back.
+    if local_snapshot is not None:
+        try:
+            git_manager.restore_local_changes(
+                local_snapshot,
+                restore_index=True,
+            )
+        except Exception as restore_exc:
+            try:
+                _rollback_merge_and_restore_locals(
+                    reason=(
+                        "Local restore conflict after verified merge"
+                    ),
+                )
+            except HTTPException:
+                # Concurrent-change / controlled rollback refusal.
+                raise
+            except Exception as rollback_exc:
+                append_task_log(
+                    task_id,
+                    (
+                        "Transactional approval rollback failed after "
+                        f"local restore conflict: {rollback_exc}. "
+                        f"Original restore error: {restore_exc}. "
+                        "Snapshot retained if still present; task stays "
+                        "ready_for_approval."
+                    ),
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Approval blocked: local user changes conflicted "
+                        "with the task merge and automatic recovery "
+                        f"failed: {rollback_exc}"
+                    ),
+                ) from rollback_exc
+
+            raise HTTPException(
+                status_code=409,
+                detail=LOCAL_CONFLICT_DETAIL,
+            ) from restore_exc
+
+        try:
+            git_manager.drop_local_changes_snapshot(
+                local_snapshot
+            )
+            local_snapshot = None
+        except Exception as drop_exc:
+            # User changes are already restored — do not roll back merge.
+            append_task_log(
+                task_id,
+                (
+                    "Approval warning: local user changes were restored "
+                    "after merge, but snapshot cleanup failed for "
+                    f"{local_snapshot.commit_sha}: {drop_exc}"
+                ),
+            )
+            local_snapshot = None
 
     # PHASE 2 — Persistent application commit (SQLite is authoritative).
     # Git truth is already established. Never abort_merge from this point.

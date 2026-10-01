@@ -31,6 +31,9 @@ class FakeGitManager:
     def get_status(self, path):
         return "M factory/example.py"
 
+    def get_repository_status(self):
+        return ""
+
     def commit_all(
         self,
         path,

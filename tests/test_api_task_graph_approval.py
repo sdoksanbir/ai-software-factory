@@ -19,6 +19,12 @@ class FakeGitManager:
         )
         return ""
 
+    def get_repository_status(self):
+        self.calls.append(
+            ("get_repository_status",)
+        )
+        return ""
+
     def get_repository_head(self):
         self.calls.append(
             ("get_repository_head",)
