@@ -44,6 +44,7 @@ from factory.agents.runtime import (
 )
 from factory.task_command_models import (
     MIN_TIMEOUT_SECONDS,
+    PermissionLevel,
     TaskCommandPathError,
     TaskCommandPolicyError,
     TaskCommandRequest,
@@ -116,6 +117,71 @@ _EMPTY_DISCOVERY_FEEDBACK = (
     "untracked non-ignored files, or change the "
     "search pattern."
 )
+
+_PYTHON_INLINE_EVAL_FEEDBACK = (
+    "python -c inline evaluation is blocked by "
+    "command policy. Do not retry python -c, change "
+    "quoting, or invent an unrelated python -m "
+    "replacement. Use an existing permitted "
+    "script/module only if it actually satisfies "
+    "the user request; otherwise return fail with a "
+    "clear policy-limited reason."
+)
+
+
+def _is_python_inline_eval_argv(
+    argv: Sequence[str],
+) -> bool:
+    """True for python/py ``-c`` inline-eval argv."""
+    tokens = [str(part) for part in argv]
+
+    if len(tokens) < 2:
+        return False
+
+    executable = Path(tokens[0]).name.casefold()
+
+    if not (
+        executable.startswith("python")
+        or executable in {"py", "py.exe"}
+    ):
+        return False
+
+    return any(
+        str(part).casefold() == "-c"
+        for part in tokens[1:]
+    )
+
+
+def _policy_rejection_controller_feedback(
+    *,
+    argv: Sequence[str],
+) -> str | None:
+    """Targeted replanning guidance after a policy rejection.
+
+    Call only from confirmed policy/DANGEROUS rejection
+    paths. Returns Python inline-eval guidance only when
+    argv is a blocked ``python -c`` / ``py -c`` form.
+    Other argv shapes keep existing behavior
+    (``None`` → no controller_feedback).
+    """
+    if _is_python_inline_eval_argv(argv):
+        return _PYTHON_INLINE_EVAL_FEEDBACK
+
+    return None
+
+
+def _is_dangerous_permission_level(
+    permission_level: object,
+) -> bool:
+    """True when runner-reported level is DANGEROUS."""
+    value = str(permission_level or "").strip()
+
+    if not value:
+        return False
+
+    return value.casefold() == (
+        PermissionLevel.DANGEROUS.value.casefold()
+    )
 
 
 def is_deterministic_missing_path_failure(
@@ -901,10 +967,21 @@ def run_agent_terminal_loop(
         ) as exc:
             rejected_commands += 1
             consecutive_failures += 1
+            rejection_reason = str(exc)
+            policy_feedback = None
+
+            if isinstance(exc, TaskCommandPolicyError):
+                policy_feedback = (
+                    _policy_rejection_controller_feedback(
+                        argv=action.argv,
+                    )
+                )
+
             observation = rejected_observation(
                 argv=list(action.argv),
                 cwd=action.cwd,
-                rejection_reason=str(exc),
+                rejection_reason=rejection_reason,
+                controller_feedback=policy_feedback,
             )
             observations.append(observation)
             last_observation = observation
@@ -969,10 +1046,26 @@ def run_agent_terminal_loop(
                 )
                 or "Command rejected by policy."
             )
+            policy_feedback = None
+
+            if _is_dangerous_permission_level(
+                getattr(
+                    command_result,
+                    "permission_level",
+                    "",
+                )
+            ):
+                policy_feedback = (
+                    _policy_rejection_controller_feedback(
+                        argv=action.argv,
+                    )
+                )
+
             observation = (
                 observation_from_task_command_result(
                     command_result,
                     rejection_reason=rejection_reason,
+                    controller_feedback=policy_feedback,
                 )
             )
             observations.append(observation)

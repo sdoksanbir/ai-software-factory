@@ -11,6 +11,8 @@ from types import SimpleNamespace
 import pytest
 
 from factory.agent_terminal_loop import (
+    _PYTHON_INLINE_EVAL_FEEDBACK,
+    _policy_rejection_controller_feedback,
     command_fingerprint,
     is_deterministic_git_ls_files_discovery,
     is_deterministic_missing_path_failure,
@@ -24,10 +26,12 @@ from factory.agent_terminal_models import (
 from factory.task_command_models import (
     NetworkPolicy,
     PermissionLevel,
+    TaskCommandPathError,
     TaskCommandPolicyError,
     TaskCommandRequest,
     TaskCommandResult,
     TaskCommandSandboxRuntimeError,
+    TaskCommandValidationError,
 )
 from factory.task_command_runner import (
     run_task_command,
@@ -102,6 +106,34 @@ def _failed_result(
         status="failed",
         execution_boundary="HOST_SAFE",
         network_policy=NetworkPolicy.NETWORK_NONE.value,
+    )
+
+
+def _rejected_result(
+    *,
+    argv: list[str],
+    cwd: str = ".",
+    command_id: str = "cmd-rej",
+    stderr: str = "DANGEROUS komut reddedildi.",
+    permission_level: str = (
+        PermissionLevel.DANGEROUS.value
+    ),
+) -> TaskCommandResult:
+    return TaskCommandResult(
+        command_id=command_id,
+        task_id="TASK-T",
+        argv=argv,
+        cwd=cwd,
+        permission_level=permission_level,
+        started_at="t0",
+        finished_at="t1",
+        duration_ms=1,
+        exit_code=None,
+        stdout="",
+        stderr=stderr,
+        status="rejected",
+        execution_boundary="",
+        network_policy="",
     )
 
 
@@ -2612,3 +2644,480 @@ def test_malformed_actions_remain_bounded_after_remediation():
     assert "Invalid action rejected" in prompts[2]
     assert "retry the original" in prompts[2].casefold()
     assert "Invalid action rejected" in prompts[3]
+
+
+def test_policy_rejection_feedback_helper_is_targeted():
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["python", "-c", "print(1)"],
+        )
+        == _PYTHON_INLINE_EVAL_FEEDBACK
+    )
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["python.exe", "-c", "print(1)"],
+        )
+        == _PYTHON_INLINE_EVAL_FEEDBACK
+    )
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["py", "-c", "print(1)"],
+        )
+        == _PYTHON_INLINE_EVAL_FEEDBACK
+    )
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["py.exe", "-C", "print(1)"],
+        )
+        == _PYTHON_INLINE_EVAL_FEEDBACK
+    )
+    # Unrelated argv must not get Python guidance.
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["git", "push"],
+        )
+        is None
+    )
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["python", "script.py"],
+        )
+        is None
+    )
+    assert (
+        _policy_rejection_controller_feedback(
+            argv=["python", "-m", "pathlib"],
+        )
+        is None
+    )
+
+
+def test_python_inline_eval_policy_rejection_has_controller_feedback():
+    def fake_runner(**kwargs):
+        raise TaskCommandPolicyError(
+            "DANGEROUS komut reddedildi."
+        )
+
+    reason = "DANGEROUS komut reddedildi."
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print(1)",
+                    ],
+                    "cwd": None,
+                    "reason": "inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": (
+                        "policy blocks python -c; "
+                        "no equivalent permitted path"
+                    ),
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PYC-FEEDBACK",
+        prompt="run python -c print(1)",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    assert result.commands_executed == 0
+    assert result.last_observation is not None
+    assert result.last_observation.status == "rejected"
+    assert (
+        result.last_observation.rejection_reason
+        == reason
+    )
+    assert (
+        result.last_observation.controller_feedback
+        == _PYTHON_INLINE_EVAL_FEEDBACK
+    )
+    assert "do not retry python -c" in (
+        result.last_observation.controller_feedback
+        .casefold()
+    )
+    assert len(decider.calls) == 2
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert "rejected" in second_prompt.casefold()
+    assert reason in second_prompt
+    assert "controller_feedback" in second_prompt
+    assert "do not retry python -c" in (
+        second_prompt.casefold()
+    )
+    assert "python -m" in second_prompt.casefold()
+
+
+def test_python_inline_eval_path_error_skips_python_feedback():
+    reason = "cwd escapes project root"
+
+    def fake_runner(**kwargs):
+        raise TaskCommandPathError(reason)
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print(1)",
+                    ],
+                    "cwd": None,
+                    "reason": "inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "path rejected",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PYC-PATH",
+        prompt="inline path",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.rejection_reason
+        == reason
+    )
+    assert (
+        result.last_observation.controller_feedback
+        is None
+    )
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert reason in second_prompt
+    assert "controller_feedback" not in second_prompt
+    assert "python -c inline evaluation" not in (
+        second_prompt.casefold()
+    )
+
+
+def test_python_inline_eval_validation_error_skips_python_feedback():
+    reason = "argv must be a non-empty list"
+
+    def fake_runner(**kwargs):
+        raise TaskCommandValidationError(reason)
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print(1)",
+                    ],
+                    "cwd": None,
+                    "reason": "inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "validation rejected",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PYC-VAL",
+        prompt="inline validation",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.rejection_reason
+        == reason
+    )
+    assert (
+        result.last_observation.controller_feedback
+        is None
+    )
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert reason in second_prompt
+    assert "controller_feedback" not in second_prompt
+    assert "python -c inline evaluation" not in (
+        second_prompt.casefold()
+    )
+
+
+def test_python_inline_eval_rejection_enables_safe_replan_or_fail():
+    runner_calls: list[list[str]] = []
+
+    def fake_runner(**kwargs):
+        argv = list(kwargs["request"].argv)
+        runner_calls.append(argv)
+        if argv[:2] == ["python", "-c"]:
+            raise TaskCommandPolicyError(
+                "DANGEROUS komut reddedildi."
+            )
+        return _success_result(argv=argv)
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print('hi')",
+                    ],
+                    "cwd": None,
+                    "reason": "blocked inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": ["python", "--version"],
+                    "cwd": None,
+                    "reason": "permitted alternative",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "complete",
+                    "reason": "used permitted check",
+                    "summary": "Python available.",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-PYC-REPLAN",
+        prompt="check python",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "completed"
+    assert result.rejected_commands == 1
+    assert result.commands_executed == 1
+    assert result.successful_commands == 1
+    assert runner_calls == [
+        ["python", "-c", "print('hi')"],
+        ["python", "--version"],
+    ]
+    # Feedback reached the next model decision.
+    assert len(decider.calls) == 3
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert _PYTHON_INLINE_EVAL_FEEDBACK in second_prompt
+    # Blind identical retry is not required.
+    assert runner_calls.count(
+        ["python", "-c", "print('hi')"]
+    ) == 1
+
+
+def test_generic_policy_rejection_skips_python_feedback():
+    def fake_runner(**kwargs):
+        raise TaskCommandPolicyError(
+            "DANGEROUS komut reddedildi."
+        )
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "git",
+                        "reset",
+                        "--hard",
+                    ],
+                    "cwd": None,
+                    "reason": "unsafe git",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "git reset blocked",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-GENERIC-REJ",
+        prompt="reset",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=True),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert "DANGEROUS komut reddedildi." in second_prompt
+    assert "controller_feedback" not in second_prompt
+    assert "python -c inline evaluation" not in (
+        second_prompt.casefold()
+    )
+
+
+def test_runner_owned_rejected_status_gets_python_feedback():
+    def fake_runner(**kwargs):
+        req = kwargs["request"]
+        return _rejected_result(
+            argv=list(req.argv),
+            stderr="DANGEROUS komut reddedildi.",
+            permission_level=(
+                PermissionLevel.DANGEROUS.value
+            ),
+        )
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print(2)",
+                    ],
+                    "cwd": None,
+                    "reason": "inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "policy limited",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-RUNNER-REJ",
+        prompt="inline",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    assert result.commands_executed == 0
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert "controller_feedback" in second_prompt
+    assert _PYTHON_INLINE_EVAL_FEEDBACK in second_prompt
+    assert "do not retry python -c" in (
+        second_prompt.casefold()
+    )
+
+
+def test_runner_owned_rejected_non_dangerous_skips_python_feedback():
+    reason = "cwd escapes project root"
+
+    def fake_runner(**kwargs):
+        req = kwargs["request"]
+        return _rejected_result(
+            argv=list(req.argv),
+            stderr=reason,
+            permission_level=(
+                PermissionLevel.EXECUTE_SAFE.value
+            ),
+        )
+
+    decider = ScriptedDecider(
+        [
+            _action(
+                {
+                    "action_type": "run_command",
+                    "argv": [
+                        "python",
+                        "-c",
+                        "print(3)",
+                    ],
+                    "cwd": None,
+                    "reason": "inline",
+                }
+            ),
+            _action(
+                {
+                    "action_type": "fail",
+                    "reason": "non-dangerous reject",
+                }
+            ),
+        ]
+    )
+
+    result = run_agent_terminal_loop(
+        project_path="/repo",
+        task_id="TASK-RUNNER-SAFE-REJ",
+        prompt="inline",
+        model_route=SimpleNamespace(model="m"),
+        model_client=object(),
+        policy=AgentTerminalPolicy(allow_mutating=False),
+        command_runner=fake_runner,
+        decision_caller=decider,
+    )
+
+    assert result.status == "failed"
+    assert result.rejected_commands == 1
+    assert result.last_observation is not None
+    assert (
+        result.last_observation.controller_feedback
+        is None
+    )
+    second_prompt = decider.calls[1]["user_prompt"]
+    assert reason in second_prompt
+    assert "controller_feedback" not in second_prompt
+    assert "python -c inline evaluation" not in (
+        second_prompt.casefold()
+    )
