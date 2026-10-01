@@ -1,8 +1,18 @@
+# Core model / configuration
 pydantic>=2.0,<3.0
 litellm
 PyYAML
+python-dotenv
+
+# Backend API
+fastapi
+uvicorn
+httpx
+
+# System / runtime helpers
+psutil
 docker
 rich
+
+# Test suite
 pytest
-fastapi
-httpx
