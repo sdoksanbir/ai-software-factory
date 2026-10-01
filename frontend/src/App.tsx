@@ -7,6 +7,7 @@ import {
 } from "react"
 
 import {
+  ApiError,
   approveTask,
   createProject,
   createNewProject,
@@ -37,6 +38,68 @@ import {
   type TaskPipeline,
   type TaskPlanResponse,
 } from "./api"
+
+export type TaskActionKind =
+  | "approve"
+  | "reject"
+  | "retry"
+
+export type TaskActionError = {
+  action: TaskActionKind
+  message: string
+  status?: number
+}
+
+function isNetworkFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) {
+    return false
+  }
+
+  const message = err.message.toLowerCase()
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network request failed") ||
+    message.includes("load failed")
+  )
+}
+
+function toTaskActionError(
+  action: TaskActionKind,
+  err: unknown,
+): TaskActionError {
+  if (err instanceof ApiError) {
+    if (err.status >= 500) {
+      return {
+        action,
+        status: err.status,
+        message:
+          "Sunucu işlemi tamamlayamadı. Teknik ayrıntılar için görev kayıtlarını kontrol edin.",
+      }
+    }
+
+    return {
+      action,
+      status: err.status,
+      message: err.detail ?? err.message,
+    }
+  }
+
+  if (isNetworkFailure(err)) {
+    return {
+      action,
+      message: "Sunucuya bağlanılamadı.",
+    }
+  }
+
+  return {
+    action,
+    message:
+      err instanceof Error && err.message.trim()
+        ? err.message
+        : "İşlem tamamlanamadı.",
+  }
+}
 
 import { UiIcon } from "./UiIcon"
 
@@ -648,6 +711,9 @@ function App() {
   const [error, setError] =
     useState<string | null>(null)
 
+  const [taskActionError, setTaskActionError] =
+    useState<TaskActionError | null>(null)
+
   const [backendOnline, setBackendOnline] =
     useState(true)
 
@@ -1113,6 +1179,7 @@ function App() {
     setAgentHandoffs([])
     setLiveLogs([])
     setLogQuery("")
+    setTaskActionError(null)
 
     if (!selectedTaskId) {
       return
@@ -1522,15 +1589,12 @@ function App() {
   }
 
   async function handleAction(
-    action:
-      | "approve"
-      | "reject"
-      | "retry",
+    action: TaskActionKind,
   ) {
     if (!selectedTask) return
 
     setActionLoading(true)
-    setError(null)
+    setTaskActionError(null)
 
     try {
       if (action === "approve") {
@@ -1555,10 +1619,8 @@ function App() {
       await loadControlCenter()
       await loadPipeline()
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "İşlem tamamlanamadı.",
+      setTaskActionError(
+        toTaskActionError(action, err),
       )
     } finally {
       setActionLoading(false)
@@ -2219,6 +2281,10 @@ function App() {
           controlCenter={controlCenter}
           selectedTask={selectedTask}
           actionLoading={actionLoading}
+          taskActionError={taskActionError}
+          onClearTaskActionError={() =>
+            setTaskActionError(null)
+          }
           onApproveTask={() => void handleAction("approve")}
           onRejectTask={() => void handleAction("reject")}
           onRetryTask={() => void handleAction("retry")}

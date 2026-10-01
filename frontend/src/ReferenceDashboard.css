@@ -1644,6 +1644,82 @@
     );
 }
 
+.reference-view-tasks > .task-action-error {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+}
+
+.task-action-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 2px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 132, 142, 0.34);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(78, 28, 36, 0.72),
+      rgba(42, 18, 24, 0.88)
+    );
+  box-shadow:
+    inset 3px 0 0 rgba(255, 140, 150, 0.72),
+    0 8px 22px rgba(0, 0, 0, 0.12);
+  color: #ffd8db;
+}
+
+.task-action-error-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.task-action-error-copy strong {
+  display: block;
+  color: #ffe3e6;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.task-action-error-copy p {
+  margin: 6px 0 0;
+  color: #f0c4c8;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.task-action-error-copy small {
+  display: block;
+  margin-top: 7px;
+  color: #c9959c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.task-action-error-dismiss {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #ffb4bb;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.task-action-error-dismiss:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffe6e9;
+}
+
 @media (max-width: 900px) {
   .task-approval-panel {
     align-items: stretch;

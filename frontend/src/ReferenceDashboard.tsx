@@ -32,10 +32,18 @@ type PipelineStage = {
   status: string
 }
 
+type TaskActionError = {
+  action: "approve" | "reject" | "retry"
+  message: string
+  status?: number
+}
+
 type Props = {
   controlCenter: ControlCenterStatus | null
   selectedTask: Task | null
   actionLoading: boolean
+  taskActionError: TaskActionError | null
+  onClearTaskActionError: () => void
   onApproveTask: () => void
   onRejectTask: () => void
   onRetryTask: () => void
@@ -169,6 +177,8 @@ export function ReferenceDashboard({
   controlCenter,
   selectedTask,
   actionLoading,
+  taskActionError,
+  onClearTaskActionError,
   onApproveTask,
   onRejectTask,
   onRetryTask,
@@ -642,6 +652,21 @@ export function ReferenceDashboard({
       ? "Model geçerli bir dosya değişikliği üretmedi."
       : "Görev tamamlanamadı"
 
+  const taskActionErrorTitle =
+    taskActionError?.action === "approve"
+      ? "Onay uygulanamadı"
+      : taskActionError?.action === "reject"
+        ? "Reddetme işlemi tamamlanamadı"
+        : taskActionError?.action === "retry"
+          ? "Tekrar deneme başlatılamadı"
+          : "İşlem tamamlanamadı"
+
+  const showTaskActionError =
+    !!taskActionError &&
+    !!selectedTask &&
+    (selectedTask.state === "ready_for_approval" ||
+      selectedTask.state === "failed")
+
   const systemOnline =
     !!controlCenter?.services.ollama.online ||
     !!controlCenter?.services.docker.online ||
@@ -866,6 +891,30 @@ export function ReferenceDashboard({
               </button>
             </div>
           </section>
+        )}
+
+        {showTaskActionError && taskActionError && (
+          <div
+            className="task-action-error"
+            role="alert"
+          >
+            <div className="task-action-error-copy">
+              <strong>{taskActionErrorTitle}</strong>
+              <p>{taskActionError.message}</p>
+              {typeof taskActionError.status === "number" ? (
+                <small>{`HTTP ${taskActionError.status}`}</small>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              className="task-action-error-dismiss"
+              aria-label="Hatayı kapat"
+              onClick={onClearTaskActionError}
+            >
+              ×
+            </button>
+          </div>
         )}
 
         {/* TASK_OPS_PANELS_V1 — Activity | Terminal */}

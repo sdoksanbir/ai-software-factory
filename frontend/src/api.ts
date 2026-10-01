@@ -257,6 +257,43 @@ export type TaskCommandsResponse = {
 
 const API_BASE = "/api"
 
+export class ApiError extends Error {
+  status: number
+  detail?: string
+
+  constructor(
+    status: number,
+    message: string,
+    detail?: string,
+  ) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.detail = detail
+  }
+}
+
+function extractStringDetail(
+  data: unknown,
+): string | undefined {
+  if (
+    data === null ||
+    typeof data !== "object" ||
+    !("detail" in data)
+  ) {
+    return undefined
+  }
+
+  const detail = (data as { detail: unknown }).detail
+
+  if (typeof detail !== "string") {
+    return undefined
+  }
+
+  const trimmed = detail.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit,
@@ -270,16 +307,21 @@ async function request<T>(
   })
 
   if (!response.ok) {
-    let message = `HTTP ${response.status}`
+    let detail: string | undefined
 
     try {
-      const data = await response.json()
-      message = data.detail ?? message
+      const data: unknown = await response.json()
+      detail = extractStringDetail(data)
     } catch {
-      // Keep generic HTTP error.
+      // Keep generic HTTP status message; never surface raw body/HTML.
     }
 
-    throw new Error(message)
+    const message = detail ?? `HTTP ${response.status}`
+    throw new ApiError(
+      response.status,
+      message,
+      detail,
+    )
   }
 
   return response.json() as Promise<T>
