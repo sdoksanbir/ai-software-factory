@@ -1336,6 +1336,44 @@ def assert_command_allowed(
         )
 
 
+GIT_MUTATION_REJECTED_MESSAGE = (
+    "Git repository mutation is not allowed in "
+    "EXECUTE tasks. Use a WRITE task for "
+    "persistent Git changes."
+)
+
+
+def assert_git_mutation_allowed(
+    executable: str,
+    permission_level: PermissionLevel,
+    *,
+    allow_git_mutation: bool = True,
+) -> None:
+    """Reject non-SAFE git when allow_git_mutation is False.
+
+    DANGEROUS is handled by assert_command_allowed with
+    its existing message. SAFE git remains allowed.
+    """
+    if allow_git_mutation:
+        return
+
+    name = _executable_basename(executable)
+    if name not in {"git", "git.exe"}:
+        return
+
+    if permission_level == PermissionLevel.EXECUTE_SAFE:
+        return
+
+    if permission_level == PermissionLevel.DANGEROUS:
+        # Keep DANGEROUS rejection message from
+        # assert_command_allowed (call order).
+        return
+
+    raise TaskCommandPolicyError(
+        GIT_MUTATION_REJECTED_MESSAGE
+    )
+
+
 def build_process_env(
     request_env: dict[str, str] | None = None,
     *,
@@ -1612,6 +1650,13 @@ def run_task_command(
             permission_level,
             allow_mutating=bool(
                 request.allow_mutating
+            ),
+        )
+        assert_git_mutation_allowed(
+            executable,
+            permission_level,
+            allow_git_mutation=bool(
+                request.allow_git_mutation
             ),
         )
         boundary = classify_execution_boundary(

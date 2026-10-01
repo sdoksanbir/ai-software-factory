@@ -70,6 +70,10 @@ class TaskCommandRequest:
     # Explicit backend gate for EXECUTE_MUTATING.
     # DANGEROUS is never allowed, even when True.
     allow_mutating: bool = False
+    # Separate gate for Git repository metadata mutation.
+    # Defaults True so existing callers keep prior behavior.
+    # Production EXECUTE sets False (read-only Git surface).
+    allow_git_mutation: bool = True
 
 
 @dataclass(frozen=True)

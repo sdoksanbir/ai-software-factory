@@ -10,6 +10,15 @@ from factory.agent_terminal_models import (
     AgentTerminalRouteContext,
     build_execute_terminal_policy,
 )
+from factory.execute_worktree import (
+    ExecuteCleanupError,
+    ExecuteConcurrencyError,
+    ExecuteConflictError,
+    ExecuteIsolationError,
+    ExecuteWorktreeSession,
+    cleanup_execute_worktree,
+    prepare_execute_worktree,
+)
 from factory.model_router import (
     ModelRoute,
     route_model,
@@ -353,10 +362,47 @@ class TaskExecutionService:
         model_route: Any,
         orchestrator: Any,
     ):
+        session: ExecuteWorktreeSession | None = (
+            None
+        )
+        git_manager = getattr(
+            orchestrator,
+            "git_manager",
+            None,
+        )
+
         try:
             self._deps.append_log(
                 task_id,
                 "Agent Terminal baslatildi.",
+            )
+
+            if git_manager is None:
+                raise ExecuteIsolationError(
+                    "Orchestrator git_manager is "
+                    "required for EXECUTE isolation."
+                )
+
+            self._deps.append_log(
+                task_id,
+                (
+                    "EXECUTE isolation: disposable "
+                    "worktree hazirlaniyor."
+                ),
+            )
+
+            session = prepare_execute_worktree(
+                git_manager,
+                task_id,
+            )
+
+            self._deps.append_log(
+                task_id,
+                (
+                    "EXECUTE isolation hazir: "
+                    f"{session.path} "
+                    f"(branch={session.branch})"
+                ),
             )
 
             policy = (
@@ -384,9 +430,7 @@ class TaskExecutionService:
 
             loop_result = (
                 run_agent_terminal_loop(
-                    project_path=(
-                        orchestrator.project_path
-                    ),
+                    project_path=session.path,
                     task_id=task_id,
                     prompt=task.prompt,
                     model_route=model_route,
@@ -421,6 +465,15 @@ class TaskExecutionService:
                     (
                         "Agent Terminal tamamlandi: "
                         f"{summary}"
+                    ),
+                )
+                self._deps.append_log(
+                    task_id,
+                    (
+                        "EXECUTE produced isolated "
+                        "filesystem changes; they "
+                        "were not applied to the "
+                        "main project."
                     ),
                 )
 
@@ -472,6 +525,45 @@ class TaskExecutionService:
 
             return
 
+        except ExecuteConflictError as exc:
+            self._deps.append_log(
+                task_id,
+                f"Agent Terminal basarisiz: {exc}",
+            )
+            self._deps.update_runtime(
+                task_id,
+                status="failed",
+                state="failed",
+            )
+            return
+
+        except ExecuteConcurrencyError as exc:
+            self._deps.append_log(
+                task_id,
+                f"Agent Terminal basarisiz: {exc}",
+            )
+            self._deps.update_runtime(
+                task_id,
+                status="failed",
+                state="failed",
+            )
+            return
+
+        except ExecuteIsolationError as exc:
+            self._deps.append_log(
+                task_id,
+                (
+                    "Agent Terminal basarisiz: "
+                    f"execute isolation: {exc}"
+                ),
+            )
+            self._deps.update_runtime(
+                task_id,
+                status="failed",
+                state="failed",
+            )
+            return
+
         except Exception as exc:
             self._deps.append_log(
                 task_id,
@@ -488,6 +580,35 @@ class TaskExecutionService:
             )
 
             return
+
+        finally:
+            if (
+                session is not None
+                and git_manager is not None
+            ):
+                try:
+                    cleanup_execute_worktree(
+                        git_manager,
+                        path=session.path,
+                        branch=session.branch,
+                    )
+                    self._deps.append_log(
+                        task_id,
+                        (
+                            "EXECUTE isolation "
+                            "cleanup tamamlandi."
+                        ),
+                    )
+                except ExecuteCleanupError as exc:
+                    self._deps.append_log(
+                        task_id,
+                        (
+                            "EXECUTE isolation "
+                            "cleanup basarisiz: "
+                            f"{exc}"
+                        ),
+                    )
+
 
     def _run_read(
         self,

@@ -1494,6 +1494,7 @@ def test_fail_action_returns_failed():
 def test_execute_policy_defaults_allow_mutating():
     policy = build_execute_terminal_policy()
     assert policy.allow_mutating is True
+    assert policy.allow_git_mutation is False
     assert policy.max_agent_steps == 16
     assert policy.max_command_executions == 12
 

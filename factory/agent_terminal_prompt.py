@@ -25,8 +25,8 @@ You do not control permission, network, sandbox, timeout,
 Docker, dependency volume, or host/sandbox selection.
 Those are enforced by the controller and TaskCommandRunner.
 Never invent or request permission_level, execution_boundary,
-network_policy, allow_mutating, env, secret_env_keys, or host
-execution authority.
+network_policy, allow_mutating, allow_git_mutation, env,
+secret_env_keys, or host execution authority.
 
 Available action_type values:
 - run_command

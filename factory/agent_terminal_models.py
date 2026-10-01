@@ -26,6 +26,10 @@ class AgentTerminalPolicy:
     """
 
     allow_mutating: bool = False
+    # Git repository mutation (refs/config/stash/...).
+    # Independent of filesystem allow_mutating.
+    # Default True preserves non-EXECUTE callers.
+    allow_git_mutation: bool = True
     max_agent_steps: int = 16
     max_command_executions: int = 12
     max_identical_command_executions: int = 2
@@ -151,9 +155,15 @@ def build_execute_terminal_policy() -> (
     controlled package install / project execution
     can pass TaskCommand gates. DANGEROUS remains
     unconditionally rejected by the runner.
+
+    allow_git_mutation=False: linked worktrees share
+    common-dir refs/config/stash; EXECUTE must not
+    mutate repository-wide Git metadata. Filesystem
+    writes stay allowed inside the disposable worktree.
     """
     return AgentTerminalPolicy(
         allow_mutating=True,
+        allow_git_mutation=False,
     )
 
 

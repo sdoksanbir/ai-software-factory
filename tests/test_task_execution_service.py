@@ -67,6 +67,9 @@ def _deps(
         orchestrator = SimpleNamespace(
             project_path="/repo",
             model_client=object(),
+            git_manager=SimpleNamespace(
+                repo_root="/repo",
+            ),
             run_task=_forbid_run_task,
         )
 
@@ -114,6 +117,64 @@ def _deps(
         ),
         release_dependents=release,
     ), logs, updates, cleanups, orchestrator
+
+
+def _mock_execute_isolation(
+    monkeypatch,
+    *,
+    worktree_path="/wt/execute-TASK",
+    branch="execute/TASK",
+):
+    from factory.execute_worktree import (
+        ExecuteWorktreeSession,
+    )
+    from factory.tools.git_ops import (
+        GitWorkingTreeGuard,
+    )
+
+    prepare_calls = []
+    cleanup_calls = []
+
+    def fake_prepare(git_manager, task_id):
+        prepare_calls.append(
+            (git_manager, task_id)
+        )
+        return ExecuteWorktreeSession(
+            task_id=task_id,
+            branch=branch,
+            path=worktree_path,
+            repository_root="/repo",
+            before_guard=GitWorkingTreeGuard(
+                head_sha="abc",
+                entries=(),
+            ),
+        )
+
+    def fake_cleanup(
+        git_manager,
+        *,
+        path,
+        branch,
+    ):
+        cleanup_calls.append(
+            {
+                "git_manager": git_manager,
+                "path": path,
+                "branch": branch,
+            }
+        )
+
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "prepare_execute_worktree",
+        fake_prepare,
+    )
+    monkeypatch.setattr(
+        "factory.task_execution_service."
+        "cleanup_execute_worktree",
+        fake_cleanup,
+    )
+    return prepare_calls, cleanup_calls
 
 
 def test_write_dispatches_to_execute_write_task(
@@ -375,6 +436,13 @@ def test_execute_dispatches_to_agent_terminal_loop(
     )
     terminal_calls = []
     legacy_calls = []
+    prepare_calls, isolation_cleanups = (
+        _mock_execute_isolation(
+            monkeypatch,
+            worktree_path="/wt/execute-TASK-4001",
+            branch="execute/TASK-4001",
+        )
+    )
 
     monkeypatch.setattr(
         "factory.task_execution_service."
@@ -452,16 +520,31 @@ def test_execute_dispatches_to_agent_terminal_loop(
 
     assert result is None
     assert legacy_calls == []
+    assert len(prepare_calls) == 1
+    assert prepare_calls[0][1] == task.task_id
     assert len(terminal_calls) == 1
     call = terminal_calls[0]
-    assert call["project_path"] == orch.project_path
+    assert call["project_path"] == (
+        "/wt/execute-TASK-4001"
+    )
+    assert call["project_path"] != (
+        orch.project_path
+    )
     assert call["task_id"] == task.task_id
     assert call["prompt"] == task.prompt
     assert call["model_route"].model == "agent-model"
     assert call["model_client"] is orch.model_client
     assert call["policy"].allow_mutating is True
+    assert call["policy"].allow_git_mutation is False
     assert call["route_context"].intent == (
         "package_install"
+    )
+    assert len(isolation_cleanups) == 1
+    assert isolation_cleanups[0]["path"] == (
+        "/wt/execute-TASK-4001"
+    )
+    assert isolation_cleanups[0]["branch"] == (
+        "execute/TASK-4001"
     )
     assert any(
         kwargs.get("model") == "agent-model"
@@ -477,6 +560,11 @@ def test_execute_dispatches_to_agent_terminal_loop(
     )
     assert any(
         "Agent Terminal tamamlandi:" in message
+        for _tid, message in logs
+    )
+    assert any(
+        "were not applied to the main project"
+        in message
         for _tid, message in logs
     )
     assert (
@@ -495,6 +583,9 @@ def test_execute_terminal_stalled_marks_failed(
     task = _task(prompt="run checks")
     deps, logs, updates, cleanups, orch = (
         _deps(task=task)
+    )
+    _prepare, isolation_cleanups = (
+        _mock_execute_isolation(monkeypatch)
     )
 
     monkeypatch.setattr(
@@ -561,6 +652,7 @@ def test_execute_terminal_stalled_marks_failed(
         for _tid, message in logs
     )
     assert cleanups == []
+    assert len(isolation_cleanups) == 1
 
 
 def test_write_failure_cleans_up_and_marks_failed(

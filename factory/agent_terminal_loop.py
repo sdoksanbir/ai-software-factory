@@ -883,6 +883,9 @@ def run_agent_terminal_loop(
             allow_mutating=(
                 active_policy.allow_mutating
             ),
+            allow_git_mutation=(
+                active_policy.allow_git_mutation
+            ),
         )
 
         try:

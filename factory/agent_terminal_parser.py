@@ -32,6 +32,7 @@ MAX_CWD_CHARS = 1000
 _FORBIDDEN_ACTION_FIELDS = frozenset(
     {
         "allow_mutating",
+        "allow_git_mutation",
         "permission_level",
         "execution_boundary",
         "network_policy",

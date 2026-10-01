@@ -227,6 +227,7 @@ def _run(
     env=None,
     secret_env_keys=None,
     allow_mutating=False,
+    allow_git_mutation=True,
     persist=True,
     db_path=None,
 ):
@@ -238,6 +239,7 @@ def _run(
         env=env,
         secret_env_keys=secret_env_keys or [],
         allow_mutating=allow_mutating,
+        allow_git_mutation=allow_git_mutation,
     )
 
     kwargs = {
@@ -1766,3 +1768,178 @@ def test_shell_wrappers_still_rejected(tmp_path):
         )
         assert result.status == "rejected"
         assert result.exit_code is None
+
+
+def test_execute_disallows_git_mutation_even_with_allow_mutating(
+    tmp_path,
+    monkeypatch,
+):
+    from factory.task_command_runner import (
+        GIT_MUTATION_REJECTED_MESSAGE,
+    )
+
+    sandbox_calls = []
+
+    def _boom(**kwargs):
+        sandbox_calls.append(kwargs)
+        raise AssertionError("sandbox must not run")
+
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        _boom,
+    )
+
+    mutating = (
+        ["git", "branch", "leaked-branch"],
+        ["git", "tag", "leaked-tag"],
+        ["git", "stash", "push", "-m", "x"],
+        ["git", "config", "--local", "test.key", "v"],
+        [
+            "git",
+            "remote",
+            "add",
+            "leaked",
+            "https://example.com/r.git",
+        ],
+        ["git", "worktree", "add", "../other"],
+        [
+            "git",
+            "update-ref",
+            "refs/heads/leaked-ref",
+            "HEAD",
+        ],
+        ["git", "add", "."],
+        ["git", "commit", "-m", "x"],
+        ["git", "checkout", "main"],
+        ["git", "switch", "main"],
+        ["git", "reset"],
+        ["git", "restore", "f"],
+        ["git", "notes", "add", "-m", "n"],
+        ["git", "gc"],
+    )
+
+    for argv in mutating:
+        result = _run(
+            tmp_path,
+            argv,
+            allow_mutating=True,
+            allow_git_mutation=False,
+            persist=False,
+        )
+        assert result.status == "rejected", argv
+        assert result.exit_code is None
+        assert GIT_MUTATION_REJECTED_MESSAGE in (
+            result.stderr
+        )
+
+    assert sandbox_calls == []
+
+
+def test_execute_allows_safe_git_with_git_mutation_disabled(
+    tmp_path,
+    monkeypatch,
+):
+    host_calls = []
+
+    def fake_run(*args, **kwargs):
+        host_calls.append((args, kwargs))
+
+        class _Completed:
+            returncode = 0
+            stdout = "ok\n"
+            stderr = ""
+
+        return _Completed()
+
+    monkeypatch.setattr(
+        "factory.task_command_runner.subprocess.run",
+        fake_run,
+    )
+
+    safe = (
+        ["git", "status", "--short"],
+        ["git", "rev-parse", "HEAD"],
+        ["git", "ls-files"],
+        ["git", "branch", "--show-current"],
+    )
+
+    for argv in safe:
+        result = _run(
+            tmp_path,
+            argv,
+            allow_mutating=True,
+            allow_git_mutation=False,
+            persist=False,
+        )
+        assert result.status == "succeeded", argv
+        assert result.permission_level == (
+            PermissionLevel.EXECUTE_SAFE.value
+        )
+
+    assert len(host_calls) == len(safe)
+
+
+def test_allow_git_mutation_true_still_permits_git_branch(
+    tmp_path,
+    monkeypatch,
+    simulate_sandbox,
+):
+    # Not a git repo — sandbox may fail the process, but the
+    # command must not be rejected by allow_git_mutation gate.
+    result = _run(
+        tmp_path,
+        ["git", "branch", "legacy-ok"],
+        allow_mutating=True,
+        allow_git_mutation=True,
+        persist=False,
+    )
+    assert result.status != "rejected"
+    assert len(simulate_sandbox) == 1
+
+
+def test_filesystem_mutating_python_still_allowed_without_git_mutation(
+    tmp_path,
+    monkeypatch,
+    simulate_sandbox,
+):
+    script = tmp_path / "script.py"
+    script.write_text(
+        "from pathlib import Path\n"
+        "Path('generated.txt').write_text('hi')\n",
+        encoding="utf-8",
+    )
+    result = _run(
+        tmp_path,
+        ["python", "script.py"],
+        allow_mutating=True,
+        allow_git_mutation=False,
+        persist=False,
+    )
+    assert result.status == "succeeded"
+    assert len(simulate_sandbox) == 1
+    assert result.permission_level == (
+        PermissionLevel.EXECUTE_MUTATING.value
+    )
+
+
+def test_dangerous_git_keeps_dangerous_message_when_git_locked(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "factory.task_command_runner"
+        ".run_in_task_command_sandbox",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not run")
+        ),
+    )
+    result = _run(
+        tmp_path,
+        ["git", "reset", "--hard"],
+        allow_mutating=True,
+        allow_git_mutation=False,
+        persist=False,
+    )
+    assert result.status == "rejected"
+    assert "DANGEROUS" in result.stderr

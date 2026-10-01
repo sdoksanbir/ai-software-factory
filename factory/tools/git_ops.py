@@ -201,6 +201,80 @@ class GitWorktreeManager:
             repository_root=self.repo_root
         )
 
+    def create_execute_worktree(self, task_id: str) -> GitWorktreeResult:
+        """Create a disposable EXECUTE worktree on branch execute/<task_id>.
+
+        Distinct from WRITE create_worktree (agent/<task_id>). Never used
+        for approval merge.
+        """
+        if not self.validate_repository():
+            raise NotAGitRepositoryError(
+                f"Invalid repository root: {self.repo_root}"
+            )
+
+        clean_id = (task_id or "").strip()
+        if not clean_id:
+            raise GitOperationError(
+                "EXECUTE worktree task_id bos olamaz."
+            )
+
+        branch_name = f"execute/{clean_id}"
+        repo_name = os.path.basename(self.repo_root)
+        worktree_path = os.path.join(
+            self.worktree_root,
+            repo_name,
+            f"execute-{clean_id}",
+        )
+        abs_worktree_path = os.path.abspath(worktree_path)
+
+        if os.path.exists(abs_worktree_path):
+            raise WorktreeAlreadyExistsError(
+                "Execute worktree already exists for "
+                f"{clean_id} at: {abs_worktree_path}"
+            )
+
+        try:
+            wt_list = self._run_git_command(
+                ["worktree", "list", "--porcelain"]
+            )
+            if abs_worktree_path.replace("\\", "/") in (
+                wt_list.replace("\\", "/")
+            ):
+                raise WorktreeAlreadyExistsError(
+                    "Git already tracks execute worktree for "
+                    f"{clean_id} at: {abs_worktree_path}"
+                )
+        except GitOperationError:
+            pass
+
+        if self._branch_exists(branch_name):
+            raise BranchAlreadyExistsError(
+                f"Execute branch already exists: {branch_name}. "
+                "Force creation is not allowed."
+            )
+
+        os.makedirs(
+            os.path.dirname(abs_worktree_path),
+            exist_ok=True,
+        )
+
+        self._run_git_command(
+            [
+                "worktree",
+                "add",
+                "-b",
+                branch_name,
+                abs_worktree_path,
+            ]
+        )
+
+        return GitWorktreeResult(
+            task_id=clean_id,
+            branch=branch_name,
+            path=abs_worktree_path,
+            repository_root=self.repo_root,
+        )
+
     def get_status(self, worktree_path: str) -> str:
         """Verilen worktree yolundaki git status durumunu porcelain formatında döner."""
         abs_path = os.path.abspath(worktree_path)
