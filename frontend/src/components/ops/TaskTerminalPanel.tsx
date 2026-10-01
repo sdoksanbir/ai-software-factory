@@ -249,9 +249,7 @@ export function TaskTerminalPanel({
           return
         }
 
-        setError(
-          "Terminal ge\u00e7mi\u015fi y\u00fcklenemedi.",
-        )
+        setError("Terminal geçmişi yüklenemedi.")
       } finally {
         if (isCurrentRequest()) {
           setLoading(false)
@@ -308,9 +306,7 @@ export function TaskTerminalPanel({
     return (
       <section className="task-terminal-panel empty">
         <div className="task-terminal-empty">
-          Terminal ge\u00e7mi\u015fini g\u00f6rmek
-          {" "}
-          i\u00e7in bir g\u00f6rev se\u00e7in.
+          Terminal geçmişini görmek için bir görev seçin.
         </div>
       </section>
     )
@@ -319,16 +315,14 @@ export function TaskTerminalPanel({
   return (
     <section
       className="task-terminal-panel"
-      aria-label="G\u00f6rev terminal ge\u00e7mi\u015fi"
+      aria-label="Görev terminal geçmişi"
     >
       <header className="task-terminal-head">
         <div>
           <span>TERMINAL</span>
           <h2>{selectedTask.task_id}</h2>
           <p>
-            Ajan taraf\u0131ndan \u00e7al\u0131\u015ft\u0131r\u0131lan
-            {" "}
-            komut ge\u00e7mi\u015fi
+            Ajan tarafından çalıştırılan komut geçmişi
           </p>
         </div>
 
@@ -357,13 +351,11 @@ export function TaskTerminalPanel({
       <div className="task-terminal-body">
         {loading && commands.length === 0 && !error ? (
           <div className="task-terminal-empty">
-            Y\u00fckleniyor...
+            Yükleniyor...
           </div>
         ) : !error && commands.length === 0 ? (
           <div className="task-terminal-empty">
-            Bu g\u00f6rev i\u00e7in hen\u00fcz terminal
-            {" "}
-            komutu \u00e7al\u0131\u015ft\u0131r\u0131lmad\u0131.
+            Bu görev için henüz terminal komutu çalıştırılmadı.
           </div>
         ) : (
           <div className="task-terminal-list">

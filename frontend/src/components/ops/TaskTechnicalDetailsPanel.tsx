@@ -176,12 +176,12 @@ export function TaskTechnicalDetailsPanel({
             <span>GÖREV TEKNİĞİ</span>
             <h2>Teknik Ayrıntılar</h2>
             <p>
-              Model rotası, ajan çalışmaları ve ham kayıtlar.
+              Model rotası ve ajan çalışmaları.
             </p>
           </div>
 
           <div className="task-tech-count">
-            {executions.length} yürütme · {liveLogs.length} log
+            {executions.length} yürütme
           </div>
         </header>
 
@@ -202,7 +202,7 @@ export function TaskTechnicalDetailsPanel({
           </div>
         </div>
 
-        <div className="task-tech-main-grid">
+        <div className="task-tech-agents">
           <section className="task-tech-section">
             <div className="task-tech-section-head">
               <div>
@@ -273,42 +273,48 @@ export function TaskTechnicalDetailsPanel({
               )}
             </div>
           </section>
+        </div>
+      </section>
 
-          <section className="task-tech-section">
-            <div className="task-tech-section-head">
-              <div>
-                <span>KAYITLAR</span>
-                <strong>Ham Loglar</strong>
-              </div>
-              <small>{liveLogs.length}</small>
+      <section className="task-tech-panel task-tech-records">
+        <header className="task-tech-head">
+          <div>
+            <span>KAYITLAR</span>
+            <h2>Ham Loglar</h2>
+            <p>
+              Görev sırasında üretilen ham kayıtlar.
+            </p>
+          </div>
+
+          <div className="task-tech-count">
+            {liveLogs.length} log
+          </div>
+        </header>
+
+        <div className="task-tech-logbox">
+          {liveLogs.length === 0 ? (
+            <div className="task-tech-empty">
+              Henüz log kaydı yok.
             </div>
-
-            <div className="task-tech-logbox">
-              {liveLogs.length === 0 ? (
-                <div className="task-tech-empty">
-                  Henüz log kaydı yok.
+          ) : (
+            liveLogs.map(
+              (message, index) => (
+                <div
+                  className="task-tech-log-row"
+                  key={`${index}-${message}`}
+                >
+                  <span>
+                    #
+                    {String(index + 1).padStart(
+                      2,
+                      "0",
+                    )}
+                  </span>
+                  <code>{message}</code>
                 </div>
-              ) : (
-                liveLogs.map(
-                  (message, index) => (
-                    <div
-                      className="task-tech-log-row"
-                      key={`${index}-${message}`}
-                    >
-                      <span>
-                        #
-                        {String(index + 1).padStart(
-                          2,
-                          "0",
-                        )}
-                      </span>
-                      <code>{message}</code>
-                    </div>
-                  ),
-                )
-              )}
-            </div>
-          </section>
+              ),
+            )
+          )}
         </div>
       </section>
 

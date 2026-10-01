@@ -1,11 +1,18 @@
-/* Task technical area: left observability + right diff */
+/* Task technical area: technique + records (+ optional diff) */
 
 .task-tech-layout {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 14px;
   align-items: stretch;
+}
+
+.task-tech-layout:has(.task-tech-diff-panel) {
+  grid-template-columns:
+    minmax(0, 1.1fr)
+    minmax(280px, 0.85fr)
+    minmax(280px, 0.9fr);
 }
 
 .task-tech-panel {
@@ -93,10 +100,7 @@
   color: #ffcf71;
 }
 
-.task-tech-main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
-  gap: 10px;
+.task-tech-agents {
   padding: 12px;
 }
 
@@ -136,6 +140,17 @@
   height: 250px;
   overflow: auto;
   padding: 4px 10px 7px;
+}
+
+.task-tech-records {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-tech-records .task-tech-logbox {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 250px;
 }
 
 .task-tech-execution {
@@ -264,7 +279,8 @@
 }
 
 @media (max-width: 1250px) {
-  .task-tech-layout {
+  .task-tech-layout,
+  .task-tech-layout:has(.task-tech-diff-panel) {
     grid-template-columns: 1fr;
   }
 
@@ -275,21 +291,20 @@
 }
 
 @media (max-width: 900px) {
-  .task-tech-summary,
-  .task-tech-main-grid {
+  .task-tech-summary {
     grid-template-columns: 1fr;
   }
 
   .task-tech-execution-list,
-  .task-tech-logbox {
+  .task-tech-records .task-tech-logbox {
     height: 220px;
+    min-height: 220px;
   }
 }
 
 
-/* TASK_TECH_FULL_WIDTH_V4
-   Teknik Ayrintilar + Diff, ustteki iki ana panel gibi
-   tum satiri kullanir ve sola/saga yaslanir. */
+/* TASK_TECH_FULL_WIDTH_V5
+   Teknik Ayrintilar + Kayitlar (+ Diff) tum satiri kullanir. */
 .task-tech-layout {
   grid-column: 1 / -1 !important;
   width: 100% !important;
@@ -298,28 +313,29 @@
   align-self: stretch !important;
   display: grid !important;
   grid-template-columns:
-    minmax(0, 1fr)
-    minmax(0, 1fr) !important;
+    minmax(0, 1.15fr)
+    minmax(0, 0.85fr) !important;
   gap: 14px !important;
 }
 
+.task-tech-layout:has(.task-tech-diff-panel) {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 0.9fr)
+    minmax(0, 0.95fr) !important;
+}
+
 .task-tech-main,
+.task-tech-records,
 .task-tech-diff-panel {
   width: 100% !important;
   max-width: none !important;
   min-width: 0 !important;
 }
 
-.task-tech-main {
-  justify-self: start !important;
-}
-
-.task-tech-diff-panel {
-  justify-self: end !important;
-}
-
 @media (max-width: 1250px) {
-  .task-tech-layout {
+  .task-tech-layout,
+  .task-tech-layout:has(.task-tech-diff-panel) {
     grid-template-columns: 1fr !important;
   }
 }

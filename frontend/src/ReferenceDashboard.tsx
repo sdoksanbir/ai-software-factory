@@ -769,6 +769,49 @@ export function ReferenceDashboard({
             Boolean(taskReadResult)
           }
         />
+
+        {/* TASK_RESULT_UNDER_TEDDY_V1 */}
+        {(
+          isReadTask ||
+          isExecuteTask
+        ) &&
+          selectedTask?.state === "completed" && (
+            <section
+              id={
+                isExecuteTask
+                  ? "task-execution-result"
+                  : "task-ai-response"
+              }
+              className="read-task-result-card task-status-under-pipeline"
+              aria-label="Görev sonucu"
+            >
+              <div className="read-task-result-head">
+                <div>
+                  <span>GÖREV SONUCU</span>
+                  <h2>
+                    {isExecuteTask
+                      ? "İşlem Sonucu"
+                      : "AI Yanıtı"}
+                  </h2>
+                </div>
+
+                <div className="read-task-result-status">
+                  TAMAMLANDI
+                </div>
+              </div>
+
+              <div className="read-task-result-body">
+                {taskReadResult ? (
+                  <pre>{taskReadResult}</pre>
+                ) : (
+                  <p>
+                    Sonuç backend’den yükleniyor...
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
         {/* TASK_STATUS_ACTIONS_UNDER_PIPELINE_V1 */}
         {selectedTask?.state === "ready_for_approval" && (
           <section className="task-approval-panel task-status-under-pipeline">
@@ -949,50 +992,6 @@ export function ReferenceDashboard({
           onLoadDiff={onLoadDiff}
           taskKind={taskKind}
         />
-
-        {/* TASK_RESULT_PANEL_V2 */}
-        {(
-          isReadTask ||
-          isExecuteTask
-        ) &&
-          selectedTask?.state === "completed" && (
-            <section
-              id={
-                isExecuteTask
-                  ? "task-execution-result"
-                  : "task-ai-response"
-              }
-              className="read-task-result-card"
-              aria-label="Görev sonucu"
-            >
-              <div className="read-task-result-head">
-                <div>
-                  <span>GÖREV SONUCU</span>
-                  <h2>
-                    {isExecuteTask
-                      ? "İşlem Sonucu"
-                      : "AI Yanıtı"}
-                  </h2>
-                </div>
-
-                <div className="read-task-result-status">
-                  TAMAMLANDI
-                </div>
-              </div>
-
-              <div className="read-task-result-body">
-                {taskReadResult ? (
-                  <pre>{taskReadResult}</pre>
-                ) : (
-                  <p>
-                    Sonuç backend’den yükleniyor...
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
-
-
 
 
           </div>
