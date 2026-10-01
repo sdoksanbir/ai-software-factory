@@ -38,6 +38,12 @@ EXECUTE_PATTERNS = (
     r"\b(kur|olustur|hazirla)\b.*\bsanal ortam\b",
     r"\bvirtual environment\b.*\b(create|setup|set up)\b",
     r"\b(create|setup|set up)\b.*\bvirtual environment\b",
+    # Narrow run intents (not bare calistir).
+    r"\b(testleri|testler|test|pytest|lint)\b.*\bcalistir\b",
+    r"\bcalistir\b.*\b(testleri|testler|test|pytest|lint)\b",
+    r"\bpython\b.*\bcalistir\b",
+    r"\bcalistir\b.*\bpython\b",
+    r"\bbuild\s+al\b",
 )
 
 
@@ -60,6 +66,39 @@ WRITE_PATTERNS = (
     r"\byaz\b",
     r"\btest ekle\b",
     r"\btestlerini ekle\b",
+)
+
+
+# Ambiguous creation verbs. Never treat these as WRITE alone.
+_AMBIGUOUS_CREATION_VERBS = (
+    r"\byap\b",
+    r"\bhazirla\b",
+    r"\btasarla\b",
+)
+
+
+# Strong implementation/UI artifact objects for compound WRITE.
+_ARTIFACT_OBJECT_PATTERNS = (
+    r"\bhtml\b",
+    r"\bcss\b",
+    r"\bscss\b",
+    r"\breact\b",
+    r"\bcomponent\b",
+    r"\bbilesen\b",
+    r"\bprototip\w*\b",
+    r"\bweb\s+sayfa\w*\b",
+    r"\bsayfa\w*\b",
+    r"\bekran\w*\b",
+    r"\bdashboard\b",
+    r"\barayuz\w*\b",
+    r"\bui\b",
+    r"\btemplate\b",
+)
+
+
+# "dashboard analizi yap" is analysis, not artifact creation.
+_ANALYSIS_YAP_SUPPRESS = re.compile(
+    r"\banaliz\w*\s+yap\b"
 )
 
 
@@ -102,6 +141,34 @@ def _matches(
     )
 
 
+def _has_artifact_creation_intent(
+    prompt: str,
+) -> bool:
+    """Compound WRITE: artifact object + ambiguous creation verb.
+
+    Bare yap/hazirla/tasarla alone never qualify.
+    Analysis phrases like "dashboard analizi yap" are excluded.
+    Object/action order may be either way.
+    """
+    text = normalize_text(prompt)
+
+    if _ANALYSIS_YAP_SUPPRESS.search(text):
+        return False
+
+    has_artifact = any(
+        re.search(pattern, text)
+        for pattern in _ARTIFACT_OBJECT_PATTERNS
+    )
+
+    if not has_artifact:
+        return False
+
+    return any(
+        re.search(pattern, text)
+        for pattern in _AMBIGUOUS_CREATION_VERBS
+    )
+
+
 def route_task(
     prompt: str,
 ) -> TaskRoute:
@@ -125,7 +192,10 @@ def route_task(
 
     # Acik bir degisiklik talebi varsa WRITE,
     # READ sinyalinden daha onceliklidir.
-    if _matches(clean, WRITE_PATTERNS):
+    if (
+        _matches(clean, WRITE_PATTERNS)
+        or _has_artifact_creation_intent(clean)
+    ):
         return TaskRoute(
             kind="write",
             reason=(

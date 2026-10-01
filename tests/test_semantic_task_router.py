@@ -6,12 +6,22 @@ from factory.semantic_task_router import (
 
 
 class FakeModelClient:
-    def __init__(self, content):
+    def __init__(
+        self,
+        content=None,
+        *,
+        error=None,
+    ):
         self.content = content
+        self.error = error
         self.calls = []
 
     def complete(self, **kwargs):
         self.calls.append(kwargs)
+
+        if self.error is not None:
+            raise self.error
+
         return SimpleNamespace(
             content=self.content
         )
@@ -112,3 +122,74 @@ def test_django_project_creation_is_framework_scaffold():
     assert route.intent == "framework_scaffold"
     assert route.framework == "django"
     assert route.target == "okulprojesi"
+
+
+def test_provider_failure_html_prototype_fallback_write():
+    client = FakeModelClient(
+        error=RuntimeError("model down"),
+    )
+
+    route = route_task_semantic(
+        "bana statik bir HTML tasarım prototipi yap",
+        model_client=client,
+    )
+
+    assert route.kind == "write"
+    assert route.source == "deterministic_fallback"
+
+
+def test_provider_failure_repo_analizi_fallback_read():
+    client = FakeModelClient(
+        error=RuntimeError("model down"),
+    )
+
+    route = route_task_semantic(
+        "repo analizi yap",
+        model_client=client,
+    )
+
+    assert route.kind == "read"
+    assert route.source == "deterministic_fallback"
+
+
+def test_provider_failure_testleri_calistir_fallback_execute():
+    client = FakeModelClient(
+        error=RuntimeError("model down"),
+    )
+
+    route = route_task_semantic(
+        "testleri çalıştır",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.source == "deterministic_fallback"
+
+
+def test_provider_failure_python_script_fallback_execute():
+    client = FakeModelClient(
+        error=RuntimeError("model down"),
+    )
+
+    route = route_task_semantic(
+        "python script.py çalıştır",
+        model_client=client,
+    )
+
+    assert route.kind == "execute"
+    assert route.source == "deterministic_fallback"
+
+
+def test_low_confidence_html_prototype_fallback_write():
+    client = FakeModelClient(
+        '{"kind":"read","intent":"explain_or_inspect",'
+        '"confidence":0.20,"reason":"Emin degilim."}'
+    )
+
+    route = route_task_semantic(
+        "bana statik bir HTML tasarım prototipi yap",
+        model_client=client,
+    )
+
+    assert route.kind == "write"
+    assert route.source == "deterministic_fallback"
