@@ -890,8 +890,54 @@ def recover_stale_execute_sessions_on_startup() -> None:
     )
 
 
+def recover_rejected_write_artifacts_on_startup() -> None:
+    """Clean stale REJECTED WRITE worktree/branch artifacts after hydrate.
+
+    DB-backed exact ownership only. Never sweeps ``agent/*``. Does not
+    touch ready_for_approval evidence or EXECUTE marker recovery.
+    """
+    from factory.rejected_write_recovery import (
+        recover_rejected_write_artifacts_on_startup as _recover,
+    )
+    from factory.orchestrator import Orchestrator
+
+    default_root = Orchestrator().worktree_root
+
+    def _get_task_kind(task_id: str) -> str | None:
+        task = TASKS.get(task_id)
+        if task is not None:
+            kind = getattr(task, "task_kind", None)
+            if kind:
+                return str(kind).strip().casefold()
+        route = get_task_route(task_id)
+        if route is None:
+            return None
+        return (
+            str(route.get("kind") or "").strip().casefold()
+            or None
+        )
+
+    def _get_project_path(row: dict) -> str | None:
+        project_id = row.get("project_id")
+        if project_id is None:
+            return None
+        project = db_get_project(project_id)
+        if project is None:
+            return None
+        return project.get("path")
+
+    _recover(
+        worktree_root=default_root,
+        list_task_rows=db_list_tasks,
+        get_task_kind=_get_task_kind,
+        get_project_path=_get_project_path,
+        append_log=append_task_log,
+    )
+
+
 hydrate_runtime_from_database()
 recover_stale_execute_sessions_on_startup()
+recover_rejected_write_artifacts_on_startup()
 
 # APPROVAL_RUNTIME_RECOVERY_V2
 def ensure_approval_runtime(task_id: str):
