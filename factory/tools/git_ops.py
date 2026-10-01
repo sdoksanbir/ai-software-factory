@@ -181,11 +181,19 @@ class GitWorktreeManager:
             raise WorktreeAlreadyExistsError(f"Worktree already exists for {task_id} at: {abs_worktree_path}")
 
         try:
-            wt_list = self._run_git_command(["worktree", "list", "--porcelain"])
-            if abs_worktree_path.replace("\\", "/") in wt_list.replace("\\", "/"):
-                raise WorktreeAlreadyExistsError(f"Git already tracks worktree for {task_id} at: {abs_worktree_path}")
+            wt_list = self._run_git_command(
+                ["worktree", "list", "--porcelain"]
+            )
         except GitOperationError:
-            pass
+            wt_list = ""
+
+        if abs_worktree_path.replace("\\", "/") in (
+            wt_list.replace("\\", "/")
+        ):
+            raise WorktreeAlreadyExistsError(
+                f"Git already tracks worktree for {task_id} at: "
+                f"{abs_worktree_path}"
+            )
 
         if self._branch_exists(branch_name):
             raise BranchAlreadyExistsError(f"Branch already exists: {branch_name}. Force creation is not allowed.")
@@ -237,15 +245,16 @@ class GitWorktreeManager:
             wt_list = self._run_git_command(
                 ["worktree", "list", "--porcelain"]
             )
-            if abs_worktree_path.replace("\\", "/") in (
-                wt_list.replace("\\", "/")
-            ):
-                raise WorktreeAlreadyExistsError(
-                    "Git already tracks execute worktree for "
-                    f"{clean_id} at: {abs_worktree_path}"
-                )
         except GitOperationError:
-            pass
+            wt_list = ""
+
+        if abs_worktree_path.replace("\\", "/") in (
+            wt_list.replace("\\", "/")
+        ):
+            raise WorktreeAlreadyExistsError(
+                "Git already tracks execute worktree for "
+                f"{clean_id} at: {abs_worktree_path}"
+            )
 
         if self._branch_exists(branch_name):
             raise BranchAlreadyExistsError(

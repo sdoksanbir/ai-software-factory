@@ -155,12 +155,16 @@ def _mock_execute_isolation(
         *,
         path,
         branch,
+        task_id=None,
+        remove_marker_on_success=True,
+        **kwargs,
     ):
         cleanup_calls.append(
             {
                 "git_manager": git_manager,
                 "path": path,
                 "branch": branch,
+                "task_id": task_id,
             }
         )
 

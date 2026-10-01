@@ -41,6 +41,18 @@ class ExecuteCleanupError(ExecuteIsolationError):
     """Disposable execute worktree/branch cleanup failed."""
 
 
+class ActiveExecuteSessionError(ExecuteIsolationError):
+    """Another live backend still owns this EXECUTE session."""
+
+
+class UnownedExecuteArtifactsError(ExecuteIsolationError):
+    """Exact execute artifacts exist without a Factory ownership marker."""
+
+
+class ExecuteMarkerError(ExecuteIsolationError):
+    """Marker missing, malformed, tampered, or mismatched."""
+
+
 @dataclass(frozen=True)
 class ExecuteWorktreeSession:
     task_id: str
@@ -292,10 +304,17 @@ def cleanup_execute_worktree(
     *,
     path: str | None,
     branch: str | None,
+    task_id: str | None = None,
+    remove_marker_on_success: bool = True,
 ) -> None:
     """Force-remove disposable execute worktree and branch.
 
     Never runs reset/clean/checkout/stash on main.
+
+    When Git cleanup succeeds and ``remove_marker_on_success`` is true,
+    the Factory ownership marker for ``task_id`` (or derived from
+    ``branch``) is removed. If Git cleanup fails, the marker is kept
+    so later recovery can retry.
     """
     errors: list[str] = []
 
@@ -335,6 +354,22 @@ def cleanup_execute_worktree(
     if errors:
         raise ExecuteCleanupError("; ".join(errors))
 
+    if remove_marker_on_success:
+        resolved_task_id = (task_id or "").strip()
+        if not resolved_task_id and branch:
+            prefix = "execute/"
+            if branch.startswith(prefix):
+                resolved_task_id = branch[len(prefix):].strip()
+        if resolved_task_id:
+            from factory.execute_recovery import (
+                delete_execute_owner_marker,
+            )
+
+            delete_execute_owner_marker(
+                git_manager,
+                resolved_task_id,
+            )
+
 
 def _worktree_registered(
     git_manager: GitWorktreeManager,
@@ -357,16 +392,34 @@ def prepare_execute_worktree(
     task_id: str,
 ) -> ExecuteWorktreeSession:
     """Create an execute worktree and materialize main dirty state."""
+    from factory.execute_recovery import (
+        derive_execute_path_plan,
+        ensure_execute_session_ready,
+        write_execute_owner_marker,
+        delete_execute_owner_marker,
+    )
+
     if has_unmerged_paths(git_manager):
         raise ExecuteConflictError(
             "Project contains unresolved Git conflicts; "
             "isolated execution was not started."
         )
 
+    # Second line of defense: recover dead-owner sessions or refuse
+    # when a live owner / unmarked artifacts block creation.
+    ensure_execute_session_ready(git_manager, task_id)
+
+    plan = derive_execute_path_plan(git_manager, task_id)
     before_guard = git_manager.capture_working_tree_guard()
     created: GitWorktreeResult | None = None
+    marker_written = False
 
     try:
+        # Marker before worktree creation so mid-create crashes
+        # still leave recoverable ownership proof.
+        write_execute_owner_marker(plan)
+        marker_written = True
+
         created = git_manager.create_execute_worktree(task_id)
         materialize_main_state_into_worktree(
             git_manager,
@@ -386,9 +439,25 @@ def prepare_execute_worktree(
                     git_manager,
                     path=created.path,
                     branch=created.branch,
+                    task_id=plan.task_id,
+                    remove_marker_on_success=False,
                 )
             except ExecuteCleanupError:
-                # Preserve the original prepare failure.
+                # Preserve the original prepare failure; best-effort
+                # cleanup may be incomplete.
+                pass
+
+        if marker_written:
+            # Always drop this process's lease on prepare abort so a
+            # retry is not blocked by ACTIVE_EXECUTE_SESSION against
+            # ourselves. If Git cleanup failed, unmarked leftovers
+            # fail closed on the next prepare.
+            try:
+                delete_execute_owner_marker(
+                    git_manager,
+                    plan.task_id,
+                )
+            except Exception:
                 pass
         raise
 

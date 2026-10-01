@@ -591,6 +591,7 @@ class TaskExecutionService:
                         git_manager,
                         path=session.path,
                         branch=session.branch,
+                        task_id=task_id,
                     )
                     self._deps.append_log(
                         task_id,

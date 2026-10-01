@@ -802,7 +802,65 @@ def hydrate_runtime_from_database() -> None:
             }
 
 
+def recover_stale_execute_sessions_on_startup() -> None:
+    """Recover dead-owner EXECUTE markers without sweeping execute/*.
+
+    Runs after approval hydration. Live owners are skipped. Running
+    execute tasks whose owner process is dead become failed so UI
+    retry works. Legacy running execute tasks without a marker are
+    left untouched (fail closed).
+    """
+    from factory.execute_recovery import (
+        recover_stale_execute_markers,
+    )
+    from factory.orchestrator import Orchestrator
+
+    default_root = Orchestrator().worktree_root
+
+    def _get_task(task_id: str):
+        return TASKS.get(task_id)
+
+    def _get_task_kind(task_id: str) -> str | None:
+        task = TASKS.get(task_id)
+        if task is None:
+            return None
+        kind = getattr(task, "task_kind", None)
+        if kind:
+            return str(kind).strip().casefold()
+        route = get_task_route(task_id)
+        if route is None:
+            return None
+        return str(route.get("kind") or "").strip().casefold() or None
+
+    def _get_project_path(task) -> str | None:
+        project_id = getattr(task, "project_id", None)
+        if project_id is None:
+            return None
+        project = db_get_project(project_id)
+        if project is None:
+            return None
+        return project.get("path")
+
+    def _mark_interrupted(task_id: str) -> None:
+        task = TASKS.get(task_id)
+        if task is None:
+            return
+        task.status = "failed"
+        task.state = "failed"
+        persist_task(task)
+
+    recover_stale_execute_markers(
+        worktree_root=default_root,
+        get_task=_get_task,
+        get_task_kind=_get_task_kind,
+        get_project_path=_get_project_path,
+        mark_interrupted=_mark_interrupted,
+        append_log=append_task_log,
+    )
+
+
 hydrate_runtime_from_database()
+recover_stale_execute_sessions_on_startup()
 
 # APPROVAL_RUNTIME_RECOVERY_V2
 def ensure_approval_runtime(task_id: str):
