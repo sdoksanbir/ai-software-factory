@@ -182,6 +182,23 @@ def run_multi_step_task(
             )
         )
 
+        # WRITE finalization invariant: a mutation
+        # task with no net repository delta must
+        # not become ready_for_approval. Gate on
+        # the final worktree state after ALL steps
+        # complete — not per intermediate WRITE.
+        final_diff = str(
+            diff_output or ""
+        ).strip()
+
+        if not final_diff:
+            raise RuntimeError(
+                "Görev tamamlandı ancak projede "
+                "onaylanacak bir değişiklik oluşmadı."
+            )
+
+        diff_output = final_diff
+
         state_machine.transition(
             TaskStatus.READY_FOR_APPROVAL
         )
