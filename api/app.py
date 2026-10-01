@@ -2053,46 +2053,18 @@ def approve_task(
     task_id: str,
     background_tasks: BackgroundTasks,
 ):
-    task, context = ensure_approval_runtime(task_id)
-
-    if task is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Task not found after SQLite recovery: {task_id}",
-        )
-
-    if task.state != "ready_for_approval":
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Task state is {task.state!r}, expected "
-                "'ready_for_approval'"
-            ),
-        )
-
-    if context is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Approval runtime context could not be recovered from "
-                f"SQLite for {task_id}"
-            ),
-        )
-
-    state_machine = context["state_machine"]
-    wt_result = context["wt_result"]
-
-    try:
-        orchestrator = build_orchestrator_for_task(
-            task
-        )
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=str(exc),
-        ) from exc
-
-    git_manager = orchestrator.git_manager
+    # User-facing HTTP details only. Technical exception text goes to
+    # task logs — never interpolate {exc} into these strings.
+    TASK_NOT_FOUND_DETAIL = "Görev bulunamadı."
+    INVALID_APPROVAL_STATE_DETAIL = (
+        "Görev şu anda onaylanabilir durumda değil."
+    )
+    APPROVAL_CONTEXT_UNAVAILABLE_DETAIL = (
+        "Onay için gerekli görev bağlamı geri yüklenemedi."
+    )
+    PROJECT_UNAVAILABLE_DETAIL = (
+        "Görevin bağlı olduğu proje kullanılamıyor."
+    )
     NO_CHANGE_DETAIL = (
         "Birleştirilecek yeni Git değişikliği bulunamadı."
     )
@@ -2103,6 +2075,83 @@ def approve_task(
         "Approval sırasında repository'de yeni kullanıcı değişiklikleri "
         "algılandı; otomatik rollback veri kaybı riski nedeniyle durduruldu."
     )
+    LOCAL_CHANGES_PRESERVE_FAILED_DETAIL = (
+        "Yerel değişiklikler güvenli şekilde korunamadığı için onay "
+        "işlemi durduruldu."
+    )
+    LOCAL_CHANGES_STILL_DIRTY_DETAIL = (
+        "Yerel değişiklikler güvenli şekilde ayrılamadığı için onay "
+        "işlemi durduruldu."
+    )
+    MERGE_FAILED_DETAIL = (
+        "Görev değişiklikleri ana dala birleştirilemedi. "
+        "Görev kayıtlarını kontrol edin."
+    )
+    POST_MERGE_VERIFICATION_FAILED_DETAIL = (
+        "Birleştirme tamamlandı ancak sonuç güvenli şekilde "
+        "doğrulanamadı. Görev kayıtlarını kontrol edin."
+    )
+    RECOVERY_FAILED_DETAIL = (
+        "Onay sırasında çakışma oluştu ve otomatik kurtarma "
+        "tamamlanamadı. Görev kayıtlarını kontrol edin."
+    )
+    APPROVAL_PERSISTENCE_FAILED_DETAIL = (
+        "Birleştirme tamamlandı ancak onay durumu kaydedilemedi. "
+        "Görev kayıtlarını kontrol edin."
+    )
+
+    task, context = ensure_approval_runtime(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail=TASK_NOT_FOUND_DETAIL,
+        )
+
+    if task.state != "ready_for_approval":
+        append_task_log(
+            task_id,
+            (
+                "Approval refused: task state is "
+                f"{task.state!r}, expected 'ready_for_approval'"
+            ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=INVALID_APPROVAL_STATE_DETAIL,
+        )
+
+    if context is None:
+        append_task_log(
+            task_id,
+            (
+                "Approval runtime context could not be recovered from "
+                f"SQLite for {task_id}"
+            ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=APPROVAL_CONTEXT_UNAVAILABLE_DETAIL,
+        )
+
+    state_machine = context["state_machine"]
+    wt_result = context["wt_result"]
+
+    try:
+        orchestrator = build_orchestrator_for_task(
+            task
+        )
+    except KeyError as exc:
+        append_task_log(
+            task_id,
+            f"Approval orchestrator unavailable: {exc}",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=PROJECT_UNAVAILABLE_DETAIL,
+        ) from exc
+
+    git_manager = orchestrator.git_manager
 
     local_snapshot = None
     target_head_before = None
@@ -2291,13 +2340,16 @@ def approve_task(
                     )
                 )
             except Exception as preserve_exc:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Approval cancelled: could not safely preserve "
-                        "local user changes before merge: "
+                append_task_log(
+                    task_id,
+                    (
+                        "Approval preserve local changes failed: "
                         f"{preserve_exc}"
                     ),
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail=LOCAL_CHANGES_PRESERVE_FAILED_DETAIL,
                 ) from preserve_exc
 
             remaining = git_manager.get_repository_status()
@@ -2312,10 +2364,7 @@ def approve_task(
                     pass
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        "Approval cancelled: main repository remained "
-                        "dirty after preserving local changes."
-                    ),
+                    detail=LOCAL_CHANGES_STILL_DIRTY_DETAIL,
                 )
 
         git_manager.merge_branch(
@@ -2350,12 +2399,13 @@ def approve_task(
             except Exception:
                 pass
 
+        append_task_log(
+            task_id,
+            f"Approval merge failed: {exc}",
+        )
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Approval merge failed and the merge was rolled back: "
-                f"{exc}"
-            ),
+            detail=MERGE_FAILED_DETAIL,
         ) from exc
 
     # PHASE 1B — Merge command returned successfully. Verify Git truth.
@@ -2395,10 +2445,7 @@ def approve_task(
         )
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Git merge completed but post-merge verification "
-                f"failed: {exc}"
-            ),
+            detail=POST_MERGE_VERIFICATION_FAILED_DETAIL,
         ) from exc
 
     # PHASE 1C — Restore preserved local user changes onto merged HEAD.
@@ -2432,11 +2479,7 @@ def approve_task(
                 )
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        "Approval blocked: local user changes conflicted "
-                        "with the task merge and automatic recovery "
-                        f"failed: {rollback_exc}"
-                    ),
+                    detail=RECOVERY_FAILED_DETAIL,
                 ) from rollback_exc
 
             raise HTTPException(
@@ -2481,10 +2524,7 @@ def approve_task(
         )
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Git merge succeeded but approval state "
-                f"persistence failed: {exc}"
-            ),
+            detail=APPROVAL_PERSISTENCE_FAILED_DETAIL,
         ) from exc
 
     # PHASE 3 — Ephemeral synchronization / finalization.

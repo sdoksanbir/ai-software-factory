@@ -21,6 +21,66 @@ SUCCESS_LOG = (
 NO_CHANGE_DETAIL = (
     "Birleştirilecek yeni Git değişikliği bulunamadı."
 )
+TASK_NOT_FOUND_DETAIL = "Görev bulunamadı."
+INVALID_APPROVAL_STATE_DETAIL = (
+    "Görev şu anda onaylanabilir durumda değil."
+)
+APPROVAL_CONTEXT_UNAVAILABLE_DETAIL = (
+    "Onay için gerekli görev bağlamı geri yüklenemedi."
+)
+PROJECT_UNAVAILABLE_DETAIL = (
+    "Görevin bağlı olduğu proje kullanılamıyor."
+)
+LOCAL_CHANGES_PRESERVE_FAILED_DETAIL = (
+    "Yerel değişiklikler güvenli şekilde korunamadığı için onay "
+    "işlemi durduruldu."
+)
+LOCAL_CHANGES_STILL_DIRTY_DETAIL = (
+    "Yerel değişiklikler güvenli şekilde ayrılamadığı için onay "
+    "işlemi durduruldu."
+)
+MERGE_FAILED_DETAIL = (
+    "Görev değişiklikleri ana dala birleştirilemedi. "
+    "Görev kayıtlarını kontrol edin."
+)
+POST_MERGE_VERIFICATION_FAILED_DETAIL = (
+    "Birleştirme tamamlandı ancak sonuç güvenli şekilde "
+    "doğrulanamadı. Görev kayıtlarını kontrol edin."
+)
+RECOVERY_FAILED_DETAIL = (
+    "Onay sırasında çakışma oluştu ve otomatik kurtarma "
+    "tamamlanamadı. Görev kayıtlarını kontrol edin."
+)
+APPROVAL_PERSISTENCE_FAILED_DETAIL = (
+    "Birleştirme tamamlandı ancak onay durumu kaydedilemedi. "
+    "Görev kayıtlarını kontrol edin."
+)
+
+SECRET_PATH = r"C:\secret\repo\.git"
+SECRET_BRANCH = "secret-branch"
+SECRET_STDERR = "SECRET_MARKER"
+SECRET_DB_PATH = r"C:\secret\factory.db"
+SECRET_ROLLBACK_PATH = "SECRET_ROLLBACK_PATH"
+INTERNAL_PROJECT_ID = "INTERNAL-PROJECT-ID"
+SECRET_USER_REPO = r"C:\Users\secret\repo"
+
+LEAKAGE_SENTINELS = (
+    SECRET_PATH,
+    SECRET_BRANCH,
+    SECRET_STDERR,
+    SECRET_DB_PATH,
+    SECRET_ROLLBACK_PATH,
+    INTERNAL_PROJECT_ID,
+    SECRET_USER_REPO,
+)
+
+
+def _assert_no_http_leakage(detail: str, *extra_forbidden: str) -> None:
+    text = str(detail)
+    for marker in (*LEAKAGE_SENTINELS, *extra_forbidden):
+        assert marker not in text, (
+            f"HTTP detail leaked technical marker {marker!r}: {text!r}"
+        )
 
 
 class RecordingGitManager:
@@ -33,14 +93,19 @@ class RecordingGitManager:
         dirty="",
         missing_branch=False,
         fail_merge=False,
+        merge_error=None,
         fail_ancestry=False,
         raise_ancestry_error=False,
+        ancestry_error=None,
         fail_cleanup=False,
         already_in_target=False,
         main_dirty="",
         fail_preserve=False,
+        preserve_error=None,
         fail_restore=False,
         fail_drop_snapshot=False,
+        fail_reset=False,
+        reset_error=None,
     ):
         self.target_before = target_before
         self.task_head = task_head
@@ -48,14 +113,25 @@ class RecordingGitManager:
         self.dirty = dirty
         self.missing_branch = missing_branch
         self.fail_merge = fail_merge
+        self.merge_error = merge_error or RuntimeError("merge conflict")
         self.fail_ancestry = fail_ancestry
         self.raise_ancestry_error = raise_ancestry_error
+        self.ancestry_error = ancestry_error or GitOperationError(
+            "ancestry infrastructure failed"
+        )
         self.fail_cleanup = fail_cleanup
         self.already_in_target = already_in_target
         self.main_dirty = main_dirty
         self.fail_preserve = fail_preserve
+        self.preserve_error = preserve_error or GitOperationError(
+            "stash push failed"
+        )
         self.fail_restore = fail_restore
         self.fail_drop_snapshot = fail_drop_snapshot
+        self.fail_reset = fail_reset
+        self.reset_error = reset_error or GitOperationError(
+            "unexpected HEAD"
+        )
 
         self.calls = []
         self.merged = False
@@ -81,7 +157,7 @@ class RecordingGitManager:
     def preserve_local_changes(self, label):
         self.calls.append(("preserve_local_changes", label))
         if self.fail_preserve:
-            raise GitOperationError("stash push failed")
+            raise self.preserve_error
         self.preserved_snapshot = GitLocalChangesSnapshot(
             commit_sha="snapshot-sha-1",
             label=label,
@@ -122,6 +198,8 @@ class RecordingGitManager:
                 expected_guard,
             )
         )
+        if self.fail_reset:
+            raise self.reset_error
         if self.get_repository_head() != expected_current_head:
             raise GitOperationError("unexpected HEAD")
         self.reset_to = commit_sha
@@ -196,9 +274,7 @@ class RecordingGitManager:
 
         # Post-merge inspection error (after merge_branch succeeded).
         if self.merged and self.raise_ancestry_error:
-            raise GitOperationError(
-                "ancestry infrastructure failed"
-            )
+            raise self.ancestry_error
 
         if self.fail_ancestry:
             return False
@@ -213,7 +289,7 @@ class RecordingGitManager:
     def merge_branch(self, branch):
         self.calls.append(("merge_branch", branch))
         if self.fail_merge:
-            raise RuntimeError("merge conflict")
+            raise self.merge_error
         self.merged = True
         return self.target_after
 
@@ -249,6 +325,7 @@ def _prepare_approval(
     task_id="TASK-3873",
     task_kind="write",
     fail_persist=False,
+    persist_error=None,
 ):
     task = app_module.TaskCreateResponse(
         task_id=task_id,
@@ -291,7 +368,7 @@ def _prepare_approval(
 
     def fake_persist_task(staged_task, **kwargs):
         if fail_persist:
-            raise RuntimeError("sqlite persist failed")
+            raise persist_error or RuntimeError("sqlite persist failed")
         persisted.append(
             (
                 staged_task.task_id,
@@ -463,7 +540,17 @@ def test_missing_task_branch_rejects_without_success(monkeypatch):
             )
 
         assert exc_info.value.status_code == 409
-        assert "Branch does not exist" in str(exc_info.value.detail)
+        assert exc_info.value.detail == MERGE_FAILED_DETAIL
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "Branch does not exist",
+            "agent/task-3873",
+        )
+        assert any(
+            "Approval merge failed:" in message
+            and "Branch does not exist" in message
+            for message in logs
+        )
         assert task.state == "ready_for_approval"
         assert SUCCESS_LOG not in logs
         assert git_manager.cleaned_worktree is False
@@ -491,7 +578,13 @@ def test_merge_conflict_preserves_evidence(monkeypatch):
             )
 
         assert exc_info.value.status_code == 409
-        assert "Approval merge failed" in str(exc_info.value.detail)
+        assert exc_info.value.detail == MERGE_FAILED_DETAIL
+        _assert_no_http_leakage(exc_info.value.detail, "merge conflict")
+        assert any(
+            "Approval merge failed:" in message
+            and "merge conflict" in message
+            for message in logs
+        )
         assert task.state == "ready_for_approval"
         assert SUCCESS_LOG not in logs
         assert git_manager.cleaned_worktree is False
@@ -522,10 +615,8 @@ def test_post_merge_ancestry_failure_not_approved(monkeypatch):
 
         detail = str(exc_info.value.detail)
         assert exc_info.value.status_code == 409
-        assert (
-            "Git merge completed but post-merge verification failed"
-            in detail
-        )
+        assert detail == POST_MERGE_VERIFICATION_FAILED_DETAIL
+        _assert_no_http_leakage(detail, "task-head", "target-after")
         assert "rolled back" not in detail
         assert "Approval merge failed" not in detail
         assert task.status == "waiting_approval"
@@ -570,9 +661,10 @@ def test_post_merge_ancestry_inspection_error_preserves_evidence(
 
         detail = str(exc_info.value.detail)
         assert exc_info.value.status_code == 409
-        assert (
-            "Git merge completed but post-merge verification failed"
-            in detail
+        assert detail == POST_MERGE_VERIFICATION_FAILED_DETAIL
+        _assert_no_http_leakage(
+            detail,
+            "ancestry infrastructure failed",
         )
         assert "rolled back" not in detail
         assert task.status == "waiting_approval"
@@ -585,6 +677,12 @@ def test_post_merge_ancestry_inspection_error_preserves_evidence(
         assert git_manager.deleted_branch is False
         assert app_module.TaskStatus.APPROVED not in (
             state_machine.transitions
+        )
+        assert any(
+            "Post-merge verification failed after merge command completed"
+            in message
+            and "ancestry infrastructure failed" in message
+            for message in logs
         )
     finally:
         restore()
@@ -669,10 +767,8 @@ def test_db_persistence_failure_after_verified_merge(
 
         detail = str(exc_info.value.detail)
         assert exc_info.value.status_code == 409
-        assert (
-            "Git merge succeeded but approval state persistence failed"
-            in detail
-        )
+        assert detail == APPROVAL_PERSISTENCE_FAILED_DETAIL
+        _assert_no_http_leakage(detail, "sqlite persist failed")
         assert "merge was rolled back" not in detail
         assert "Approval merge failed" not in detail
         assert git_manager.merged is True
@@ -689,7 +785,443 @@ def test_db_persistence_failure_after_verified_merge(
         assert any(
             "Approval persistence failed after verified merge"
             in message
+            and "sqlite persist failed" in message
             for message in logs
+        )
+    finally:
+        restore()
+
+
+def test_wrong_approval_state_user_safe_detail(monkeypatch):
+    git_manager = RecordingGitManager()
+    task, _sm, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-WRONG-STATE",
+    )
+    task.state = "running"
+    task.status = "running"
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-WRONG-STATE",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == INVALID_APPROVAL_STATE_DETAIL
+        )
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "ready_for_approval",
+            "running",
+            "Task state is",
+        )
+        assert any(
+            "expected 'ready_for_approval'" in message
+            and "running" in message
+            for message in logs
+        )
+        assert git_manager.merged is False
+    finally:
+        restore()
+
+
+def test_missing_approval_context_user_safe_detail(monkeypatch):
+    git_manager = RecordingGitManager()
+    task, _sm, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-NO-CONTEXT",
+    )
+    monkeypatch.setattr(
+        app_module,
+        "hydrate_runtime_from_database",
+        lambda: None,
+    )
+    app_module.TASK_CONTEXTS.pop("TASK-NO-CONTEXT", None)
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-NO-CONTEXT",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == APPROVAL_CONTEXT_UNAVAILABLE_DETAIL
+        )
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "SQLite",
+            "runtime context",
+            "TASK-NO-CONTEXT",
+        )
+        assert any(
+            "SQLite" in message and "TASK-NO-CONTEXT" in message
+            for message in logs
+        )
+        assert task.state == "ready_for_approval"
+        assert git_manager.merged is False
+    finally:
+        restore()
+
+
+def test_orchestrator_project_failure_hides_project_id(monkeypatch):
+    git_manager = RecordingGitManager()
+    task, _sm, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-NO-PROJECT",
+    )
+
+    def boom(_task):
+        raise KeyError(
+            f"Project not found: {INTERNAL_PROJECT_ID}"
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "build_orchestrator_for_task",
+        boom,
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-NO-PROJECT",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == PROJECT_UNAVAILABLE_DETAIL
+        )
+        _assert_no_http_leakage(exc_info.value.detail)
+        assert INTERNAL_PROJECT_ID not in str(
+            exc_info.value.detail
+        )
+        assert any(
+            "Approval orchestrator unavailable:" in message
+            and INTERNAL_PROJECT_ID in message
+            for message in logs
+        )
+        assert git_manager.merged is False
+    finally:
+        restore()
+
+
+def test_task_not_found_user_safe_detail(monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "hydrate_runtime_from_database",
+        lambda: None,
+    )
+    old_tasks = dict(app_module.TASKS)
+    old_contexts = dict(app_module.TASK_CONTEXTS)
+    app_module.TASKS.clear()
+    app_module.TASK_CONTEXTS.clear()
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-MISSING",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == TASK_NOT_FOUND_DETAIL
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "TASK-MISSING",
+            "SQLite",
+        )
+    finally:
+        app_module.TASKS.clear()
+        app_module.TASKS.update(old_tasks)
+        app_module.TASK_CONTEXTS.clear()
+        app_module.TASK_CONTEXTS.update(old_contexts)
+
+
+def test_preserve_failure_hides_secret_path_and_stderr(monkeypatch):
+    secret_exc = GitOperationError(
+        f"{SECRET_PATH} git stash stderr {SECRET_STDERR}"
+    )
+    git_manager = RecordingGitManager(
+        main_dirty=" D admin.html",
+        fail_preserve=True,
+        preserve_error=secret_exc,
+    )
+    task, state_machine, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-PRESERVE-SECRET",
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-PRESERVE-SECRET",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == LOCAL_CHANGES_PRESERVE_FAILED_DETAIL
+        )
+        _assert_no_http_leakage(exc_info.value.detail)
+        assert any(
+            "Approval preserve local changes failed:" in message
+            and SECRET_PATH in message
+            and SECRET_STDERR in message
+            for message in logs
+        )
+        assert git_manager.merged is False
+        assert task.state == "ready_for_approval"
+        assert SUCCESS_LOG not in logs
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_preserve_still_dirty_user_safe_detail(monkeypatch):
+    git_manager = RecordingGitManager(main_dirty=" M README.md")
+
+    def remaining_dirty_status():
+        git_manager.calls.append(("get_repository_status",))
+        if git_manager.preserved_snapshot is None:
+            return " M README.md"
+        return " M leftover.txt"
+
+    git_manager.get_repository_status = remaining_dirty_status
+    task, state_machine, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-STILL-DIRTY",
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-STILL-DIRTY",
+                BackgroundTasks(),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert (
+            exc_info.value.detail
+            == LOCAL_CHANGES_STILL_DIRTY_DETAIL
+        )
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "main repository",
+            "leftover.txt",
+        )
+        assert git_manager.merged is False
+        assert git_manager.restored_snapshot is True
+        assert task.state == "ready_for_approval"
+        assert SUCCESS_LOG not in logs
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_merge_failure_hides_git_command_and_path(monkeypatch):
+    merge_exc = RuntimeError(
+        "Git command failed "
+        f"('git merge {SECRET_BRANCH}'): {SECRET_USER_REPO}"
+    )
+    git_manager = RecordingGitManager(
+        fail_merge=True,
+        merge_error=merge_exc,
+    )
+    task, state_machine, logs, restore, _ = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-MERGE-SECRET",
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-MERGE-SECRET",
+                BackgroundTasks(),
+            )
+
+        detail = str(exc_info.value.detail)
+        assert exc_info.value.status_code == 409
+        assert detail == MERGE_FAILED_DETAIL
+        _assert_no_http_leakage(
+            detail,
+            "git merge",
+            r"C:\Users",
+            SECRET_BRANCH,
+        )
+        assert any(
+            "Approval merge failed:" in message
+            and SECRET_BRANCH in message
+            and SECRET_USER_REPO in message
+            for message in logs
+        )
+        assert task.state == "ready_for_approval"
+        assert SUCCESS_LOG not in logs
+        assert git_manager.abort_called is True
+        assert git_manager.cleaned_worktree is False
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_post_merge_verification_hides_sha_and_path(monkeypatch):
+    ancestry_exc = GitOperationError(
+        f"ancestry failed for sha SECRETSHA123 at {SECRET_PATH}"
+    )
+    git_manager = RecordingGitManager(
+        raise_ancestry_error=True,
+        ancestry_error=ancestry_exc,
+    )
+    task, state_machine, logs, restore, persisted = (
+        _prepare_approval(
+            monkeypatch,
+            git_manager=git_manager,
+            task_id="TASK-VERIFY-SECRET",
+        )
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-VERIFY-SECRET",
+                BackgroundTasks(),
+            )
+
+        detail = str(exc_info.value.detail)
+        assert exc_info.value.status_code == 409
+        assert detail == POST_MERGE_VERIFICATION_FAILED_DETAIL
+        _assert_no_http_leakage(
+            detail,
+            "SECRETSHA123",
+            SECRET_PATH,
+        )
+        assert any(
+            "Post-merge verification failed after merge command completed"
+            in message
+            and "SECRETSHA123" in message
+            and SECRET_PATH in message
+            for message in logs
+        )
+        assert persisted == []
+        assert task.state == "ready_for_approval"
+        assert git_manager.cleaned_worktree is False
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_rollback_recovery_failure_hides_secret_path(monkeypatch):
+    git_manager = RecordingGitManager(
+        main_dirty=" M shared.txt",
+        fail_restore=True,
+        fail_reset=True,
+        reset_error=GitOperationError(
+            f"reset failed at {SECRET_ROLLBACK_PATH}"
+        ),
+    )
+    task, state_machine, logs, restore, persisted = _prepare_approval(
+        monkeypatch,
+        git_manager=git_manager,
+        task_id="TASK-RECOVERY-SECRET",
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-RECOVERY-SECRET",
+                BackgroundTasks(),
+            )
+
+        detail = str(exc_info.value.detail)
+        assert exc_info.value.status_code == 409
+        assert detail == RECOVERY_FAILED_DETAIL
+        _assert_no_http_leakage(detail)
+        assert SECRET_ROLLBACK_PATH not in detail
+        assert any(
+            "Transactional approval rollback failed" in message
+            and SECRET_ROLLBACK_PATH in message
+            for message in logs
+        )
+        assert persisted == []
+        assert task.state == "ready_for_approval"
+        assert SUCCESS_LOG not in logs
+        assert git_manager.cleaned_worktree is False
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
+        )
+    finally:
+        restore()
+
+
+def test_db_persistence_failure_hides_sqlite_path(monkeypatch):
+    import sqlite3
+
+    persist_exc = sqlite3.OperationalError(
+        f"unable to open database {SECRET_DB_PATH}"
+    )
+    git_manager = RecordingGitManager()
+    task, state_machine, logs, restore, persisted = (
+        _prepare_approval(
+            monkeypatch,
+            git_manager=git_manager,
+            fail_persist=True,
+            persist_error=persist_exc,
+            task_id="TASK-DB-SECRET",
+        )
+    )
+
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.approve_task(
+                "TASK-DB-SECRET",
+                BackgroundTasks(),
+            )
+
+        detail = str(exc_info.value.detail)
+        assert exc_info.value.status_code == 409
+        assert detail == APPROVAL_PERSISTENCE_FAILED_DETAIL
+        _assert_no_http_leakage(
+            detail,
+            "factory.db",
+            r"C:\secret",
+            "OperationalError",
+        )
+        assert any(
+            "Approval persistence failed after verified merge"
+            in message
+            and SECRET_DB_PATH in message
+            for message in logs
+        )
+        assert persisted == []
+        assert git_manager.merged is True
+        assert git_manager.abort_called is False
+        assert task.state == "ready_for_approval"
+        assert SUCCESS_LOG not in logs
+        assert app_module.TaskStatus.APPROVED not in (
+            state_machine.transitions
         )
     finally:
         restore()
@@ -1259,7 +1791,19 @@ def test_preserve_failure_blocks_merge_without_touching_user_changes(
             )
 
         assert exc_info.value.status_code == 409
-        assert "preserve" in str(exc_info.value.detail).lower()
+        assert (
+            exc_info.value.detail
+            == LOCAL_CHANGES_PRESERVE_FAILED_DETAIL
+        )
+        _assert_no_http_leakage(
+            exc_info.value.detail,
+            "stash push failed",
+        )
+        assert any(
+            "Approval preserve local changes failed:" in message
+            and "stash push failed" in message
+            for message in logs
+        )
         assert ("merge_branch", "agent/task-3873") not in git_manager.calls
         # branch in context is still agent/task-3873 from helper
         assert git_manager.merged is False
