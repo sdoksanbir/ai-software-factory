@@ -699,11 +699,8 @@ def create_and_save_task_plan(
         task_id,
         plan["steps"],
         summary=plan["summary"],
+        planner_mode=plan["planner_mode"],
         **save_kwargs,
-    )
-
-    saved["planner_mode"] = (
-        plan["planner_mode"]
     )
 
     return saved

@@ -62,6 +62,7 @@ from factory.agents.providers.model_client import (
 )
 from factory.task_plan_store import (
     get_task_plan,
+    is_resumable_multi_step_plan,
     reset_retryable_task_steps,
 )
 from factory.agent_checkpoint_store import (
@@ -1054,20 +1055,13 @@ def cleanup_failed_task_for_api(
         f"agent/{task_id.lower()}"
     )
 
-    # Multi-step gorevde plan ve worktree
-    # birlikte mevcutsa FAILED durumu
-    # retry edilebilir kabul edilir.
-    # Bu nedenle calisma alani korunur.
+    # Unfinished multi-step plans keep their
+    # worktree for retry. planner_mode is
+    # authoritative; step count is not.
     plan = get_task_plan(task_id)
 
-    steps = (
-        plan.get("steps", [])
-        if plan
-        else []
-    )
-
     resumable_multi_step = bool(
-        len(steps) > 1
+        is_resumable_multi_step_plan(plan)
         and os.path.isdir(worktree_path)
         and os.path.exists(
             os.path.join(

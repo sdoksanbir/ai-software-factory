@@ -239,6 +239,9 @@ def test_create_and_save_plan(tmp_path):
         "multi_step"
     )
     assert loaded is not None
+    assert loaded["planner_mode"] == (
+        "multi_step"
+    )
     assert len(loaded["steps"]) == 3
     assert loaded["summary"] == "Entegrasyon"
 

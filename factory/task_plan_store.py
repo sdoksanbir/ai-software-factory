@@ -11,6 +11,11 @@ PLAN_STATUSES = {
     "failed",
 }
 
+PLANNER_MODES = {
+    "single_step",
+    "multi_step",
+}
+
 STEP_STATUSES = {
     "pending",
     "running",
@@ -23,6 +28,12 @@ STEP_KINDS = {
     "read",
     "write",
     "verify",
+}
+
+_UNFINISHED_STEP_STATUSES = {
+    "pending",
+    "running",
+    "failed",
 }
 
 
@@ -70,6 +81,7 @@ def init_task_plan_store(
                 task_id TEXT PRIMARY KEY,
                 status TEXT NOT NULL DEFAULT 'pending',
                 summary TEXT,
+                planner_mode TEXT,
                 created_at TEXT NOT NULL
                     DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL
@@ -105,10 +117,91 @@ def init_task_plan_store(
             """
         )
 
+        # CREATE TABLE IF NOT EXISTS does not add
+        # columns to older databases; migrate planner_mode.
+        column_rows = connection.execute(
+            "PRAGMA table_info(task_plans)"
+        ).fetchall()
+
+        column_names = {
+            str(
+                row["name"]
+                if hasattr(row, "keys")
+                else row[1]
+            )
+            for row in column_rows
+        }
+
+        if "planner_mode" not in column_names:
+            connection.execute(
+                """
+                ALTER TABLE task_plans
+                ADD COLUMN planner_mode TEXT
+                """
+            )
+
         connection.commit()
 
     finally:
         connection.close()
+
+
+def is_resumable_multi_step_plan(
+    plan: dict[str, Any] | None,
+) -> bool:
+    """Whether a persisted plan should keep its
+    worktree for multi-step resume/retry.
+
+    planner_mode is authoritative. Step count is
+    not a planner-mode signal: single_step WRITE
+    plans also persist an automatic VERIFY step.
+    """
+    if not plan:
+        return False
+
+    raw_mode = plan.get("planner_mode")
+    planner_mode = None
+
+    if raw_mode is not None:
+        planner_mode = str(raw_mode).strip().lower()
+
+        if not planner_mode:
+            planner_mode = None
+
+    steps = plan.get("steps") or []
+    plan_status = str(
+        plan.get("status") or ""
+    ).strip().lower()
+
+    if planner_mode == "single_step":
+        # Automatic VERIFY makes len(steps)==2;
+        # that is still single-step.
+        return False
+
+    if planner_mode == "multi_step":
+        if plan_status == "completed":
+            return False
+
+        return any(
+            str(
+                step.get("status") or ""
+            ).strip().lower()
+            in _UNFINISHED_STEP_STATUSES
+            for step in steps
+        )
+
+    if planner_mode is not None:
+        # Unknown persisted mode: do not resume.
+        return False
+
+    # Legacy planner_mode=NULL only.
+    # Conservatively preserve unfinished multi-step
+    # worktrees that predate planner_mode persistence.
+    # Do not backfill planner_mode from step count.
+    if plan_status == "completed":
+        return False
+
+    return len(steps) > 1
 
 
 def save_task_plan(
@@ -117,6 +210,7 @@ def save_task_plan(
     *,
     summary: str | None = None,
     status: str = "pending",
+    planner_mode: str | None = None,
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> dict[str, Any]:
     task_id = _require_text(
@@ -129,6 +223,13 @@ def save_task_plan(
         PLAN_STATUSES,
         "plan status",
     )
+
+    if planner_mode is not None:
+        planner_mode = _require_choice(
+            planner_mode,
+            PLANNER_MODES,
+            "planner_mode",
+        )
 
     if not steps:
         raise ValueError(
@@ -197,20 +298,23 @@ def save_task_plan(
                 task_id,
                 status,
                 summary,
+                planner_mode,
                 updated_at
             )
             VALUES (
-                ?, ?, ?, CURRENT_TIMESTAMP
+                ?, ?, ?, ?, CURRENT_TIMESTAMP
             )
             ON CONFLICT(task_id) DO UPDATE SET
                 status = excluded.status,
                 summary = excluded.summary,
+                planner_mode = excluded.planner_mode,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
                 task_id,
                 status,
                 summary,
+                planner_mode,
             ),
         )
 

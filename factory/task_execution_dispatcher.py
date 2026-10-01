@@ -4,6 +4,7 @@ from typing import Any, Callable
 from factory.task_planner import build_task_plan
 from factory.task_plan_store import (
     get_task_plan,
+    is_resumable_multi_step_plan,
     save_task_plan,
 )
 from factory.multi_step_task_runner import (
@@ -66,12 +67,14 @@ def execute_write_task(
     branch_name = None
     resume_multi_step = False
 
-    # Worktree bilgisi yalnizca gercekten
-    # resume adayi olan eski multi-step
-    # planlarda hesaplanir.
+    # Resume only when planner-mode semantics say
+    # the persisted plan is unfinished multi-step
+    # and the expected worktree still exists.
     if (
         existing_plan
-        and len(existing_steps) > 1
+        and is_resumable_multi_step_plan(
+            existing_plan
+        )
     ):
         worktree_path, branch_name = (
             _get_expected_worktree(
@@ -92,7 +95,12 @@ def execute_write_task(
 
     if resume_multi_step:
         plan = {
-            "planner_mode": "multi_step",
+            "planner_mode": (
+                existing_plan.get(
+                    "planner_mode"
+                )
+                or "multi_step"
+            ),
             "summary": (
                 existing_plan.get("summary")
             ),
@@ -122,6 +130,9 @@ def execute_write_task(
             task_id,
             plan["steps"],
             summary=plan.get("summary"),
+            planner_mode=plan.get(
+                "planner_mode"
+            ),
         )
 
     planner_mode = plan.get(
@@ -165,6 +176,7 @@ def execute_write_task(
                 task_id,
                 plan["steps"],
                 summary=plan.get("summary"),
+                planner_mode=planner_mode,
             )
 
     if (
