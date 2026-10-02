@@ -1,5 +1,6 @@
 """Approval must not claim merge success without Git proof."""
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -55,6 +56,10 @@ APPROVAL_PERSISTENCE_FAILED_DETAIL = (
     "Birleştirme tamamlandı ancak onay durumu kaydedilemedi. "
     "Görev kayıtlarını kontrol edin."
 )
+OWNERSHIP_FAILED_DETAIL = (
+    "Görev worktree/branch sahipliği doğrulanamadığı için "
+    "onay işlemi durduruldu."
+)
 
 SECRET_PATH = r"C:\secret\repo\.git"
 SECRET_BRANCH = "secret-branch"
@@ -106,6 +111,11 @@ class RecordingGitManager:
         fail_drop_snapshot=False,
         fail_reset=False,
         reset_error=None,
+        repo_root=r"C:\repos\edusen",
+        worktree_root=r"C:\AI-Worktrees",
+        owned_task_id="task-3873",
+        registered_branch=None,
+        omit_worktree_registration=False,
     ):
         self.target_before = target_before
         self.task_head = task_head
@@ -132,6 +142,18 @@ class RecordingGitManager:
         self.reset_error = reset_error or GitOperationError(
             "unexpected HEAD"
         )
+        self.repo_root = os.path.abspath(repo_root)
+        self.worktree_root = os.path.abspath(worktree_root)
+        self.owned_task_id = owned_task_id
+        self.registered_branch = (
+            registered_branch
+            if registered_branch is not None
+            else f"agent/{owned_task_id}"
+        )
+        self._explicit_registered_branch = (
+            registered_branch is not None
+        )
+        self.omit_worktree_registration = omit_worktree_registration
 
         self.calls = []
         self.merged = False
@@ -143,6 +165,36 @@ class RecordingGitManager:
         self.restored_snapshot = False
         self.dropped_snapshot = False
         self.reset_to = None
+
+    @property
+    def owned_worktree_path(self):
+        return os.path.abspath(
+            os.path.join(
+                self.worktree_root,
+                os.path.basename(self.repo_root),
+                self.owned_task_id,
+            )
+        )
+
+    def _run_git_command(self, args, cwd=None):
+        self.calls.append(("_run_git_command", tuple(args), cwd))
+        if list(args[:3]) == ["worktree", "list", "--porcelain"]:
+            if self.omit_worktree_registration:
+                return (
+                    f"worktree {self.repo_root}\n"
+                    "HEAD main-head\n"
+                    "branch refs/heads/main\n"
+                )
+            return (
+                f"worktree {self.repo_root}\n"
+                "HEAD main-head\n"
+                "branch refs/heads/main\n"
+                "\n"
+                f"worktree {self.owned_worktree_path}\n"
+                "HEAD task-head\n"
+                f"branch refs/heads/{self.registered_branch}\n"
+            )
+        raise GitOperationError(f"unexpected git command: {args}")
 
     def get_status(self, path):
         self.calls.append(("get_status", path))
@@ -326,6 +378,8 @@ def _prepare_approval(
     task_kind="write",
     fail_persist=False,
     persist_error=None,
+    wt_path=None,
+    wt_branch=None,
 ):
     task = app_module.TaskCreateResponse(
         task_id=task_id,
@@ -342,9 +396,34 @@ def _prepare_approval(
     )
 
     state_machine = FakeStateMachine()
+    clean_id = task_id.lower()
+    if hasattr(git_manager, "owned_task_id"):
+        git_manager.owned_task_id = clean_id
+        if not getattr(
+            git_manager,
+            "_explicit_registered_branch",
+            False,
+        ):
+            git_manager.registered_branch = f"agent/{clean_id}"
+    expected_path = (
+        git_manager.owned_worktree_path
+        if hasattr(git_manager, "owned_worktree_path")
+        else os.path.abspath(
+            os.path.join(
+                r"C:\AI-Worktrees",
+                "edusen",
+                clean_id,
+            )
+        )
+    )
+    expected_branch = f"agent/{clean_id}"
     wt_result = SimpleNamespace(
-        path=r"C:\AI-Worktrees\edusen\task-3873",
-        branch="agent/task-3873",
+        path=wt_path if wt_path is not None else expected_path,
+        branch=(
+            wt_branch
+            if wt_branch is not None
+            else expected_branch
+        ),
     )
 
     old_tasks = dict(app_module.TASKS)
@@ -1804,8 +1883,9 @@ def test_preserve_failure_blocks_merge_without_touching_user_changes(
             and "stash push failed" in message
             for message in logs
         )
-        assert ("merge_branch", "agent/task-3873") not in git_manager.calls
-        # branch in context is still agent/task-3873 from helper
+        assert ("merge_branch", "agent/task-preserve-fail") not in (
+            git_manager.calls
+        )
         assert git_manager.merged is False
         assert task.state == "ready_for_approval"
         assert SUCCESS_LOG not in logs

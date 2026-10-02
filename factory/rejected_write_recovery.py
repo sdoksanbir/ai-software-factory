@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import os
-import pathlib
 import shutil
 from typing import Any, Callable
 
@@ -22,6 +21,27 @@ from factory.execute_recovery import (
 from factory.tools.git_ops import (
     GitOperationError,
     GitWorktreeManager,
+)
+from factory.write_worktree_ownership import (
+    WriteOwnershipError,
+    WritePathPlan,
+    derive_write_path_plan,
+    has_symlink_or_junction_escape,
+    is_symlink_entry,
+    norm_path_key,
+    verify_write_metadata_ownership,
+)
+
+# Re-export for existing imports/tests.
+__all__ = (
+    "RejectedWriteCleanupError",
+    "RecoveryAction",
+    "WritePathPlan",
+    "RejectedWriteRecoveryResult",
+    "derive_write_path_plan",
+    "verify_rejected_write_ownership",
+    "recover_rejected_write_artifacts",
+    "recover_rejected_write_artifacts_on_startup",
 )
 
 
@@ -37,105 +57,10 @@ class RecoveryAction(str, Enum):
 
 
 @dataclass(frozen=True)
-class WritePathPlan:
-    task_id: str
-    branch: str
-    worktree_path: str
-    worktree_root: str
-    canonical_repo_root: str
-
-
-@dataclass(frozen=True)
 class RejectedWriteRecoveryResult:
     action: RecoveryAction
     task_id: str
     detail: str = ""
-
-
-def derive_write_path_plan(
-    git_manager: GitWorktreeManager,
-    task_id: str,
-) -> WritePathPlan:
-    """Mirror production WRITE create_worktree naming (task_id.lower())."""
-    clean_id = (task_id or "").strip().lower()
-    if not clean_id:
-        raise RejectedWriteCleanupError(
-            "WRITE worktree task_id bos olamaz."
-        )
-
-    canonical = os.path.abspath(git_manager.repo_root)
-    worktree_root = os.path.abspath(git_manager.worktree_root)
-    repo_name = os.path.basename(canonical)
-    branch = f"agent/{clean_id}"
-    worktree_path = os.path.abspath(
-        os.path.join(worktree_root, repo_name, clean_id)
-    )
-    return WritePathPlan(
-        task_id=clean_id,
-        branch=branch,
-        worktree_path=worktree_path,
-        worktree_root=worktree_root,
-        canonical_repo_root=canonical,
-    )
-
-
-def _norm_path_key(path: str) -> str:
-    return os.path.normcase(
-        os.path.abspath(path)
-    ).replace("\\", "/")
-
-
-def _paths_equal(left: str, right: str) -> bool:
-    return _norm_path_key(left) == _norm_path_key(right)
-
-
-def _is_symlink_entry(path: str) -> bool:
-    try:
-        if os.path.islink(path):
-            return True
-        return pathlib.Path(path).is_symlink()
-    except OSError:
-        return True
-
-
-def _has_symlink_or_junction_escape(
-    path: str,
-    worktree_root: str,
-) -> bool:
-    """True when leaf/parent symlink/junction could escape ownership."""
-    abs_path = os.path.abspath(path)
-    abs_root = os.path.abspath(worktree_root)
-
-    if not _path_contained(abs_path, abs_root):
-        return True
-
-    current = pathlib.Path(abs_path)
-    root_path = pathlib.Path(abs_root)
-    while True:
-        if _is_symlink_entry(str(current)):
-            return True
-        if _norm_path_key(str(current)) == _norm_path_key(
-            str(root_path)
-        ):
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        try:
-            current.relative_to(root_path)
-        except ValueError:
-            return True
-        current = parent
-
-    try:
-        real_path = os.path.realpath(abs_path)
-        real_root = os.path.realpath(abs_root)
-    except OSError:
-        return True
-
-    if not _path_contained(real_path, real_root):
-        return True
-    return False
 
 
 def _maybe_safe_worktree_prune(
@@ -148,9 +73,9 @@ def _maybe_safe_worktree_prune(
     if not prunable:
         return
 
-    owned_norm = {_norm_path_key(p) for p in owned_paths}
+    owned_norm = {norm_path_key(p) for p in owned_paths}
     for entry in prunable:
-        if _norm_path_key(entry) not in owned_norm:
+        if norm_path_key(entry) not in owned_norm:
             return
 
     try:
@@ -172,11 +97,11 @@ def _safe_remove_orphaned_directory(
         raise RejectedWriteCleanupError(
             f"Refusing to delete path outside worktree_root: {abs_path}"
         )
-    if _has_symlink_or_junction_escape(abs_path, worktree_root):
+    if has_symlink_or_junction_escape(abs_path, worktree_root):
         raise RejectedWriteCleanupError(
             f"Refusing to delete symlink/junction worktree path: {abs_path}"
         )
-    if os.path.isdir(abs_path) and not _is_symlink_entry(abs_path):
+    if os.path.isdir(abs_path) and not is_symlink_entry(abs_path):
         shutil.rmtree(abs_path)
     elif os.path.lexists(abs_path):
         raise RejectedWriteCleanupError(
@@ -201,34 +126,15 @@ def verify_rejected_write_ownership(
     if kind != "write":
         return None, f"task_kind is {task_kind!r}, expected 'write'"
 
-    if not stored_branch or not str(stored_branch).strip():
-        return None, "stored branch missing"
-    if not stored_worktree_path or not str(stored_worktree_path).strip():
-        return None, "stored worktree_path missing"
-
-    plan = derive_write_path_plan(git_manager, task_id)
-
-    if str(stored_branch).strip() != plan.branch:
-        return None, (
-            "stored branch does not match expected WRITE convention: "
-            f"{stored_branch!r} != {plan.branch!r}"
+    try:
+        plan = verify_write_metadata_ownership(
+            task_id=task_id,
+            claimed_branch=stored_branch,
+            claimed_worktree_path=stored_worktree_path,
+            git_manager=git_manager,
         )
-
-    if not _paths_equal(str(stored_worktree_path), plan.worktree_path):
-        return None, (
-            "stored worktree_path does not match expected WRITE "
-            f"convention: {stored_worktree_path!r} != "
-            f"{plan.worktree_path!r}"
-        )
-
-    if not _path_contained(plan.worktree_path, plan.worktree_root):
-        return None, "expected worktree_path escapes worktree_root"
-
-    if not _paths_equal(
-        git_manager.repo_root,
-        plan.canonical_repo_root,
-    ):
-        return None, "git_manager repo_root mismatch"
+    except WriteOwnershipError as exc:
+        return None, str(exc)
 
     return plan, ""
 
@@ -277,7 +183,7 @@ def _cleanup_exact_write_artifacts(
     registered = _worktree_registered(git_manager, abs_path)
     path_exists = os.path.lexists(abs_path)
 
-    if path_exists and _has_symlink_or_junction_escape(
+    if path_exists and has_symlink_or_junction_escape(
         abs_path,
         plan.worktree_root,
     ):

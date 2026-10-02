@@ -1,4 +1,5 @@
 ﻿from types import SimpleNamespace
+import os
 
 from fastapi import BackgroundTasks
 
@@ -6,12 +7,40 @@ import api.app as app_module
 
 
 class FakeGitManager:
-    def __init__(self):
+    def __init__(self, *, task_id="task-1001"):
         self.calls = []
         self._merged = False
         self.target_before = "target-before"
         self.task_head = "task-head"
         self.target_after = "target-after"
+        self.repo_root = os.path.abspath(r"C:\repos\edusen")
+        self.worktree_root = os.path.abspath(r"C:\AI-Worktrees")
+        self.owned_task_id = task_id.lower()
+        self.registered_branch = f"agent/{self.owned_task_id}"
+
+    @property
+    def owned_worktree_path(self):
+        return os.path.abspath(
+            os.path.join(
+                self.worktree_root,
+                os.path.basename(self.repo_root),
+                self.owned_task_id,
+            )
+        )
+
+    def _run_git_command(self, args, cwd=None):
+        self.calls.append(("_run_git_command", tuple(args), cwd))
+        if list(args[:3]) == ["worktree", "list", "--porcelain"]:
+            return (
+                f"worktree {self.repo_root}\n"
+                "HEAD main-head\n"
+                "branch refs/heads/main\n"
+                "\n"
+                f"worktree {self.owned_worktree_path}\n"
+                "HEAD task-head\n"
+                f"branch refs/heads/{self.registered_branch}\n"
+            )
+        raise RuntimeError(f"unexpected git command: {args}")
 
     def get_status(self, path):
         self.calls.append(
@@ -123,10 +152,11 @@ def test_approve_releases_blocked_dependent(
     app_module.TASKS[child_id] = child
 
     state_machine = FakeStateMachine()
+    git_manager = FakeGitManager(task_id=parent_id)
 
     wt_result = SimpleNamespace(
-        path="fake-worktree",
-        branch="agent/task-1001",
+        path=git_manager.owned_worktree_path,
+        branch=git_manager.registered_branch,
     )
 
     app_module.TASK_CONTEXTS[
@@ -135,8 +165,6 @@ def test_approve_releases_blocked_dependent(
         "state_machine": state_machine,
         "wt_result": wt_result,
     }
-
-    git_manager = FakeGitManager()
 
     orchestrator = SimpleNamespace(
         git_manager=git_manager,
@@ -217,7 +245,7 @@ def test_approve_releases_blocked_dependent(
 
         assert (
             "remove_worktree",
-            "fake-worktree",
+            git_manager.owned_worktree_path,
         ) in git_manager.calls
 
         assert (

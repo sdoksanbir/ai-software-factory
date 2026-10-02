@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import os
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -19,6 +20,7 @@ class FakeGitManager:
         self,
         *,
         fail_merge=False,
+        task_id="task-2451",
     ):
         self.fail_merge = fail_merge
         self.merged = False
@@ -27,6 +29,33 @@ class FakeGitManager:
         self._target_before = "target-before"
         self._task_head = "task-head"
         self._target_after = "merge-hash"
+        self.repo_root = os.path.abspath(r"C:\repos\edusen")
+        self.worktree_root = os.path.abspath(r"C:\AI-Worktrees")
+        self.owned_task_id = task_id.lower()
+        self.registered_branch = f"agent/{self.owned_task_id}"
+
+    @property
+    def owned_worktree_path(self):
+        return os.path.abspath(
+            os.path.join(
+                self.worktree_root,
+                os.path.basename(self.repo_root),
+                self.owned_task_id,
+            )
+        )
+
+    def _run_git_command(self, args, cwd=None):
+        if list(args[:3]) == ["worktree", "list", "--porcelain"]:
+            return (
+                f"worktree {self.repo_root}\n"
+                "HEAD main-head\n"
+                "branch refs/heads/main\n"
+                "\n"
+                f"worktree {self.owned_worktree_path}\n"
+                "HEAD task-head\n"
+                f"branch refs/heads/{self.registered_branch}\n"
+            )
+        raise RuntimeError(f"unexpected git command: {args}")
 
     def get_status(self, path):
         return "M factory/example.py"
@@ -121,7 +150,8 @@ def _prepare(
     task = _task()
 
     git_manager = FakeGitManager(
-        fail_merge=fail_merge
+        fail_merge=fail_merge,
+        task_id=task_id,
     )
 
     state_machine = FakeStateMachine()
@@ -135,8 +165,8 @@ def _prepare(
     ] = {
         "state_machine": state_machine,
         "wt_result": SimpleNamespace(
-            path="C:/worktree/TASK-2451",
-            branch="agent/task-2451",
+            path=git_manager.owned_worktree_path,
+            branch=git_manager.registered_branch,
         ),
         "diff_output": "diff",
     }

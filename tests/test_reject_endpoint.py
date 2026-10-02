@@ -1,5 +1,6 @@
 """Reject endpoint: persist-first decision, best-effort cleanup."""
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -46,6 +47,17 @@ LEAKAGE_SENTINELS = (
 )
 
 
+def _cleanup_calls(git_manager):
+    return [
+        call
+        for call in git_manager.calls
+        if call and call[0] in (
+            "remove_worktree",
+            "delete_branch",
+        )
+    ]
+
+
 def _assert_no_http_leakage(
     detail: str,
     *extra_forbidden: str,
@@ -68,6 +80,11 @@ class RecordingGitManager:
         delete_error=None,
         worktree_exists=True,
         branch_exists=True,
+        repo_root=r"C:\repos\demo",
+        worktree_root=r"C:\AI-Worktrees",
+        owned_task_id="task-reject",
+        registered_branch=None,
+        omit_worktree_registration=False,
     ):
         self.calls = []
         self.fail_remove_worktree = fail_remove_worktree
@@ -78,6 +95,48 @@ class RecordingGitManager:
         self.branch_exists = branch_exists
         self.cleaned_worktree = False
         self.deleted_branch = False
+        self.repo_root = os.path.abspath(repo_root)
+        self.worktree_root = os.path.abspath(worktree_root)
+        self.owned_task_id = owned_task_id
+        self.registered_branch = (
+            registered_branch
+            if registered_branch is not None
+            else f"agent/{owned_task_id}"
+        )
+        self.omit_worktree_registration = omit_worktree_registration
+        self._explicit_registered_branch = (
+            registered_branch is not None
+        )
+
+    @property
+    def owned_worktree_path(self):
+        return os.path.abspath(
+            os.path.join(
+                self.worktree_root,
+                os.path.basename(self.repo_root),
+                self.owned_task_id,
+            )
+        )
+
+    def _run_git_command(self, args, cwd=None):
+        self.calls.append(("_run_git_command", tuple(args), cwd))
+        if list(args[:3]) == ["worktree", "list", "--porcelain"]:
+            if self.omit_worktree_registration:
+                return (
+                    f"worktree {self.repo_root}\n"
+                    "HEAD main-head\n"
+                    "branch refs/heads/main\n"
+                )
+            return (
+                f"worktree {self.repo_root}\n"
+                "HEAD main-head\n"
+                "branch refs/heads/main\n"
+                "\n"
+                f"worktree {self.owned_worktree_path}\n"
+                "HEAD task-head\n"
+                f"branch refs/heads/{self.registered_branch}\n"
+            )
+        raise GitOperationError(f"unexpected git command: {args}")
 
     def remove_worktree(self, path, *args, **kwargs):
         self.calls.append(
@@ -133,6 +192,8 @@ def _prepare_reject(
     state_machine=None,
     fail_persist=False,
     persist_error=None,
+    wt_path=None,
+    wt_branch=None,
 ):
     task = app_module.TaskCreateResponse(
         task_id=task_id,
@@ -151,9 +212,34 @@ def _prepare_reject(
     if state_machine is None:
         state_machine = FakeStateMachine()
 
+    clean_id = task_id.lower()
+    if hasattr(git_manager, "owned_task_id"):
+        git_manager.owned_task_id = clean_id
+        if not getattr(
+            git_manager,
+            "_explicit_registered_branch",
+            False,
+        ):
+            git_manager.registered_branch = f"agent/{clean_id}"
+    expected_path = (
+        git_manager.owned_worktree_path
+        if hasattr(git_manager, "owned_worktree_path")
+        else os.path.abspath(
+            os.path.join(
+                r"C:\AI-Worktrees",
+                "demo",
+                clean_id,
+            )
+        )
+    )
+    expected_branch = f"agent/{clean_id}"
     wt_result = SimpleNamespace(
-        path=r"C:\AI-Worktrees\demo\task-reject",
-        branch="agent/task-reject",
+        path=wt_path if wt_path is not None else expected_path,
+        branch=(
+            wt_branch
+            if wt_branch is not None
+            else expected_branch
+        ),
     )
 
     old_tasks = dict(app_module.TASKS)
@@ -259,7 +345,7 @@ def test_success_reject(monkeypatch):
         )
         assert git_manager.cleaned_worktree is True
         assert git_manager.deleted_branch is True
-        assert git_manager.calls == [
+        assert _cleanup_calls(git_manager) == [
             ("remove_worktree", wt_result.path, True),
             ("delete_branch", wt_result.branch, True),
         ]
@@ -312,7 +398,7 @@ def test_worktree_cleanup_failure_still_rejects(
         )
         assert git_manager.cleaned_worktree is False
         assert git_manager.deleted_branch is True
-        assert git_manager.calls == [
+        assert _cleanup_calls(git_manager) == [
             ("remove_worktree", wt_result.path, True),
             ("delete_branch", wt_result.branch, True),
         ]
@@ -416,7 +502,7 @@ def test_both_cleanup_failures_still_rejects(monkeypatch):
             "rejected",
             "rejected",
         ) in persisted
-        assert git_manager.calls == [
+        assert _cleanup_calls(git_manager) == [
             ("remove_worktree", wt_result.path, True),
             ("delete_branch", wt_result.branch, True),
         ]
@@ -677,7 +763,7 @@ def test_worktree_already_absent_still_rejects(
         assert ("TASK-WT-ABSENT", "rejected", "rejected") in (
             persisted
         )
-        assert git_manager.calls == [
+        assert _cleanup_calls(git_manager) == [
             ("remove_worktree", wt_result.path, True),
             ("delete_branch", wt_result.branch, True),
         ]
@@ -719,7 +805,7 @@ def test_branch_already_absent_still_rejects(monkeypatch):
             "rejected",
         ) in persisted
         assert git_manager.cleaned_worktree is True
-        assert git_manager.calls == [
+        assert _cleanup_calls(git_manager) == [
             ("remove_worktree", wt_result.path, True),
             ("delete_branch", wt_result.branch, True),
         ]

@@ -2170,6 +2170,10 @@ def approve_task(
         "Birleştirme tamamlandı ancak onay durumu kaydedilemedi. "
         "Görev kayıtlarını kontrol edin."
     )
+    OWNERSHIP_FAILED_DETAIL = (
+        "Görev worktree/branch sahipliği doğrulanamadığı için "
+        "onay işlemi durduruldu."
+    )
 
     task, context = ensure_approval_runtime(task_id)
 
@@ -2223,6 +2227,36 @@ def approve_task(
         ) from exc
 
     git_manager = orchestrator.git_manager
+
+    from factory.write_worktree_ownership import (
+        WriteOwnershipError,
+        verify_write_worktree_ownership,
+    )
+
+    try:
+        ownership_plan = verify_write_worktree_ownership(
+            task_id=task_id,
+            claimed_branch=getattr(wt_result, "branch", None),
+            claimed_worktree_path=getattr(wt_result, "path", None),
+            git_manager=git_manager,
+            require_registered_association=True,
+            require_no_symlink_escape=True,
+        )
+    except WriteOwnershipError as ownership_exc:
+        append_task_log(
+            task_id,
+            (
+                "Approval refused: WRITE ownership verification failed: "
+                f"{ownership_exc}"
+            ),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=OWNERSHIP_FAILED_DETAIL,
+        ) from None
+
+    owned_worktree_path = ownership_plan.worktree_path
+    owned_branch = ownership_plan.branch
 
     local_snapshot = None
     target_head_before = None
@@ -2371,12 +2405,12 @@ def approve_task(
     # PHASE 1A — Before / during merge. abort_merge only here.
     try:
         worktree_status = git_manager.get_status(
-            wt_result.path
+            owned_worktree_path
         )
 
         if worktree_status.strip():
             git_manager.commit_all(
-                wt_result.path,
+                owned_worktree_path,
                 f"{task_id}: AI generated changes",
             )
 
@@ -2384,7 +2418,7 @@ def approve_task(
             git_manager.get_repository_head()
         )
         task_head = git_manager.get_branch_head(
-            wt_result.branch
+            owned_branch
         )
 
         # Reject when the task tip is already in target history.
@@ -2439,7 +2473,7 @@ def approve_task(
                 )
 
         git_manager.merge_branch(
-            wt_result.branch
+            owned_branch
         )
 
     except HTTPException:
@@ -2633,10 +2667,10 @@ def approve_task(
 
     try:
         git_manager.remove_worktree(
-            wt_result.path
+            owned_worktree_path
         )
         git_manager.delete_branch(
-            wt_result.branch
+            owned_branch
         )
     except Exception as cleanup_exc:
         append_task_log(
@@ -2729,8 +2763,8 @@ def reject_task(task_id: str):
 
     state_machine = context["state_machine"]
     wt_result = context["wt_result"]
-    worktree_path = wt_result.path
-    branch_name = wt_result.branch
+    claimed_worktree_path = getattr(wt_result, "path", None)
+    claimed_branch_name = getattr(wt_result, "branch", None)
 
     try:
         orchestrator = build_orchestrator_for_task(
@@ -2778,33 +2812,60 @@ def reject_task(task_id: str):
 
     TASK_CONTEXTS.pop(task_id, None)
 
+    from factory.write_worktree_ownership import (
+        WriteOwnershipError,
+        verify_write_worktree_ownership,
+    )
+
+    ownership_plan = None
     try:
-        git_manager.remove_worktree(
-            worktree_path,
-            force=True,
+        ownership_plan = verify_write_worktree_ownership(
+            task_id=task_id,
+            claimed_branch=claimed_branch_name,
+            claimed_worktree_path=claimed_worktree_path,
+            git_manager=git_manager,
+            require_registered_association=True,
+            require_no_symlink_escape=True,
         )
-    except Exception as cleanup_exc:
+    except WriteOwnershipError as ownership_exc:
         append_task_log(
             task_id,
             (
-                "Reject cleanup warning: worktree cleanup failed: "
-                f"{cleanup_exc}"
+                "Reject cleanup skipped: WRITE ownership could not be "
+                f"verified ({ownership_exc}). Foreign/unverified "
+                "worktree/branch were not touched; rejected decision "
+                "remains durable."
             ),
         )
 
-    try:
-        git_manager.delete_branch(
-            branch_name,
-            force=True,
-        )
-    except Exception as cleanup_exc:
-        append_task_log(
-            task_id,
-            (
-                "Reject cleanup warning: branch cleanup failed: "
-                f"{cleanup_exc}"
-            ),
-        )
+    if ownership_plan is not None:
+        try:
+            git_manager.remove_worktree(
+                ownership_plan.worktree_path,
+                force=True,
+            )
+        except Exception as cleanup_exc:
+            append_task_log(
+                task_id,
+                (
+                    "Reject cleanup warning: worktree cleanup failed: "
+                    f"{cleanup_exc}"
+                ),
+            )
+
+        try:
+            git_manager.delete_branch(
+                ownership_plan.branch,
+                force=True,
+            )
+        except Exception as cleanup_exc:
+            append_task_log(
+                task_id,
+                (
+                    "Reject cleanup warning: branch cleanup failed: "
+                    f"{cleanup_exc}"
+                ),
+            )
 
     append_task_log(
         task_id,
